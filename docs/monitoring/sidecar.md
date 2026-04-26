@@ -209,8 +209,12 @@ Binary memory dump in the same format as `inspector:memory:dump`. Can be analyze
 
 ```bash
 reli inspector:memory:analyze /tmp/dumps/sidecar-1234-20260403-120000-after-fixtures.dump \
-  --output-format sqlite3 --output result.db
+  -f binary -o result.rmem
 ```
+
+`-f sqlite3 -o result.db` is also supported (`inspector:memory:report`
+and `inspector:memory:compare` accept either format); `rmem:explore`
+and friends require `.rmem`.
 
 ### Metadata File (`.meta.json`)
 
@@ -383,21 +387,25 @@ jobs:
           RELI_SIDECAR_SOCKET: /tmp/reli.sock
         run: php bench/memory_trend.php
 
-      # Analyze dumps
+      # Analyze dumps. Either .rmem or SQLite is fine — both are
+      # accepted by inspector:memory:compare. .rmem is the fastest
+      # default and is what the rest of the docs use; switch to
+      # `-f sqlite3 -o ....db` if your CI also runs ad-hoc SQL queries
+      # against the snapshots.
       - name: Analyze snapshots
         run: |
           for f in /tmp/dumps/sidecar-*.dump; do
             reli inspector:memory:analyze "$f" \
-              --output-format sqlite3 \
-              --output "/tmp/analyzed/$(basename "$f" .dump).db"
+              -f binary \
+              -o "/tmp/analyzed/$(basename "$f" .dump).rmem"
           done
 
       # Compare with baseline (if available)
       - name: Compare with baseline
-        if: hashFiles('baseline/*.db') != ''
+        if: hashFiles('baseline/*.rmem') != ''
         run: |
           reli inspector:memory:compare \
-            baseline/*.db /tmp/analyzed/*.db \
+            baseline/*.rmem /tmp/analyzed/*.rmem \
             --threshold 5%
 
       # Save current results as new baseline
@@ -469,4 +477,4 @@ Clients can check `$response->isCompatible()` to detect whether the server's ver
 | `inspector:watch` | Passive monitoring with threshold triggers | Polling (automatic) |
 | **`inspector:sidecar`** | **Application-initiated dump on error/at specific points** | **On-demand (IPC)** |
 | `inspector:memory:analyze` | Offline analysis of dump files | Post-hoc (CLI) |
-| `inspector:memory:compare` | Diff two analysis databases | Post-hoc (CLI) |
+| `inspector:memory:compare` | Diff two analysis snapshots | Post-hoc (CLI) |

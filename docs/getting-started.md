@@ -178,9 +178,10 @@ From here you can:
 
 Full walkthrough: [tracing/rbt-analyze-and-explore.md](tracing/rbt-analyze-and-explore.md).
 
-If you prefer a one-shot text report, `rbt:analyze trace.rbt` prints
-hot frames, callers/callees of a regex, and a live tail — see the
-same doc.
+If you prefer a one-shot text report, `rbt:analyze < trace.rbt`
+prints hot frames, callers/callees of a regex, and a live tail —
+see the same doc. (`rbt:analyze` reads from stdin so it pipes well
+into shell scripts and AI assistants.)
 
 To feed the trace into an existing visualiser (speedscope,
 Flamegraph SVG, pprof, callgrind, …) use the converters:

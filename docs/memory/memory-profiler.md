@@ -11,8 +11,8 @@
 
 This page documents `inspector:memory`'s default JSON output — the original memory-profiling entry point in reli — and the `jq`-based analysis style that grew up around it. `inspector:memory` itself still works exactly as described below; what has changed since its first iteration is the *recommended* way to use its output:
 
-- For interactive exploration and prioritised findings, reach for the SQLite-based pipeline ([memory-dump.md](memory-dump.md) → [rmem-explore-and-serve.md](rmem-explore-and-serve.md) / [memory-report.md](memory-report.md)). It stops the target for much less time and ships with purpose-built analysers.
-- Read *this* page when you need to hand-query snapshots with `jq`, understand the on-disk JSON structure, integrate with other tooling that expects JSON, or maintain pipelines that predate the SQLite format.
+- For interactive exploration and prioritised findings, reach for the captured-snapshot pipeline ([memory-dump.md](memory-dump.md) → [rmem-explore-and-serve.md](rmem-explore-and-serve.md) / [memory-report.md](memory-report.md)). It stops the target for much less time and ships with purpose-built analysers, all built around the `.rmem` format.
+- Read *this* page when you need to hand-query snapshots with `jq`, understand the on-disk JSON structure, integrate with other tooling that expects JSON, or maintain pipelines that predate the `.rmem` / report workflow.
 
 The canonical invocation:
 

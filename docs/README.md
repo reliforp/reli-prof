@@ -34,7 +34,7 @@ Reli samples the call stack on a timer, so each trace reflects what the VM is do
 | I want to... | Use | More |
 |---|---|---|
 | Browse interactively in the terminal **(recommended)** | `rbt:explore trace.rbt` | [tracing/rbt-analyze-and-explore.md](tracing/rbt-analyze-and-explore.md) |
-| One-shot text report (hot frames, callers/callees, live tail) | `rbt:analyze trace.rbt` | [tracing/rbt-analyze-and-explore.md](tracing/rbt-analyze-and-explore.md) |
+| One-shot text report (hot frames, callers/callees, live tail) | `rbt:analyze < trace.rbt` | [tracing/rbt-analyze-and-explore.md](tracing/rbt-analyze-and-explore.md) |
 | Show the opcode at each frame | `rbt:analyze --with-opcode`, or press `c` in `rbt:explore` | [tracing/rbt-analyze-and-explore.md](tracing/rbt-analyze-and-explore.md) |
 | Convert to speedscope / pprof / flamegraph / callgrind / folded | `converter:<format>` | [tracing/binary-trace-format.md](tracing/binary-trace-format.md) |
 | Decode `.rbt` back to phpspy text | `converter:phpspy` | [tracing/binary-trace-format.md](tracing/binary-trace-format.md) |

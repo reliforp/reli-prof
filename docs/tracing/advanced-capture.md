@@ -19,7 +19,7 @@ it differently:
 
 - **Capturing to `.rbt`**: the opcode is recorded on every PHP frame
   unconditionally — no flag needed at capture time. Reveal it during
-  analysis with `./reli rbt:analyze --with-opcode trace.rbt`, or
+  analysis with `./reli rbt:analyze --with-opcode < trace.rbt`, or
   press `c` inside `rbt:explore` to toggle the opcode column.
 - **phpspy text output**: opt in at capture time with
   `--template=phpspy_with_opcode`:

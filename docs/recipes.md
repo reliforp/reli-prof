@@ -16,16 +16,18 @@ and stop after a minute:
 ```bash
 mkdir -p ./traces
 
-# Attach to every worker matching the regex for ~60s, one .rbt per PID
+# Attach to every worker matching the regex for ~60s.
+# The daemon writes one .rbt per *reli worker* (-T, default 8) into
+# ./traces/, named worker_<reli-worker-pid>.rbt — not one per target PID.
 sudo timeout 60 reli inspector:daemon \
     -P "^php-fpm" \
     -F rbt -o ./traces/
 
-# Browse one worker's trace
-reli rbt:explore ./traces/<pid>.rbt
-
-# Or get a one-shot text "hot frames" report
-reli rbt:analyze ./traces/<pid>.rbt
+# List what was written, then browse / report on one of them
+ls ./traces/
+# worker_12345.rbt  worker_12346.rbt  ...
+reli rbt:explore ./traces/worker_12345.rbt
+reli rbt:analyze < ./traces/worker_12345.rbt
 ```
 
 References: [tracing/capturing-traces.md](tracing/capturing-traces.md),

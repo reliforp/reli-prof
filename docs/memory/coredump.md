@@ -26,7 +26,7 @@ when live dumping cannot be used.
 For live analysis of a still-running process, use
 [`inspector:memory`](memory-profiler.md) or
 [`inspector:memory:dump`](memory-dump.md). For reuse of an analyzer
-output across tools, use the SQLite pipeline described in
+output across tools, use the captured-snapshot pipeline described in
 [memory-report.md](memory-report.md) and [rmem-explore-and-serve.md](rmem-explore-and-serve.md).
 
 ## Quick start
@@ -54,9 +54,12 @@ read `.rmem` only.
 The output of `inspector:coredump` uses the same
 [`MemoryProfilerSettings`](../../src/Inspector/Settings/MemoryProfilerSettings/MemoryProfilerSettingsFromConsoleInput.php)
 as `inspector:memory`, so every output format (`json`, `sqlite3`,
-`binary`, `mysql`, `postgresql`, `report`, `report-json`) and every
-downstream tool (`inspector:memory:report`, `inspector:memory:compare`, `rmem:explore`,
-`rmem:serve`) works the same way.
+`binary`, `mysql`, `postgresql`, `report`, `report-json`) is supported.
+Which downstream tool you can feed depends on the format:
+
+- `inspector:memory:report` and `inspector:memory:compare` accept
+  `.rmem` (binary) or SQLite (`.db` / `.sqlite`).
+- `rmem:explore`, `rmem:serve`, and `rmem:mcp` require `.rmem`.
 
 ## Arguments and options
 
