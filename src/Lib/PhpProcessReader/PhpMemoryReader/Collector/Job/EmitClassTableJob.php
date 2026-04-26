@@ -91,10 +91,14 @@ final class EmitClassTableJob implements CollectorJob
         $numUsed = $this->array->nNumUsed;
         $droppedSamples = [];
         for ($i = 0; $i < $numUsed; $i++) {
-            // Track the class name as early as we can so the silent
-            // catch below can include it in the diagnostic sample if
-            // a later step throws.
+            // Track the class name + ce address as early as we can so
+            // the silent catch below can include them in the diagnostic
+            // sample if a later step throws. The ce hex address lets
+            // the user cross-reference with /proc/<pid>/maps to see
+            // which VMA the unreadable class_entry was supposed to
+            // live in (opcache SHM /dev/zero, library .data, etc.).
             $class_name_for_diag = "<bucket #{$i}>";
+            $ce_address_for_diag = null;
             try {
                 $bucket = $ctx->dereferencer->deref($arData->indexedAt($i));
                 if ($bucket->val->isUndef()) {
@@ -105,6 +109,7 @@ final class EmitClassTableJob implements CollectorJob
                 if ($pointer === null) {
                     continue;
                 }
+                $ce_address_for_diag = $pointer->address;
                 if ($ctx->memory_locations->has($pointer->address)) {
                     $defined_classes_context->recordSkippedDedup();
                     continue;
@@ -146,10 +151,14 @@ final class EmitClassTableJob implements CollectorJob
                 // its instances in rmem:explore) is at least
                 // diagnosable.
                 $defined_classes_context->recordDroppedException();
-                if (count($droppedSamples) < 8) {
+                if (count($droppedSamples) < 32) {
+                    $ce_addr_str = $ce_address_for_diag === null
+                        ? '<no-addr>'
+                        : sprintf('0x%x', $ce_address_for_diag);
                     $droppedSamples[] = sprintf(
-                        '%s: %s: %s',
+                        '%s @ %s: %s: %s',
                         $class_name_for_diag,
+                        $ce_addr_str,
                         get_class($e),
                         $e->getMessage(),
                     );
