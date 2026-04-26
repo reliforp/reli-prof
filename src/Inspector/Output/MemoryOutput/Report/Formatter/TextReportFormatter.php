@@ -16,6 +16,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Formatter;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\ReportResult;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\FindingClusterer;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\PathFormatter;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\UniformSiblingDetector;
@@ -95,10 +96,21 @@ final class TextReportFormatter implements ReportFormatterInterface
                     self::severityOrder($a->severity) <=> self::severityOrder($b->severity)
             );
 
+            // S12: cluster findings that converge on the same target
+            // (same class, same node) so a single phenomenon doesn't
+            // dominate the section under multiple detector tags.
+            // rw3_messenger-envelopes shows the worst case: 22 findings
+            // for one envelope-accumulation, all sharing the Envelope
+            // class. After clustering they read as one representative
+            // entry plus an "Also detected as" line summarising what
+            // the other detectors saw.
+            $clusters = FindingClusterer::cluster($actionable);
+
             $lines[] = '=== Findings ===';
             $lines[] = '';
 
-            foreach ($actionable as $finding) {
+            foreach ($clusters as $cluster) {
+                $finding = $cluster['representative'];
                 $tag = strtoupper($finding->severity->value);
                 $impact = $finding->impact_bytes > 0
                     ? SizeFormatter::format($finding->impact_bytes)
@@ -132,6 +144,11 @@ final class TextReportFormatter implements ReportFormatterInterface
                     $lines[] = '    Explore: rmem:explore --node='
                         . $finding->evidence_node_ids[0]
                         . '  (' . implode(', ', $nodeHints) . ')';
+                }
+
+                if ($cluster['others'] !== []) {
+                    $lines[] = '    Also detected as: '
+                        . FindingClusterer::summariseOtherKinds($cluster['others']);
                 }
 
                 $lines[] = '';

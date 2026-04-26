@@ -763,6 +763,98 @@ class TextReportFormatterTest extends BaseTestCase
         $this->assertLessThan($min_pos, $obs_pos);
     }
 
+    public function testFindingsForSameClassClusterIntoOneRepresentative(): void
+    {
+        // S12: rw3_messenger-envelopes shape — multiple detector kinds
+        // converge on the same class. Without clustering, each kind
+        // gets its own [tag] block and the section reads as 4 separate
+        // problems. After clustering, one representative + an "Also
+        // detected as" line summarising the rest.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'expensive_property',
+                severity: FindingSeverity::High,
+                confidence: FindingConfidence::High,
+                summary: 'App\\Envelope::$messages: 50000 occurrences x 2 KB',
+                facts: ['class_name' => 'App\\Envelope', 'property_name' => 'messages'],
+                impact_bytes: 100_000_000,
+            ),
+            new Finding(
+                kind: 'empty_object',
+                severity: FindingSeverity::Low,
+                confidence: FindingConfidence::Medium,
+                summary: 'App\\Envelope: empty header object',
+                facts: ['class_name' => 'App\\Envelope'],
+                impact_bytes: 0,
+            ),
+            new Finding(
+                kind: 'structural_duplicate',
+                severity: FindingSeverity::Low,
+                confidence: FindingConfidence::Medium,
+                summary: 'App\\Envelope: 50000 instances share structure',
+                facts: ['class_name' => 'App\\Envelope'],
+                impact_bytes: 0,
+            ),
+            new Finding(
+                kind: 'ownership_pattern',
+                severity: FindingSeverity::Low,
+                confidence: FindingConfidence::High,
+                summary: 'App\\Envelope (50000 instances) owned 1:1 by Bus',
+                facts: ['owned_class' => 'App\\Envelope'],
+                impact_bytes: 0,
+            ),
+        ]);
+        $output = (new TextReportFormatter())->format($result);
+
+        $this->assertStringContainsString('=== Findings ===', $output);
+        // The High-severity expensive_property is the representative —
+        // its summary appears at the head of its block.
+        $this->assertStringContainsString(
+            'expensive_property: App\\Envelope::$messages',
+            $output,
+        );
+        // The other three kinds are summarised on a single line.
+        $this->assertStringContainsString(
+            'Also detected as: empty_object, structural_duplicate, ownership_pattern',
+            $output,
+        );
+        // The suppressed kinds must NOT appear as their own [tag] blocks
+        // — that would defeat the whole point of clustering.
+        $this->assertStringNotContainsString('empty_object: App', $output);
+        $this->assertStringNotContainsString('structural_duplicate: App', $output);
+        $this->assertStringNotContainsString('ownership_pattern: App', $output);
+    }
+
+    public function testFindingsWithDifferentTargetsDoNotCluster(): void
+    {
+        // Two separate phenomena — should produce two top-level
+        // representatives, not one cluster. Verifies the clusterer
+        // doesn't over-aggregate.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'expensive_property',
+                severity: FindingSeverity::Medium,
+                confidence: FindingConfidence::Medium,
+                summary: 'App\\Foo::$bar',
+                facts: ['class_name' => 'App\\Foo'],
+                impact_bytes: 1024,
+            ),
+            new Finding(
+                kind: 'expensive_property',
+                severity: FindingSeverity::Medium,
+                confidence: FindingConfidence::Medium,
+                summary: 'App\\Baz::$qux',
+                facts: ['class_name' => 'App\\Baz'],
+                impact_bytes: 512,
+            ),
+        ]);
+        $output = (new TextReportFormatter())->format($result);
+
+        $this->assertStringContainsString('App\\Foo::$bar', $output);
+        $this->assertStringContainsString('App\\Baz::$qux', $output);
+        $this->assertStringNotContainsString('Also detected as:', $output);
+    }
+
     public function testNonSharedInfoFindingFallsIntoMinorFindings(): void
     {
         // Generic Info-severity finding kinds (anything outside the
