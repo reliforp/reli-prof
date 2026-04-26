@@ -13,10 +13,13 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Elf\Process;
 
+use Reli\Lib\ByteStream\StringByteReader;
 use Reli\Lib\Elf\Parser\ElfParserException;
 use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
+use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolverCreator;
 use Reli\Lib\Elf\SymbolResolver\SymbolResolverCreatorInterface;
+use Reli\Lib\File\FileReaderInterface;
 use Reli\Lib\Integer\UInt64;
 use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
@@ -36,12 +39,36 @@ final class Elf64LazyParseSymbolResolver implements Elf64SymbolResolver
 
     private function loadResolver(): Elf64SymbolResolver
     {
+        // Both the linear-scan and the dynamic-symbol resolver want the
+        // libphp.so contents as a string. Reading the binary once and
+        // letting the fallback chain reuse it shaves roughly half the
+        // cold-attach disk-read cost on stripped builds (FrankenPHP), where
+        // the linear-scan path is guaranteed to fail and we always have to
+        // try the dynamic-symbol path next.
+        if ($this->symbol_resolver_creator instanceof Elf64SymbolResolverCreator) {
+            $binary = $this->readBinaryOnce();
+            if ($binary !== null) {
+                try {
+                    return $this->symbol_resolver_creator->createLinearScanResolverFromBinary($binary);
+                } catch (ElfParserException) {
+                    try {
+                        return $this->symbol_resolver_creator->createDynamicResolverFromBinary($binary);
+                    } catch (ElfParserException) {
+                        return $this->symbol_resolver_creator->createDynamicResolverFromProcessMemory(
+                            $this->memory_reader,
+                            $this->pid,
+                            $this->module_memory_map
+                        );
+                    }
+                }
+            }
+        }
         try {
             return $this->symbol_resolver_creator->createLinearScanResolverFromPath($this->path);
-        } catch (ElfParserException $e) {
+        } catch (ElfParserException) {
             try {
                 return $this->symbol_resolver_creator->createDynamicResolverFromPath($this->path);
-            } catch (ElfParserException $e) {
+            } catch (ElfParserException) {
                 return $this->symbol_resolver_creator->createDynamicResolverFromProcessMemory(
                     $this->memory_reader,
                     $this->pid,
@@ -49,6 +76,23 @@ final class Elf64LazyParseSymbolResolver implements Elf64SymbolResolver
                 );
             }
         }
+    }
+
+    private function readBinaryOnce(): ?StringByteReader
+    {
+        if (!($this->symbol_resolver_creator instanceof Elf64SymbolResolverCreator)) {
+            return null;
+        }
+        $reader = $this->symbol_resolver_creator->getFileReader();
+        try {
+            $raw = $reader->readAll($this->path);
+        } catch (\Throwable) {
+            return null;
+        }
+        if ($raw === '') {
+            return null;
+        }
+        return new StringByteReader($raw);
     }
 
     #[\Override]

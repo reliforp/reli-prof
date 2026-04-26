@@ -16,6 +16,8 @@ namespace Reli\Lib\ByteStream\IntegerByteSequence;
 use Reli\Lib\ByteStream\ByteReaderInterface;
 use Reli\Lib\Integer\UInt64;
 
+use function unpack;
+
 final class LittleEndianReader implements IntegerByteSequenceReader
 {
     #[\Override]
@@ -33,18 +35,22 @@ final class LittleEndianReader implements IntegerByteSequenceReader
     #[\Override]
     public function read32(ByteReaderInterface $data, int $offset): int
     {
-        return ($data[$offset + 3] << 24)
-            | ($data[$offset + 2] << 16)
-            | ($data[$offset + 1] << 8)
-            | $data[$offset];
+        // Hot path on cold attach (ELF symbol/hash-table parsing). Going
+        // through ArrayAccess::offsetGet four times per read32 means four
+        // PHP function calls + four ord() calls per uint32; for libphp.so
+        // with tens of thousands of symbols that adds up to millions of
+        // PHP-level calls. unpack('V', $bytes) collapses each read32 to two
+        // native calls.
+        /** @var array{1: int} $unpacked */
+        $unpacked = unpack('V', $data->createSliceAsString($offset, 4));
+        return $unpacked[1];
     }
 
     #[\Override]
     public function read64(ByteReaderInterface $data, int $offset): UInt64
     {
-        return new UInt64(
-            $this->read32($data, $offset + 4),
-            $this->read32($data, $offset),
-        );
+        /** @var array{1: int, 2: int} $unpacked */
+        $unpacked = unpack('V2', $data->createSliceAsString($offset, 8));
+        return new UInt64($unpacked[2], $unpacked[1]);
     }
 }

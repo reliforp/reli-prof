@@ -30,17 +30,35 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
     ) {
     }
 
+    public function getFileReader(): FileReaderInterface
+    {
+        return $this->file_reader;
+    }
+
     /**
      * @throws ElfParserException
      */
     #[\Override]
     public function createLinearScanResolverFromPath(string $path): Elf64LinearScanSymbolResolver
     {
-        $binary_raw = $this->file_reader->readAll($path);
-        if ($binary_raw === '') {
-            throw new ElfParserException('cannot read ELF binary');
-        }
-        $binary = new StringByteReader($binary_raw);
+        return $this->createLinearScanResolverFromBinary($this->readBinary($path));
+    }
+
+    /**
+     * @throws ElfParserException
+     */
+    #[\Override]
+    public function createDynamicResolverFromPath(string $path): Elf64DynamicSymbolResolver
+    {
+        return $this->createDynamicResolverFromBinary($this->readBinary($path));
+    }
+
+    /**
+     * @throws ElfParserException
+     */
+    public function createLinearScanResolverFromBinary(
+        StringByteReader $binary,
+    ): Elf64LinearScanSymbolResolver {
         $elf_header = $this->elf_parser->parseElfHeader($binary);
         $program_header = $this->elf_parser->parseProgramHeader($binary, $elf_header);
         $base_address = $program_header->findBaseAddress();
@@ -87,15 +105,22 @@ final class Elf64SymbolResolverCreator implements SymbolResolverCreatorInterface
     /**
      * @throws ElfParserException
      */
-    #[\Override]
-    public function createDynamicResolverFromPath(string $path): Elf64DynamicSymbolResolver
+    public function createDynamicResolverFromBinary(
+        StringByteReader $binary,
+    ): Elf64DynamicSymbolResolver {
+        return Elf64DynamicSymbolResolver::load($this->elf_parser, $binary);
+    }
+
+    /**
+     * @throws ElfParserException
+     */
+    private function readBinary(string $path): StringByteReader
     {
         $binary_raw = $this->file_reader->readAll($path);
         if ($binary_raw === '') {
             throw new ElfParserException('cannot read ELF binary');
         }
-        $binary = new StringByteReader($binary_raw);
-        return Elf64DynamicSymbolResolver::load($this->elf_parser, $binary);
+        return new StringByteReader($binary_raw);
     }
 
     /**

@@ -205,22 +205,43 @@ final class Elf64Parser
         int $number_of_symbols,
         int $entry_size
     ): Elf64SymbolTable {
+        // Cold-attach hot loop: libphp.so has tens of thousands of dynamic
+        // symbols, and the previous implementation went through six
+        // IntegerByteSequenceReader calls per entry, each of which fanned
+        // out into per-byte ArrayAccess fetches. Reading the whole symbol
+        // table into a single string up front and decoding each entry with
+        // one native unpack() per record cuts the parse cost dramatically.
+        if ($number_of_symbols === 0) {
+            return new Elf64SymbolTable();
+        }
+        $blob = $data->createSliceAsString(
+            $start_offset,
+            $number_of_symbols * $entry_size,
+        );
         $symbol_table_array = [];
+        $entry_format = 'Vst_name/Cst_info/Cst_other/vst_shndx/V2st_value/V2st_size';
         for ($i = 0; $i < $number_of_symbols; $i++) {
-            $offset = $start_offset + $i * $entry_size;
-            $st_name = $this->integer_reader->read32($data, $offset);
-            $st_info = $this->integer_reader->read8($data, $offset + 4);
-            $st_other = $this->integer_reader->read8($data, $offset + 5);
-            $st_shndx = $this->integer_reader->read16($data, $offset + 6);
-            $st_value = $this->integer_reader->read64($data, $offset + 8);
-            $st_size = $this->integer_reader->read64($data, $offset + 16);
+            $entry = substr($blob, $i * $entry_size, 24);
+            /**
+             * @var array{
+             *     st_name: int,
+             *     st_info: int,
+             *     st_other: int,
+             *     st_shndx: int,
+             *     st_value1: int,
+             *     st_value2: int,
+             *     st_size1: int,
+             *     st_size2: int,
+             * } $fields
+             */
+            $fields = unpack($entry_format, $entry);
             $symbol_table_array[] = new Elf64SymbolTableEntry(
-                $st_name,
-                $st_info,
-                $st_other,
-                $st_shndx,
-                $st_value,
-                $st_size
+                $fields['st_name'],
+                $fields['st_info'],
+                $fields['st_other'],
+                $fields['st_shndx'],
+                new UInt64($fields['st_value2'], $fields['st_value1']),
+                new UInt64($fields['st_size2'], $fields['st_size1']),
             );
         }
         return new Elf64SymbolTable(...$symbol_table_array);
@@ -246,14 +267,32 @@ final class Elf64Parser
         $bloom_size = $this->integer_reader->read32($data, $offset + 8);
         $bloom_shift = $this->integer_reader->read32($data, $offset + 12);
         $bloom_offset = $offset + 16;
+        // Decode the bloom array in one unpack instead of 2*bloom_size
+        // ArrayAccess fetches; same trick for the buckets table below.
         $bloom = [];
-        for ($i = 0; $i < $bloom_size; $i++) {
-            $bloom[] = $this->integer_reader->read64($data, $bloom_offset + $i * 8);
+        if ($bloom_size > 0) {
+            $bloom_blob = $data->createSliceAsString($bloom_offset, $bloom_size * 8);
+            $bloom_unpacked = unpack('V*', $bloom_blob);
+            if ($bloom_unpacked === false) {
+                throw new ElfParserException('failed to unpack gnu hash bloom array');
+            }
+            /** @var int[] $bloom_words */
+            $bloom_words = array_values($bloom_unpacked);
+            for ($i = 0; $i < $bloom_size; $i++) {
+                $bloom[] = new UInt64($bloom_words[$i * 2 + 1], $bloom_words[$i * 2]);
+            }
         }
         $buckets_offset = $offset + 16 + $bloom_size * 8;
         $buckets = [];
-        for ($i = 0; $i < $nbuckets; $i++) {
-            $buckets[] = $this->integer_reader->read32($data, $buckets_offset + $i * 4);
+        if ($nbuckets > 0) {
+            $buckets_blob = $data->createSliceAsString($buckets_offset, $nbuckets * 4);
+            $buckets_unpacked = unpack('V*', $buckets_blob);
+            if ($buckets_unpacked === false) {
+                throw new ElfParserException('failed to unpack gnu hash buckets');
+            }
+            /** @var int[] $bucket_words */
+            $bucket_words = array_values($buckets_unpacked);
+            $buckets = $bucket_words;
         }
 
         $chain_offset = $offset + 16 + $bloom_size * 8 + $nbuckets * 4;
