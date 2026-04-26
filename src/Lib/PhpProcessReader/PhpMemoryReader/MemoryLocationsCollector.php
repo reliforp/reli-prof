@@ -109,6 +109,16 @@ final class MemoryLocationsCollector
      *     Optional fast-path reader for dump analysis. When provided,
      *     hot collector jobs use string-buffer reads instead of FFI.
      */
+    /**
+     * @param array<int>|null $root_job_indices When provided, only the
+     *   listed root jobs (indices into the full 10-job seed list) are
+     *   pushed onto the queue. Used by the parallel orchestrator to
+     *   partition the heap walk across worker processes that share the
+     *   same address_map. null = push all 10 (the default behaviour).
+     * @param \Reli\Lib\JitAtomic\AddressMap|null $shared_address_map
+     *   When provided, replaces the CollectorContext's default address
+     *   map. Used by parallel workers to share dedup state with peers.
+     */
     public function collectAll(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings,
@@ -118,6 +128,8 @@ final class MemoryLocationsCollector
         ?int $bg_address = null,
         ?ContextTreeSink $sink = null,
         ?\Reli\Inspector\MemoryDump\FastPath\FastPathReader $fast_path = null,
+        ?array $root_job_indices = null,
+        ?\Reli\Lib\JitAtomic\AddressMap $shared_address_map = null,
     ): CollectedMemories {
         $pid = $process_specifier->pid;
         $php_version = $target_php_settings->php_version;
@@ -279,6 +291,7 @@ final class MemoryLocationsCollector
             $vm_stack_memory_locations,
             $chunk_memory_locations,
             $fast_path,
+            $shared_address_map,
         );
 
         // Create the job queue
@@ -295,16 +308,25 @@ final class MemoryLocationsCollector
         // Process "definition" branches before "usage" branches so the
         // canonical tree lives under the named globals/tables, not
         // buried inside a call frame.
-        $queue->push(new Collector\Job\EmitObjectsStoreJob($eg->objects_store));
-        $queue->push(new Collector\Job\EmitCallFramesJob($eg));
-        $queue->push(new Collector\Job\EmitModulesJob($bg_address));
-        $queue->push(new Collector\Job\EmitGlobalCallbacksJob($eg));
-        $queue->push(new Collector\Job\EmitIncludedFilesJob($eg->included_files));
-        $queue->push(new Collector\Job\EmitGlobalConstantsJob($zend_constants));
-        $queue->push(new Collector\Job\EmitFunctionTableJob($function_table));
-        $queue->push(new Collector\Job\EmitClassTableJob($class_table));
-        $queue->push(new Collector\Job\EmitGlobalVariablesJob($eg->symbol_table));
-        $queue->push(new Collector\Job\EmitInternedStringsJob($cg->interned_strings));
+        //
+        // The list is built up-front (instead of pushed inline) so that
+        // $root_job_indices can pick a subset for parallel partitioning.
+        $allRootJobs = [
+            new Collector\Job\EmitObjectsStoreJob($eg->objects_store),
+            new Collector\Job\EmitCallFramesJob($eg),
+            new Collector\Job\EmitModulesJob($bg_address),
+            new Collector\Job\EmitGlobalCallbacksJob($eg),
+            new Collector\Job\EmitIncludedFilesJob($eg->included_files),
+            new Collector\Job\EmitGlobalConstantsJob($zend_constants),
+            new Collector\Job\EmitFunctionTableJob($function_table),
+            new Collector\Job\EmitClassTableJob($class_table),
+            new Collector\Job\EmitGlobalVariablesJob($eg->symbol_table),
+            new Collector\Job\EmitInternedStringsJob($cg->interned_strings),
+        ];
+        $selectedIndices = $root_job_indices ?? array_keys($allRootJobs);
+        foreach ($selectedIndices as $idx) {
+            $queue->push($allRootJobs[$idx]);
+        }
 
         // Main iterative loop
         $drain_counter = 0;

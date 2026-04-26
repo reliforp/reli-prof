@@ -66,7 +66,7 @@ final class AtomicCodeRegion
      *       -ffreestanding -nostdlib -c codegen/loi2.c
      *   objcopy -O binary --only-section=.text loi2.o loi2.bin
      */
-    private const CODE_BYTES =
+    public const CODE_BYTES =
         "\x49\x89\xf8\x48\x89\xd7\x49\x89\xf1\x48\xba\x15"
         . "\x7c\x4a\x7f\xb9\x79\x37\x9e\x48\x0f\xaf\xd7\x48"
         . "\xc1\xea\x11\x48\x21\xf2\x48\x89\xd6\x48\xc1\xe6"
@@ -85,8 +85,8 @@ final class AtomicCodeRegion
         . "\xba\xe8\x3f\xc3\x0f\x1f\x84\x00\x00\x00\x00\x00"
         . "\xc3";
 
-    private const OFFSET_GET_OR_INSERT = 0x00;
-    private const OFFSET_LOOKUP_ONLY   = 0x70;
+    public const OFFSET_GET_OR_INSERT = 0x00;
+    public const OFFSET_LOOKUP_ONLY   = 0x70;
 
     private const PAGE_SIZE     = 4096;
     private const PROT_READ     = 1;
