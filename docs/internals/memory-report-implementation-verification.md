@@ -895,3 +895,67 @@ Possible follow-up (call it T2.7 if pursued):
 Each is a small DedupCandidatePass change. Not a regression in
 T2.6 — just a PathFormatter-vs-DedupCandidatePass label scope
 asymmetry.
+
+---
+
+## N4 verification (PR #659 — uniform-sibling row collapse)
+
+PR #659 implements N4 from the T3 set. `UniformSiblingDetector`
+detects consecutive rows in Top Arrays / Top Strings whose
+retained size matches (±5%), element_count matches, and paths
+differ by exactly one tokenized segment. Collapses to one
+representative row + an annotation listing the variations.
+
+### Status: ✅ closed
+
+| Check                                    | Result |
+|------------------------------------------|--------|
+| `+N more similar siblings` annotations   | ✅ 13 across 25 reports |
+| Top Arrays row count delta               | ✅ 162 → 135 (−27 rows, −17%) |
+| Top Strings row count delta              | ✅ 21 → 10 (−11 rows, −52%) |
+| Findings count regression                | ✅ 0 changed across 25 reports |
+| Three varying-segment patterns           | ✅ all three covered (see below) |
+
+### Three pattern shapes covered
+
+**Integer range (rw2_error-context-capture)**:
+
+    3   54.50 KB    $errors[0]->frames
+       (+7 more similar siblings, ~54.50 KB each across 8 rows;
+        indices [0..1006])
+
+**Varying class-name segment (rw_logger-stack Top Strings, Carbon docblocks)**:
+
+    1   156.16 KB   ...arbonInterface->doc_comment
+       (+3 more similar siblings, ~156.16 KB each across 4 rows;
+        varying name: class_table->Carbon\CarbonInterface->doc_comment,
+        class_table->Carbon\CarbonImmutable->doc_comment,
+        class_table->Carbon\Traits\Date->doc_comment,
+        class_table->Carbon\Carbon->doc_comment)
+
+A secondary cluster of 22.78 KB Factory + FactoryImmutable docblocks
+also collapses correctly.
+
+**Varying string keys (rw4_enum-collections, $byStatus)**:
+
+    4   256.06 KB   $byStatus['pending']
+       (+5 more similar siblings, ~256.06 KB each across 6 rows;
+        varying key: 'pending', 'processing', 'shipped', 'delivered',
+        ...+2 more)
+
+Lists string keys with truncation after 4.
+
+### Non-regressions
+
+- Sibling runs sit adjacent (tables pre-sorted by retained desc),
+  so collapse never reorders rows.
+- Sparse vs dense array tags don't merge (the kind discriminator
+  is in the extras vector gating collapse).
+- The 52% Top Strings reduction is mostly Carbon docblocks in one
+  report (4→1 + 2→1 = 5 rows saved on rw_logger-stack alone).
+
+### What's not in PR #659
+
+Cross-section coverage stays unchanged. Each section (Top Arrays,
+Top Strings) collapses within itself. There's no cross-finding
+clustering — that's S12, separate T3 item.
