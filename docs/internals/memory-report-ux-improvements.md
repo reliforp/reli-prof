@@ -144,6 +144,76 @@ changes, or MCP migration notices.
 - S12 full clustering — text formatter, but needs a new post-processing
   step that joins findings by target across kinds
 
+### Text formatter chartering (normative)
+
+Promote the descriptive observation above to a working principle for
+new findings and ongoing maintenance.
+
+**Principle**: The text output is a human-friendly rendering of the
+same `Finding.facts` that JSON exposes. It is *not* a separately
+authored narrative that summarises the analysis at lower fidelity.
+
+What this commits us to:
+
+1. **Don't invent prose that elides structured data already in
+   facts.** If a fact array carries per-step retained sizes
+   (`bottleneck_path.facts.sizes`), per-child shape (a future
+   `choke_point.facts.children_distribution`), or example lists
+   (`dedup_candidate.facts.examples`), the text formatter renders
+   them — with whitespace and labels for legibility — rather than
+   collapsing to a single summary number.
+2. **If the text formatter wants to express a derived insight,
+   either compute it from facts at render time or promote it into
+   facts.** "Promote into facts" is preferred when the insight
+   benefits JSON consumers too (MCP, `rmem:viz`, `rmem:serve`).
+3. **Categorical labels invented by the text formatter
+   (`concentrates / shared / tapers / distributed`) should be
+   derived rules over numeric facts**, not pass-level pre-classification
+   that fixes the user's interpretation. Keep `facts` numeric;
+   apply categorical reading at render time so JSON consumers can
+   apply their own.
+4. **Self-test for new text rendering**: "could a JSON consumer
+   derive this same insight from `Finding.facts`?" If no, the
+   insight is being lost on the JSON side; either promote into
+   facts or reconsider whether the prose is honest.
+
+What this does *not* commit us to:
+
+- A dumb 1:1 dump of `facts` into text. Aggregation across findings
+  (Top Arrays from many `large_array` findings, Type Breakdown from
+  `type_ranking`) is the text layer doing legitimate narrative work
+  — the principle is about per-finding rendering, not about whether
+  the text layer is allowed to group/sort/elide at the surface.
+- Removing all prose. Hypothesis lines, "Next:" suggestions,
+  category labels in shape annotations — these are the value-add
+  of the text layer. The principle restricts *what* the prose
+  replaces (don't replace numeric facts), not *whether* prose
+  appears.
+
+Practical impact on residual items:
+
+- **N17 (`bottleneck_path` size-meaning ambiguity)**: render
+  `path[i]` with `sizes[i]` per step. The "concentrates / shared /
+  tapers" framing collapses to derived shape annotation read off
+  `sizes[]` ratios at render time. Single-line summary `(186.11 MB)`
+  next to leaf path is the elision the principle forbids — drop it.
+- **N18/N19 (engine type names in user output)**: parked, but the
+  principle gives the right framing — `summary` strings carry
+  internal vocabulary because they were authored at pass time;
+  rendering from `facts` (which is clean) is the natural fix vector
+  once the glossary / role-label work lands.
+- **N28 (`expensive_property×5` ellipsis)**: expand from
+  `facts.detected_as` (or whatever the cluster fact is named)
+  rather than counting and printing a number.
+- **B8/B9 spine endpoints**: already covered by this principle,
+  partially landed via PR #644's `Spine: heaviest-child mass drops
+  after X` line. The full per-step descent is the next step in the
+  same direction.
+
+This section is normative for new findings and refactors. Existing
+findings get migrated opportunistically when their text rendering
+is touched for other reasons.
+
 ---
 
 ## Confirmed implementation bugs

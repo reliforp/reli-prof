@@ -1473,3 +1473,170 @@ makes the whole series verifiable against the 25 saved reports.
 Good luck. The 25-report corpus is the real test — each claim in
 `memory-report-ux-improvements.md` names the specific report it
 shows up in, so verification is "diff before/after on that report".
+
+---
+
+## T4 implementation notes — `bottleneck_path` text rendering should use `facts.sizes`
+
+### What's wrong
+
+Current `bottleneck_path` text output collapses three different
+sizes into a single confusing line, captured as **N17** in the
+fresh-eye review:
+
+```
+[HIGH] 186.11 MB impacted
+  bottleneck_path: $processedEnvelopes[0]->stamps['RetryStamp'] (186.11 MB)
+  Spine: heaviest-child mass drops after $processedEnvelopes[0] (185.86 MB → 4.30 KB); leaf retains only 2.10 KB
+         leaf is one of many similar-sized siblings — weight is distributed, no single deep spine
+  Heaviest retained branch — the primary chain of memory consumption
+```
+
+The reader sees three numbers (`186.11 MB`, `185.86 MB → 4.30 KB`,
+`2.10 KB`), each meaning a different thing along the path, with
+the first one rendered next to the leaf path so it reads as if
+that leaf weighs 186 MB. It actually doesn't —
+`[0]->stamps['RetryStamp']` retains 2.10 KB; the 186 MB is the
+spine total at the root. Three separate framings of "what number
+describes what node" without labels.
+
+This is the canonical case of the **text formatter chartering
+principle** added to `memory-report-ux-improvements.md`: the
+formatter is collapsing structured per-step retained data
+(`facts.sizes[]`) into a single number `(186.11 MB)` and inventing
+prose to describe the rest. The data the JSON consumer gets
+(`facts.path`, `facts.sizes`, `facts.depth`, `facts.path_types`,
+`facts.summary_path`, `facts.leaf_path`) is full-fidelity; the
+text rendering throws most of it away.
+
+### What we want to communicate
+
+`bottleneck_path` answers "where in code does the heavy region
+live, walked from a root to a leaf, with shape annotations". It is
+**not**:
+
+- "what to release for max savings" — that's `choke_point`
+- "what the heaviest single node is" — that's `dominant_class` /
+  Top Arrays
+
+Four distinct user questions ride the path:
+
+1. **Where to look?** — code path (grep target)
+2. **How big is the descent?** — total along the path
+3. **Where does mass concentrate or fan out?** — interpret descent shape
+4. **What do the leaves look like?** — leaf size + qualifier
+
+The current single-line `(186.11 MB)` next to the path conflates
+(2) into the wrong place, leaving (3) and (4) buried in the
+hypothesis text.
+
+### Proposed fix — render the descent
+
+Drop the `(X MB)` parenthetical from the summary line. Render the
+per-step descent as the primary visual element, sourced from
+`facts.path[]` + `facts.sizes[]`. Keep the existing `Spine:`
+hypothesis line since it already covers the "where mass drops"
+question (just stop pre-pending the misleading total).
+
+Two layout candidates — pick one, or pick by depth threshold:
+
+**A. Vertical (good for ≥4 segments)**:
+
+```
+bottleneck_path:
+  $processedEnvelopes                 186.11 MB
+  └ [0]                               185.86 MB
+    └ stamps                            4.30 KB
+      └ ['RetryStamp']                  2.10 KB
+  Spine: heaviest-child mass drops after $processedEnvelopes[0] (185.86 MB → 4.30 KB)
+         leaf retains only 2.10 KB; weight is distributed across siblings
+```
+
+**B. Inline with arrows (good for ≤3 segments)**:
+
+```
+bottleneck_path: $bus → listeners (11.37 MB) → ['request.completed'] (7.14 MB) → [0] (2.66 KB)
+  Spine: heaviest-child mass drops after $bus->listeners (11.37 MB → 7.14 MB)
+```
+
+Recommendation: vertical for `depth >= 4`, inline otherwise. The
+existing `summary_path` + `leaf_path` strings can stay for JSON
+consumers; the text renderer just doesn't echo them as the primary
+line.
+
+### Files to touch
+
+- `src/Inspector/Output/MemoryOutput/Report/Formatter/TextReportFormatter.php`
+  — special-case `$finding->kind === 'bottleneck_path'` rendering.
+  Read `$finding->facts['path']`, `['sizes']`, `['path_types']`,
+  walk in step, render with `SizeFormatter::format()`. The existing
+  generic finding loop renders `summary` + `hypothesis`; for
+  `bottleneck_path` it should render the descent block instead of
+  `summary`, while keeping `hypothesis` (Spine line) and `next_checks`
+  unchanged.
+- `src/Inspector/Output/MemoryOutput/Report/Pass/DrillDownPass.php`
+  — leave `summary` as-is (so JSON consumers reading
+  `Finding.summary` keep their current behaviour). The text
+  formatter just substitutes its own descent block for
+  `bottleneck_path` findings instead of echoing `summary`.
+
+### Edge cases
+
+- **Path indentation budget**: with 12-segment max paths and long
+  variable names (`$processedEnvelopes`), the right column for
+  size starts at column 35–50 depending on prefix indent. Use a
+  fixed pad-right column for the size, truncate path component
+  display if >40 chars (preserve last 37 with `...`-prefix, mirror
+  the existing class-name truncation in Top Classes).
+- **Leaf vs summary path divergence**: when `summary_path !=
+  leaf_path` (the existing summarisation case), render the descent
+  through the summary path's depth, then add a final "Leaf example:
+  ..." continuation line for the longer leaf path. Don't try to
+  show two parallel descents.
+- **`facts.sizes[0] != impact_bytes`**: shouldn't happen, but guard
+  with `$sizes[0] ?? $impact_bytes`.
+- **Identical adjacent sizes**: when `sizes[i] == sizes[i+1]` for
+  many steps (the path is a chain of single-child nodes), don't
+  collapse — the steps are individually meaningful for
+  understanding which variable name lives at each depth.
+
+### Verification plan
+
+1. Regenerate impl15 against the 25-report corpus.
+2. Diff `bottleneck_path` rendering for each report against impl14.
+3. Targeted readability check on the cases where impl14 was
+   unclear:
+   - `rw3_messenger-envelopes` — three-size confusion
+   - `rw3_doctrine-uow` — long path with `<obj-hash>` keys
+   - `rw3_closure-leak` — total-at-root vs leaf
+   - `rw_wordpress-bootstrap` — engine-state path
+   - `rw3_graphql-shape` — gentle taper case
+4. Confirm JSON output (`-f report-json`) is unchanged — the fix
+   is purely text-side.
+
+### Charter principle this exercises
+
+This is the first finding migrated to the
+`memory-report-ux-improvements.md` "Text formatter chartering"
+section's principle: render the data the JSON exposes; don't
+collapse to lower-fidelity prose. After T4 ships, the next
+candidates for the same treatment (whenever capacity permits) are:
+
+- `choke_point` per-child distribution (currently just N children
+  count; could expose top-K and fanout shape)
+- `dedup_candidate.examples[]` (currently truncated to 3)
+- `companion_cluster` per-class breakdown for clusters > 3 members
+
+Each of those is a separate, smaller follow-up; T4 establishes the
+pattern.
+
+### Out of scope for T4
+
+- N18/N19 engine-type vocabulary — parked separately. The descent
+  block will still show `ZendArray*` labels for non-class path
+  segments. That's intentional. Glossary / role labels is a
+  separate initiative.
+- Replacing `Spine:` line wording — the existing line is correct
+  once the misleading total is removed from `summary`. Leave it.
+- Cross-finding linking ("this drop coincides with choke_point
+  #260") — also a separate initiative; keep T4 single-finding.
