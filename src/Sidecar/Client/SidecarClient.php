@@ -13,8 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Sidecar\Client;
 
-use Reli\Inspector\Sidecar\SocketPathResolver;
-
 /**
  * Lightweight client for communicating with the reli sidecar daemon.
  *

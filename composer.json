@@ -31,6 +31,9 @@
     "monolog/monolog": "3.10.0",
     "webmozart/assert": "2.3.0"
   },
+  "replace": {
+    "reliforp/reli-prof-sidecar-client": "self.version"
+  },
   "require-dev": {
     "ext-posix": "*",
     "phpunit/phpunit": "13.1.7",
@@ -39,7 +42,8 @@
     "jetbrains/phpstorm-stubs": "2025.3",
     "php-coveralls/php-coveralls": "2.9.1",
     "psalm/phar": "^6.0",
-    "brianium/paratest": "^7.22"
+    "brianium/paratest": "^7.22",
+    "rector/rector": "^2.4"
   },
   "autoload": {
     "files": ["src/Lib/Defer/defer.php"],
@@ -50,7 +54,8 @@
   "autoload-dev": {
     "psr-4": {
       "Reli\\": "tests",
-      "Reli\\Command\\": "tests/Command/CommandEnumeratorTestData"
+      "Reli\\Command\\": "tests/Command/CommandEnumeratorTestData",
+      "Reli\\Tools\\Rector\\": "tools/rector"
     }
   },
   "bin": [

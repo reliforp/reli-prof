@@ -11,7 +11,7 @@
 
 declare(strict_types=1);
 
-namespace Reli\Inspector\Sidecar;
+namespace Reli\Sidecar\Client;
 
 use RuntimeException;
 

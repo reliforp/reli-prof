@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Settings\SidecarSettings;
 
 use PhpCast\NullableCast;
-use Reli\Inspector\Sidecar\SocketPathResolver;
+use Reli\Sidecar\Client\SocketPathResolver;
 use Reli\Inspector\Watch\HeapStats;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
