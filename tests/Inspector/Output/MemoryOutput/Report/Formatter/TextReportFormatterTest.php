@@ -956,15 +956,81 @@ class TextReportFormatterTest extends BaseTestCase
         $output = (new TextReportFormatter())->format($result);
 
         // Inline form on the kind line — single line, arrows between
-        // steps, first step omits its size (carried by the `[HIGH]
-        // X impacted` line above).
+        // steps. Every step renders its own size, including the first:
+        // `sizes[0]` (carried by `[HIGH] X impacted`) is the path's
+        // true root retained, not the first user-visible step's, and
+        // the two diverge whenever `global_variables` etc. hold
+        // non-trivial state outside the descent.
         $this->assertStringContainsString(
-            '    bottleneck_path: $bus → listeners',
+            '    bottleneck_path: $bus (11.37 MB) → listeners (7.14 MB)',
             $output,
         );
         $this->assertStringContainsString('→', $output);
         // No vertical heading — distinguish from the deep-path mode.
         $this->assertStringNotContainsString("    bottleneck_path:\n", $output);
+    }
+
+    public function testInlineDescentShowsFirstStepSizeWhenGapToImpact(): void
+    {
+        // Locks in the inline-mode invariant from the verification
+        // pass on the impl15 corpus: when sizes[0] (path-total
+        // retained, often `global_variables`) is bigger than the
+        // first user-visible step's retained — because other state
+        // lives in global_variables outside the chosen descent —
+        // the first step must STILL render its own size, otherwise
+        // the gap becomes unobservable in inline mode. Mirrors
+        // `rw3_reflection-heavy`: 7.21 MB impact vs 4.63 MB at
+        // `$propertyInfoCache`.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'bottleneck_path',
+                severity: FindingSeverity::High,
+                confidence: FindingConfidence::High,
+                summary: "\$propertyInfoCache['attr_key']->accessors (4.63 MB)",
+                facts: [
+                    'path' => [
+                        'global_variables', 'array_elements', 'propertyInfoCache',
+                        'array_elements', 'attr_key',
+                        'object_properties', 'accessors', 'value',
+                    ],
+                    'path_types' => [
+                        '', '', '',
+                        '', 'ArrayElementContext',
+                        '', '', '',
+                    ],
+                    // sizes[0] = 7.21 MB (global_variables total —
+                    // includes other globals besides the cache).
+                    // sizes[2] = 4.63 MB (the cache itself, first
+                    // user-visible step). The 2.58 MB gap must be
+                    // observable from the rendered output.
+                    'sizes' => [
+                        7_558_184, 7_558_184, 4_858_787,
+                        4_858_787, 4_858_787,
+                        497, 497, 497,
+                    ],
+                    'summary_path' =>
+                        "\$propertyInfoCache['attr_key']->accessors",
+                    'depth' => 8,
+                ],
+                impact_bytes: 7_558_184,
+            ),
+        ]);
+        $output = (new TextReportFormatter())->format($result);
+
+        // [HIGH] line carries sizes[0] = 7.21 MB.
+        $this->assertStringContainsString('[HIGH] 7.21 MB impacted', $output);
+        // First inline step explicitly carries its own retained
+        // (4.63 MB), distinct from impact_bytes — without this the
+        // 2.58 MB held by other globals would be invisible.
+        $this->assertStringContainsString(
+            '$propertyInfoCache (4.63 MB)',
+            $output,
+        );
+        // All three user-visible steps render with their own size.
+        $this->assertStringContainsString("['attr_key']", $output);
+        $this->assertStringContainsString('accessors', $output);
+        // 497 B = the leaf size — last step carries it inline.
+        $this->assertStringContainsString('497 B', $output);
     }
 
     public function testBottleneckPathTruncatesLongSegment(): void

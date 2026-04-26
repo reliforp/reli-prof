@@ -721,25 +721,27 @@ final class TextReportFormatter implements ReportFormatterInterface
     }
 
     /**
-     * Inline descent block: `$root → step (size) → step (size) → leaf
-     * (size)`. The first step omits its own size because the
-     * `[HIGH] X impacted` line already carries the path total; each
-     * later step's size is the residual after that transition. Used
-     * for shallow descents (≤ 3 user-visible steps) where a vertical
-     * block would feel oversized.
+     * Inline descent block: `$root (size) → step (size) → leaf (size)`.
+     * Used for shallow descents (≤ 3 user-visible steps) where a
+     * vertical block would feel oversized. Every step — including the
+     * first — renders its own size, because `sizes[0]` (carried by the
+     * `[HIGH] X impacted` line above) is the path's *true root*
+     * retained, which differs from the first user-visible step's
+     * retained whenever structural prefix nodes (`global_variables` /
+     * `array_elements`) hold non-trivial state outside the chosen
+     * descent. Concrete corpus cases — `rw3_reflection-heavy`
+     * (7.21 MB impact vs 4.63 MB at `$propertyInfoCache`),
+     * `rw4_graph-recursion` (110.97 MB vs 49.51 MB) — would otherwise
+     * leave the first step's retained unobservable.
      *
      * @param list<array{delta: string, size: int}> $steps
      */
     private static function renderDescentInline(array $steps): string
     {
         $parts = [];
-        foreach ($steps as $i => $step) {
+        foreach ($steps as $step) {
             $name = self::truncatePathSegment($step['delta']);
-            if ($i === 0) {
-                $parts[] = $name;
-            } else {
-                $parts[] = $name . ' (' . SizeFormatter::format($step['size']) . ')';
-            }
+            $parts[] = $name . ' (' . SizeFormatter::format($step['size']) . ')';
         }
         return implode(' → ', $parts);
     }
