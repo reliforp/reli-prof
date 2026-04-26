@@ -24,9 +24,13 @@ When your application hits `memory_limit`, the handler automatically requests a 
 
 ## Requirements
 
-- Same as other `inspector:*` commands (FFI, PCNTL, PHP 8.1+ for execution, PHP 7.0+ for targets)
-- `CAP_SYS_PTRACE` capability (usually root)
-- The sidecar process must share the PID namespace with target processes (important for Docker setups)
+See [Getting started § Requirements](../getting-started.md#requirements) for the
+common runtime and target requirements.
+
+Command-specific notes:
+
+- The sidecar process must share the PID namespace with target processes
+  (important for Docker / Kubernetes — see [§ Docker / Kubernetes Setup](#docker--kubernetes-setup)).
 
 ## Why Use a Sidecar?
 
@@ -47,6 +51,26 @@ The sidecar approach:
 ## Client Library
 
 The client library requires **no FFI** and has **no heavy dependencies**. It's designed to work in shutdown handlers with minimal memory overhead.
+
+### Installing the client code in your application
+
+The classes under `Reli\Sidecar\Client\` (`MemoryLimitHandler`, `SidecarClient`, `SidecarClientResponse`) must be available in the target application's autoloader. There are two practical options today:
+
+- **Composer dependency** — add `reliforp/reli-prof` as a dependency
+  in the application (`composer require reliforp/reli-prof`). The
+  client classes are pulled in along with the rest of the package.
+  The client side has no FFI / PCNTL requirement, so this works on
+  any modern PHP runtime that hosts your application.
+- **Vendoring the three files** — for applications that don't want
+  the full dependency, copy `src/Sidecar/Client/MemoryLimitHandler.php`,
+  `src/Sidecar/Client/SidecarClient.php`, and
+  `src/Sidecar/Client/SidecarClientResponse.php` into your project
+  and wire them into your autoloader (PSR-4 under the
+  `Reli\Sidecar\Client\` namespace, or any namespace as long as you
+  update the `use` statements).
+
+Either way, only the `Reli\Sidecar\Client\` namespace is needed
+application-side; the rest of reli runs in the sidecar process.
 
 ### Emergency Memory Reserve
 

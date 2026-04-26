@@ -34,7 +34,7 @@ sudo ./reli inspector:memory -p <pid> -f report
 ### Human-readable text (`report`)
 
 ```bash
-./reli inspector:memory:report snapshot.db
+./reli inspector:memory:report snapshot.rmem
 # or
 sudo ./reli inspector:memory -p <pid> -f report
 ```
@@ -138,7 +138,7 @@ Example output:
 For programmatic consumption or AI-assisted analysis:
 
 ```bash
-./reli inspector:memory:report snapshot.db -f report-json
+./reli inspector:memory:report snapshot.rmem -f report-json
 # or
 sudo ./reli inspector:memory -p <pid> -f report-json
 ```
@@ -182,14 +182,15 @@ Each finding includes machine-readable fields:
 
 ### `inspector:memory:report`
 
-Generate a report from an existing SQLite database:
+Generate a report from an existing snapshot file (binary `.rmem` or
+SQLite `.db`/`.sqlite`):
 
 ```
 Usage:
-  inspector:memory:report [options] <db-file>
+  inspector:memory:report [options] <snapshot-file>
 
 Arguments:
-  db-file                                Path to the SQLite database file
+  snapshot-file                          Path to the analysis file (binary .rmem or SQLite .db/.sqlite)
 
 Options:
   -f, --output-format=FORMAT             Output format: report (text) or report-json [default: report]
@@ -337,7 +338,7 @@ Memory usage for graph load: ~300 MB for 1M edges, ~2 GB for 6M edges.
 
 ## Tips
 
-- **Start with the SQLite workflow**: Capture once, analyze many times. The `inspector:memory:report` command is fast on an existing database.
+- **Start with the captured-snapshot workflow**: Capture once, analyze many times. The `inspector:memory:report` command is fast on an existing `.rmem` (or `.db`) file.
 - **Use `--memory-limit=2G`** for large snapshots instead of `php -d memory_limit=2G`.
 - **Use JSON for CI/automation**: The `report-json` format is designed for programmatic consumption — pipe it to `jq`, feed it to an LLM, or integrate into monitoring.
 - **Findings are sorted**: HIGH severity and largest impact appear first. Focus on the top findings.
@@ -350,23 +351,25 @@ Memory usage for graph load: ~300 MB for 1M edges, ~2 GB for 6M edges.
 
 ## Comparing Two Snapshots
 
-The `inspector:memory:compare` command diffs two SQLite memory snapshot databases and highlights what changed.
+The `inspector:memory:compare` command diffs two memory snapshot files
+(binary `.rmem` or SQLite `.db`/`.sqlite`) and highlights what changed.
 
 ### Quick Start
 
 ```bash
-# Capture baseline
-sudo ./reli inspector:memory -p <pid> -f sqlite3 -o before.db
+# Capture baseline (.rmem is the fastest format and is what every analyser reads natively)
+sudo ./reli inspector:memory -p <pid> -f binary -o before.rmem
 
 # ... deploy code change, trigger workload, etc.
 
 # Capture target
-sudo ./reli inspector:memory -p <pid> -f sqlite3 -o after.db
+sudo ./reli inspector:memory -p <pid> -f binary -o after.rmem
 
 # Compare two files
-./reli inspector:memory:compare before.db after.db
+./reli inspector:memory:compare before.rmem after.rmem
 
-# Compare run IDs within the same file
+# Compare run IDs within the same file (SQLite only — multi-run support
+# requires the relational schema)
 ./reli inspector:memory:compare snapshot.db --run-id-baseline 1 --run-id-target 2
 ```
 
@@ -431,9 +434,9 @@ Usage:
   inspector:memory:compare [options] <baseline> [<target>]
 
 Arguments:
-  baseline                               Path to the baseline SQLite database file
-  target                                 Path to the target SQLite database file
-                                         (omit to compare run IDs within the same file)
+  baseline                               Path to the baseline snapshot (binary .rmem or SQLite .db/.sqlite)
+  target                                 Path to the target snapshot (binary .rmem or SQLite .db/.sqlite)
+                                         (omit to compare run IDs within the same SQLite file)
 
 Options:
   -f, --output-format=FORMAT             Output format: report (text) or report-json [default: report]
@@ -449,7 +452,7 @@ Options:
 ### JSON Output
 
 ```bash
-./reli inspector:memory:compare before.db after.db -f report-json -o diff.json
+./reli inspector:memory:compare before.rmem after.rmem -f report-json -o diff.json
 ```
 
 ```json
@@ -485,7 +488,7 @@ Use `--threshold` to suppress small changes (useful for noisy environments):
 
 ```bash
 # Only show changes >= 5%
-./reli inspector:memory:compare before.db after.db --threshold 5
+./reli inspector:memory:compare before.rmem after.rmem --threshold 5
 ```
 
 This filters summary metric deltas, type breakdown deltas, and class memory changes below the given percentage.

@@ -27,34 +27,15 @@ You can use this mode to analyze the memory usage of the target process — for 
 The functionality of this mode is similar to [php-meminfo](https://github.com/BitOne/php-meminfo), but works in the [phpspy](https://github.com/adsr/phpspy)-ish way: it captures the memory contents of the target from outside the process, analyses them with knowledge of the PHP VM's internal structures, then dumps the whole analysis. Target programs don't need any modifications and don't need to load a specific extension.
 
 # Requirements
-- FFI and PCNTL
-- PHP 8.1 or above for execution
-- PHP 7.0+ for targets
-- Only NTS targets are tested currently
-- The capability to stab the target process with ptrace (CAP_SYS_PTRACE)
-  - Usually running as root is enough
+
+See [Getting started § Requirements](../getting-started.md#requirements) for the
+canonical runtime / target requirements (PHP version, NTS/ZTS support,
+platform notes). No command-specific overrides apply to `inspector:memory`.
 
 # Installation
-## From Composer
-```bash
-composer create-project reliforp/reli-prof
-cd reli-prof
-./reli
-```
 
-## From Git
-```bash
-git clone git@github.com:reliforp/reli-prof.git
-cd reli-prof
-composer install
-./reli
-```
-
-## From Docker
-```bash
-docker pull reliforp/reli-prof
-docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof
-```
+See [Getting started § Install](../getting-started.md#1-install) for the
+recommended install paths (Docker wrapper, Composer, Git).
 
 # Options
 ```bash

@@ -36,14 +36,20 @@ output across tools, use the SQLite pipeline described in
 $ sudo gcore -o /tmp/myapp 12345
 # → /tmp/myapp.12345
 
-# Run the memory analyzer against the core file
+# Run the memory analyzer against the core file (.rmem is the fastest
+# format and is what every analyser reads natively)
 $ php ./reli inspector:coredump /tmp/myapp.12345 --pid 12345 \
-    -f sqlite3 -o snapshot.db
+    -f binary -o snapshot.rmem
 
 # Feed the output into the normal analysis pipeline
-$ php ./reli inspector:memory:report snapshot.db
-$ php ./reli rmem:explore snapshot.db
+$ php ./reli inspector:memory:report snapshot.rmem
+$ php ./reli rmem:explore snapshot.rmem
 ```
+
+`-f sqlite3` is also supported if you want to query the same snapshot
+with SQL tools — `inspector:memory:report` / `inspector:memory:compare`
+accept either format. `rmem:explore`, `rmem:serve`, and `rmem:mcp`
+read `.rmem` only.
 
 The output of `inspector:coredump` uses the same
 [`MemoryProfilerSettings`](../../src/Inspector/Settings/MemoryProfilerSettings/MemoryProfilerSettingsFromConsoleInput.php)
@@ -158,6 +164,6 @@ See `man 5 core` for the full bitmask.
 - [`inspector:memory:report`](memory-report.md) — generate an
   automated analysis report from the output.
 - [`rmem:explore`](rmem-explore-and-serve.md) — interactive
-  TUI over the SQLite output.
+  TUI over the `.rmem` output.
 - [`gcore` comparison](../internals/memory-dump-vs-gcore.md) — internals
   note on trade-offs between reli's native dump and ELF core files.

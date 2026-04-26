@@ -111,12 +111,16 @@ composer install
 ./reli
 ```
 
+> The rest of this page uses **`reli`** as the command name, matching
+> the Docker-wrapper install above. On a native checkout (Composer or
+> Git) the equivalent command is `./reli` — substitute as you read.
+
 ## 2. Smoke test
 
 Trace a throwaway PHP command to confirm reli can see inside the VM:
 
 ```bash
-$ ./reli inspector:trace -- php -r "for(;;){usleep(10000);}"
+$ reli inspector:trace -- php -r "for(;;){usleep(10000);}"
 0 usleep <internal>:-1
 1 <main> Command line code:1
 
@@ -162,7 +166,7 @@ use to run reli.
 Drop into the interactive TUI:
 
 ```bash
-./reli rbt:explore trace.rbt
+reli rbt:explore trace.rbt
 ```
 
 From here you can:
@@ -182,16 +186,17 @@ To feed the trace into an existing visualiser (speedscope,
 Flamegraph SVG, pprof, callgrind, …) use the converters:
 
 ```bash
-./reli converter:speedscope <trace.rbt >profile.speedscope.json
-./reli converter:flamegraph <trace.rbt >flame.svg
+reli converter:speedscope <trace.rbt >profile.speedscope.json
+reli converter:flamegraph <trace.rbt >flame.svg
 ```
 
 Full list and `.rbt` format details: [tracing/binary-trace-format.md](tracing/binary-trace-format.md).
 
 ## 5. Where to go next
 
-The [documentation index](README.md) maps tasks to commands and
-docs. Suggested entry points:
+For copy-paste shortcuts on the most common tasks, jump to
+[recipes.md](recipes.md). For the full tasks-to-commands map, see the
+[documentation index](README.md). Suggested entry points:
 
 - **Memory leaks / heap analysis**: dump now, analyse later
   → [memory/memory-dump.md](memory/memory-dump.md) →

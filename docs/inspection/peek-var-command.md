@@ -35,11 +35,8 @@ reli inspector:peek-var -p <pid> --var='global::$counter' --format=json
 
 ## Requirements
 
-Same as other `inspector:*` commands:
-
-- PHP 8.1+ (for execution), targets PHP 7.0+
-- FFI extension
-- `CAP_SYS_PTRACE` capability (usually root)
+See [Getting started § Requirements](../getting-started.md#requirements) for the
+common runtime and target requirements. No command-specific overrides apply.
 
 ## Variable Specification
 

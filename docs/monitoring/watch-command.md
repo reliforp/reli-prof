@@ -22,9 +22,12 @@ reli inspector:watch -p <pid> --memory-usage=128M --oneshot=3
 
 ## Requirements
 
-- Same as other `inspector:*` commands (FFI, PCNTL, PHP 8.1+ for execution, PHP 7.0+ for targets)
-- `CAP_SYS_PTRACE` capability (usually root)
-- For `--target-regex` (daemon mode): same as `inspector:daemon`
+See [Getting started § Requirements](../getting-started.md#requirements) for the
+common runtime and target requirements.
+
+Command-specific notes:
+
+- For `--target-regex` (daemon mode): same as `inspector:daemon`.
 
 ## Triggers
 
