@@ -57,6 +57,17 @@ jobs:
       - name: Build downgraded artifact
         run: tools/build-sidecar-client.sh
 
+      # Composer 1 was shut down on Packagist (2025-09-01) and Composer 2
+      # requires PHP >= 7.2.5, so we cannot run `composer install` on the
+      # PHP 7.0 verifier. Pre-populate the artifact's vendor/ here on
+      # PHP 8.5 with --prefer-lowest, which selects PHPUnit 6.5 (the only
+      # phpunit version in our constraint range that runs on PHP 7.0).
+      # --ignore-platform-req=php lets the resolver target our PHP 7.0
+      # floor while running on the build host's 8.5.
+      - name: Pre-install verification dependencies into artifact
+        working-directory: build/sidecar-client
+        run: composer update --prefer-lowest --no-interaction --no-progress --ignore-platform-req=php
+
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
@@ -80,16 +91,11 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '7.0'
-          tools: composer:v1
           coverage: none
 
       - name: Lint downgraded files
         working-directory: build/sidecar-client
         run: find . -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n 1 php -l
-
-      - name: Install verification dependencies
-        working-directory: build/sidecar-client
-        run: composer install --no-interaction --no-progress
 
       - name: Run downgraded test suite (phpunit 6.5 on PHP 7.0)
         working-directory: build/sidecar-client
