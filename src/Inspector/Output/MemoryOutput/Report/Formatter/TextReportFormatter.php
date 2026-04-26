@@ -18,6 +18,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\ReportResult;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\PathFormatter;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\UniformSiblingDetector;
 
 final class TextReportFormatter implements ReportFormatterInterface
 {
@@ -211,8 +212,37 @@ final class TextReportFormatter implements ReportFormatterInterface
             $lines[] = sprintf('  %3s  %12s %12s %8s  %8s  %s', '#', 'Retained', 'Table', 'Elems', 'Node', 'Path');
             $lines[] = '  ' . str_repeat('-', 90);
 
-            $array_rank = 0;
+            // Detect runs of "+N similar siblings" so the table doesn't
+            // dump 25 near-identical $rows[0]…$rows[N] rows when one
+            // representative line + a count is what a reader actually
+            // wants. N4. Run only across same-kind findings — collapsing a
+            // dense array into a sparse-array's run would lose the
+            // [sparse] tag.
+            $sizes = [];
+            $extras = [];
+            $paths = [];
             foreach ($top_arrays as $finding) {
+                $facts = $finding->facts;
+                /** @var int $r */
+                $r = $facts['retained_size'] ?? $facts['table_size'] ?? 0;
+                /** @var int $e */
+                $e = $facts['element_count'] ?? $facts['capacity'] ?? 0;
+                /** @var string $p */
+                $p = $facts['owner_path'] ?? '';
+                $sizes[] = $r;
+                // Encode kind into the extras vector so dense vs sparse
+                // never collapse together (different table-density tags
+                // on the same row would confuse a reader).
+                $extras[] = $e * 2 + ($finding->kind === 'sparse_array' ? 1 : 0);
+                $paths[] = $p;
+            }
+            $decisions = UniformSiblingDetector::findRuns($sizes, $extras, $paths);
+
+            $array_rank = 0;
+            foreach ($top_arrays as $i => $finding) {
+                if ($decisions[$i]['kind'] === 'member') {
+                    continue;
+                }
                 $facts = $finding->facts;
                 /** @var int $retained */
                 $retained = $facts['retained_size'] ?? $facts['table_size'] ?? 0;
@@ -236,6 +266,9 @@ final class TextReportFormatter implements ReportFormatterInterface
                     $path ?: '(root)',
                     $tag,
                 );
+                if ($decisions[$i]['kind'] === 'head' && isset($decisions[$i]['annotation'])) {
+                    $lines[] = '       ' . $decisions[$i]['annotation'];
+                }
             }
             $lines[] = '';
         }
@@ -247,8 +280,30 @@ final class TextReportFormatter implements ReportFormatterInterface
             $lines[] = sprintf('  %3s  %12s  %8s  %-30s  %s', '#', 'Size', 'Node', 'Path', 'Preview');
             $lines[] = '  ' . str_repeat('-', 100);
 
-            $string_rank = 0;
+            // Same uniform-sibling collapse as Top Arrays. Run detection
+            // uses the *full* path (not the truncated `$display_path`) so
+            // segment differences past the leading `...` aren't masked.
+            // Strings have no element_count, so pass 0 uniformly. N4.
+            $sizes = [];
+            $extras = [];
+            $paths = [];
             foreach ($top_strings as $finding) {
+                $facts = $finding->facts;
+                /** @var int $s */
+                $s = $facts['size'] ?? 0;
+                /** @var string $p */
+                $p = $facts['owner_path'] ?? '';
+                $sizes[] = $s;
+                $extras[] = 0;
+                $paths[] = $p;
+            }
+            $decisions = UniformSiblingDetector::findRuns($sizes, $extras, $paths);
+
+            $string_rank = 0;
+            foreach ($top_strings as $i => $finding) {
+                if ($decisions[$i]['kind'] === 'member') {
+                    continue;
+                }
                 $facts = $finding->facts;
                 /** @var int $size */
                 $size = $facts['size'] ?? 0;
@@ -282,6 +337,9 @@ final class TextReportFormatter implements ReportFormatterInterface
                     $display_path ?: '(root)',
                     $display_preview ?: '(binary)',
                 );
+                if ($decisions[$i]['kind'] === 'head' && isset($decisions[$i]['annotation'])) {
+                    $lines[] = '       ' . $decisions[$i]['annotation'];
+                }
             }
             $lines[] = '';
         }
