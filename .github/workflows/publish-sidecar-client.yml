@@ -1,0 +1,96 @@
+name: publish-sidecar-client
+
+on:
+  push:
+    branches:
+      - '[0-9]+.[0-9]+.x'
+    paths:
+      - 'src/Sidecar/Client/**'
+      - 'tests/Sidecar/Client/**'
+      - 'rector-sidecar-client.php'
+      - 'tools/rector/**'
+      - 'tools/build-sidecar-client.sh'
+      - '.github/workflows/publish-sidecar-client.yml'
+      - 'composer.json'
+      - 'composer.lock'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+# We use an SSH deploy key for the mirror; no GITHUB_TOKEN write needed here.
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to reli-prof-sidecar-client mirror
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.5
+          coverage: none
+
+      - name: Install monorepo dependencies (Rector + custom rules)
+        run: composer install --prefer-dist --no-progress --no-suggest
+
+      - name: Build downgraded artifact
+        run: tools/build-sidecar-client.sh
+
+      - name: Configure SSH for mirror push
+        env:
+          DEPLOY_KEY: ${{ secrets.SIDECAR_CLIENT_MIRROR_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          git config --global user.name "reli-prof publish bot"
+          git config --global user.email "noreply@reli-prof.dev"
+
+      - name: Clone mirror repository
+        run: git clone git@github.com:reliforp/reli-prof-sidecar-client.git mirror
+
+      - name: Sync artifact into mirror (preserve .git and README.md)
+        run: |
+          cd mirror
+          # Wipe everything except .git/ and README.md (the mirror's
+          # README is hand-maintained on the mirror side and explains
+          # that this is a generated repository).
+          find . -mindepth 1 -maxdepth 1 \
+            -not -name '.git' \
+            -not -name 'README.md' \
+            -exec rm -rf {} +
+          # Copy build artifact contents (the trailing /. copies the
+          # contents of the directory, not the directory itself).
+          cp -a ../build/sidecar-client/. .
+
+      - name: Commit and push to mirror main
+        env:
+          UPSTREAM_SHA: ${{ github.sha }}
+          UPSTREAM_REF: ${{ github.ref_name }}
+        run: |
+          cd mirror
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to publish; mirror is already up to date."
+            exit 0
+          fi
+          git commit -m "Sync from upstream ${UPSTREAM_REF}@${UPSTREAM_SHA:0:12}
+
+          Source:   ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}
+          Workflow: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          git push origin main
+
+      - name: Tag mirror on upstream tag push
+        if: github.ref_type == 'tag'
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          cd mirror
+          git tag "$TAG_NAME"
+          git push origin "$TAG_NAME"
