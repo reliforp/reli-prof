@@ -34,10 +34,34 @@ final class Elf64LazyParseSymbolResolver implements Elf64SymbolResolver
         private int $pid,
         private ProcessModuleMemoryMap $module_memory_map,
         private SymbolResolverCreatorInterface $symbol_resolver_creator,
+        private ?PerBinarySymbolCacheRetriever $shared_resolver_cache = null,
+        private ?BinaryFingerprint $fingerprint = null,
     ) {
     }
 
     private function loadResolver(): Elf64SymbolResolver
+    {
+        // Cold attach often constructs several Elf64LazyParseSymbolResolver
+        // instances against the same libphp.so (PhpGlobalsFinder,
+        // resolveTlsBlock, TsrmGlobalsResolver each create their own symbol
+        // reader), and each instance would otherwise re-read and re-parse
+        // the 19 MB binary. The shared resolver cache, keyed on the binary
+        // fingerprint, lets the second-and-later instances skip straight
+        // to the parsed inner resolver.
+        if ($this->shared_resolver_cache !== null && $this->fingerprint !== null) {
+            $shared = $this->shared_resolver_cache->getResolver($this->fingerprint);
+            if ($shared !== null) {
+                return $shared;
+            }
+        }
+        $resolver = $this->loadResolverUncached();
+        if ($this->shared_resolver_cache !== null && $this->fingerprint !== null) {
+            $this->shared_resolver_cache->setResolver($this->fingerprint, $resolver);
+        }
+        return $resolver;
+    }
+
+    private function loadResolverUncached(): Elf64SymbolResolver
     {
         // Both the linear-scan and the dynamic-symbol resolver want the
         // libphp.so contents as a string. Reading the binary once and

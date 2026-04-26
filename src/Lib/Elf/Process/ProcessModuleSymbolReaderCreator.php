@@ -69,6 +69,8 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
                 $pid,
                 $module_memory_map,
                 $this->symbol_resolver_creator,
+                $this->per_binary_symbol_cache_retriever,
+                $binary_fingerprint,
             ),
             $this->per_binary_symbol_cache_retriever->get($binary_fingerprint),
             $this->binary_analysis_cache,

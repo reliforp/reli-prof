@@ -26,9 +26,33 @@ final class NativeFileReader implements FileReaderInterface
         /** @var FFI\Libc\libc_file_ffi */
         $this->ffi = FFI::cdef('
             int open(const char *pathname, int flags);
-            ssize_t read(int fd, void *buf, size_t count);
+            long read(int fd, void *buf, unsigned long count);
+            long pread(int fd, void *buf, unsigned long count, long offset);
             int close(int fd);
         ');
+    }
+
+    #[\Override]
+    public function readSlice(string $path, int $offset, int $size): string
+    {
+        if ($size <= 0) {
+            return '';
+        }
+        $fd = $this->ffi->open($path, 0);
+        if ($fd < 0) {
+            return '';
+        }
+        try {
+            $buffer = $this->ffi->new("unsigned char[{$size}]")
+                ?? throw new CannotAllocateBufferException('cannot allocate buffer');
+            $read_len = $this->ffi->pread($fd, $buffer, $size, $offset);
+            if ($read_len <= 0) {
+                return '';
+            }
+            return FFI::string($buffer, $read_len);
+        } finally {
+            $this->ffi->close($fd);
+        }
     }
 
     #[\Override]
