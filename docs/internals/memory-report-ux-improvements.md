@@ -1324,21 +1324,49 @@ Anything above 100 KB is Low. In `rw3_doctrine-uow`:
     Example: "Product description text. Product description text. Produ..."
 
 30,000 identical 180-byte strings — interning them would save ~5 MB. On
-a 148 MB heap that's ~3.5% — small, but a real actionable lever. Low is
-too low; more importantly, the "100% identical content" sub-case is
-*definitely* actionable (unlike the "same size but different content"
-sub-case) and should be separated.
+a 148 MB heap that's ~3.5%. The current rule has two separate problems:
 
-Two tiers instead of one:
+1. **Threshold is absolute bytes, not proportional.** Other size-based
+   passes (`choke_point`, `dominant_class`, `dominant_type`) all key
+   severity off `% of heap`, so a 5 MB dedup_candidate ranks the same
+   on a 50 MB heap (10%, meaningful) and a 5 GB heap (0.1%, noise).
+   Aligning with the proportional scale used elsewhere lets
+   "size-relative-to-script" drive attention, which is what helps
+   the user understand where their memory is actually concentrated.
+2. **Severity ignores the identical-vs-same-size sub-case distinction.**
+   "100% identical content" is *definitely* actionable; "same size,
+   different content" is a weaker, statistical hint that may not
+   actually be dedup-able even if the bytes are big.
 
-- `content_identical` sub-case: severity scales with `impact_bytes`
-  (≥ 1 MB → Medium; ≥ 10 MB → High).
-- `same_size_different_content` sub-case: stays Low/Info — weaker
-  signal, may not actually be dedup-able.
+Refined proposal — proportional, with confidence-aware tiering:
 
-The pass already distinguishes the two cases in its hypothesis text
+- **High-confidence sub-case** (`content_identical`, and possibly
+  the "objects already shared via reference" variant) — apply the
+  same proportional scale used by `choke_point`:
+  - `≥ 30%` of heap → High
+  - `≥ 10%` → Medium
+  - `≥ 1%` → Low
+  - otherwise → Info
+- **Low-confidence sub-case** (`same_size_different_content`) — cap
+  at Low regardless of impact, since the savings figure is an upper
+  bound that may not materialise.
+
+The pass already distinguishes the sub-cases in its hypothesis text
 (`3000/3000 copies have identical content (100%)` vs `Same size but
-different content`); the severity just doesn't pick up on it.
+different content`); the severity logic just doesn't pick up on it.
+
+Why proportional is the right axis: severity is meant to surface
+"where to look first" within a single report. Absolute thresholds
+give the same `Low` to a 5 MB dedup on a 50 MB heap and on a 5 GB
+heap, even though the first is 10% of the script's footprint and
+the second is rounding error. Proportional thresholds make the
+ranking respect the script's own scale, which is the lens the user
+is actually reasoning in.
+
+(Out of scope here: whether `dedup_candidate` should also cluster
+with `content_identical` sub-cases for `expensive_property` /
+`structural_duplicate` to avoid triple-listing the same root cause —
+covered by S12 / "problem entity" clustering above.)
 
 ### N6. Closure-capture leak shape is detectable from existing findings
 
