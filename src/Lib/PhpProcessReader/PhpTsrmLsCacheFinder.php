@@ -95,13 +95,14 @@ final class PhpTsrmLsCacheFinder
     public function findByBruteForcing(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
-    ): ?int {
+    ): TsrmLsCacheBruteForceResult {
         $tls_block = $this->resolveTlsBlock(
             $process_specifier,
             $target_php_settings,
         );
         if (is_null($tls_block)) {
-            return null;
+            // No PT_TLS in the ELF — this is a binary-level fact (NTS build).
+            return new TsrmLsCacheBruteForceResult(null, false);
         }
         [$tls_block_address, $tls_block_size, $php_module_memory_map] = $tls_block;
         $fingerprint = $this->binary_fingerprint_creator->createFromProcessModuleMemoryMap(
@@ -120,7 +121,7 @@ final class PhpTsrmLsCacheFinder
             )->toInt();
             assert($target_php_settings->isDecided());
             if ($this->validateCandidate($process_specifier, $target_php_settings, $tsrm_ls_cache_value)) {
-                return $tsrm_ls_cache_value;
+                return new TsrmLsCacheBruteForceResult($tsrm_ls_cache_value, true);
             }
         }
 
@@ -141,10 +142,12 @@ final class PhpTsrmLsCacheFinder
                     'tls_offset',
                     ['offset' => $current - $tls_block_address],
                 );
-                return $tsrm_ls_cache_address_candidate;
+                return new TsrmLsCacheBruteForceResult($tsrm_ls_cache_address_candidate, true);
             }
         }
-        return null;
+        // PT_TLS exists but no slot validated as TSRM_LS_CACHE — likely an idle
+        // ZTS worker thread whose slot is still zero. Per-thread, not per-binary.
+        return new TsrmLsCacheBruteForceResult(null, true);
     }
 
     /** @param TargetPhpSettings<value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */

@@ -44,12 +44,14 @@ The same flags work with `inspector:top` for a live view and with
 ## Attach to a single worker
 
 `inspector:trace -p <pid>` expects the PID/TID of a thread that
-already carries PHP executor globals. For FrankenPHP, pass the
-worker TID, not the Caddy parent PID:
+already carries PHP executor globals. For FrankenPHP, pass a
+**hex-named** worker TID — not the Caddy parent PID, and not
+`php-main`:
 
 ```bash
-# List PHP worker threads by name
-ps -L -p "$(pgrep -o frankenphp)" -o tid,comm | awk '$2 ~ /^php-/'
+# List PHP worker threads by name (hex-only — see note below)
+ps -L -p "$(pgrep -o frankenphp)" -o tid,comm |
+    awk '$2 ~ /^php-[0-9a-f]+$/'
 #   12345 php-0
 #   12346 php-1
 
@@ -57,6 +59,32 @@ sudo php ./reli inspector:trace -p 12345 \
     --php-regex='.*/libphp\.so$' \
     --libpthread-regex='.*/libc\.so.*'
 ```
+
+A few realities on FrankenPHP that the snippet above is built around:
+
+- **Skip `php-main`.** It also matches `^php-` but is the
+  bootstrap thread — its executor globals do not point at a
+  populated request heap, so memory commands fail with
+  "failed to find ZendMM main chunk". `^php-[0-9a-f]+$` excludes
+  it.
+- **Cold-attach takes time.** On the first attach to a given
+  `libphp.so`, reli scans the TLS block byte-by-byte to locate
+  `_tsrm_ls_cache`. Expect tens of seconds (5–30 s, occasionally
+  more under daemon mode where multiple workers race) before the
+  first sample appears. Subsequent attaches reuse the cached TLS
+  offset and start almost immediately, so don't time-out the very
+  first run aggressively.
+- **Some hex-named workers fail brute-forcing.** A worker that has
+  not yet served a request leaves `_tsrm_ls_cache` zeroed, so the
+  search returns nothing and the call dies with `global symbol
+  not found executor_globals`. Pick a different worker (or push
+  some traffic through and retry) — once any one worker succeeds,
+  the cached offset works for every other thread of the same
+  process. `inspector:daemon` and `inspector:trace` retry
+  internally; `inspector:memory:dump` and friends do not, so cold
+  failures are most visible there. If you get unlucky on the
+  first thread and the negative result was cached, run
+  `php ./reli cache:clear` and try a different TID.
 
 `--target-thread-regex` is not honoured by `inspector:trace`: the
 single-process mode samples exactly the TID you pass in, so choose
@@ -84,17 +112,28 @@ analysis cache — but:
 
 `inspector:memory`, `inspector:memory:dump`, `inspector:sidecar`,
 and `inspector:watch -p <pid>` also need a PHP worker TID, not the
-parent PID:
+parent PID. Use the hex-only filter to skip `php-main` (see the
+[Attach to a single worker](#attach-to-a-single-worker) section
+for why):
 
 ```bash
 sudo php ./reli inspector:memory:dump -p "$(
     ps -L -p "$(pgrep -o frankenphp)" -o tid=,comm= |
-        awk '$2 ~ /^php-/ {print $1; exit}'
+        awk '$2 ~ /^php-[0-9a-f]+$/ {print $1; exit}'
 )" \
     --php-regex='.*/libphp\.so$' \
     --libpthread-regex='.*/libc\.so.*' \
-    -o ./frankenphp.rmem
+    -o ./frankenphp.relimem
 ```
+
+Unlike `inspector:trace`, `inspector:memory:dump` does **not**
+retry TLS resolution. If the chosen worker happens to be one that
+never handled a request, the dump fails with `global symbol not
+found executor_globals` and the negative result is cached for the
+binary. Recovery: `php ./reli cache:clear`, send some traffic
+through the server, and rerun against a different TID — or run a
+short `inspector:trace` / `inspector:daemon` first to populate the
+TLS-offset cache, after which any worker TID works.
 
 ## Caveats
 

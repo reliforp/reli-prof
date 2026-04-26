@@ -71,17 +71,33 @@ class PhpGlobalsFinder
         $cached = $this->binary_analysis_cache->get($fingerprint, 'tsrm_ls_cache');
         if ($cached !== null && isset($cached['has_tsrm_ls_cache'])) {
             if ($cached['has_tsrm_ls_cache'] === false) {
-                $this->tsrm_ls_cache_cache[$process_specifier->pid] = null;
-                return null;
-            }
-            $result = $this->tryResolveTsrmLsCacheFromCachedOffset(
-                $process_specifier,
-                $target_php_settings,
-                $fingerprint,
-            );
-            if ($result !== null) {
-                $this->tsrm_ls_cache_cache[$process_specifier->pid] = $result;
-                return $result;
+                // A negative cache used to be persisted whenever the very
+                // first brute-force attempt returned null, even if the failure
+                // was a per-thread one (e.g. an idle FrankenPHP worker whose
+                // TLS slot was still zero). That made every subsequent attach
+                // to the same binary fail with a misleading "executor_globals
+                // not found". Re-verify the negative entry by checking PT_TLS
+                // in the ELF: if the binary actually has a TLS segment it is
+                // ZTS and the negative is stale, so drop it and fall through.
+                $tls_block = $this->tsrm_ls_cache_finder->resolveTlsBlock(
+                    $process_specifier,
+                    $target_php_settings,
+                );
+                if ($tls_block === null) {
+                    $this->tsrm_ls_cache_cache[$process_specifier->pid] = null;
+                    return null;
+                }
+                $this->binary_analysis_cache->set($fingerprint, 'tsrm_ls_cache', []);
+            } else {
+                $result = $this->tryResolveTsrmLsCacheFromCachedOffset(
+                    $process_specifier,
+                    $target_php_settings,
+                    $fingerprint,
+                );
+                if ($result !== null) {
+                    $this->tsrm_ls_cache_cache[$process_specifier->pid] = $result;
+                    return $result;
+                }
             }
         }
 
@@ -103,18 +119,26 @@ class PhpGlobalsFinder
             return $tsrm_ls_cache_address;
         }
         assert($target_php_settings->isDecided());
-        $result = $this->tsrm_ls_cache_finder->findByBruteForcing($process_specifier, $target_php_settings);
-        if ($result === null) {
-            $this->binary_analysis_cache->set($fingerprint, 'tsrm_ls_cache', [
-                'has_tsrm_ls_cache' => false,
-            ]);
-        } else {
+        $brute_force = $this->tsrm_ls_cache_finder->findByBruteForcing(
+            $process_specifier,
+            $target_php_settings,
+        );
+        if ($brute_force->address !== null) {
             $this->binary_analysis_cache->set($fingerprint, 'tsrm_ls_cache', [
                 'has_tsrm_ls_cache' => true,
             ]);
+        } elseif (!$brute_force->has_tls_segment) {
+            // No PT_TLS in the ELF — confirmed NTS build, persist the negative.
+            $this->binary_analysis_cache->set($fingerprint, 'tsrm_ls_cache', [
+                'has_tsrm_ls_cache' => false,
+            ]);
         }
-        $this->tsrm_ls_cache_cache[$process_specifier->pid] = $result;
-        return $result;
+        // else: PT_TLS exists but the chosen thread's slot is still zero
+        // (e.g. an idle FrankenPHP worker that hasn't served a request yet).
+        // That is per-thread state, not a binary-level fact, so do not poison
+        // the cache for the rest of the binary's threads.
+        $this->tsrm_ls_cache_cache[$process_specifier->pid] = $brute_force->address;
+        return $brute_force->address;
     }
 
     private function tryResolveTsrmLsCacheFromCachedOffset(
@@ -274,6 +298,27 @@ class PhpGlobalsFinder
         $globals_address = $this->getSymbolReader($process_specifier, $target_php_settings)
             ->resolveAddress($symbol_name);
         if (is_null($globals_address)) {
+            // Help disambiguate the FrankenPHP-style failure: PT_TLS is in the
+            // ELF (= ZTS build) but TSRM resolution returned null on the chosen
+            // thread, so the falling-through-to-NTS lookup never had a chance.
+            $tls_block = $this->tsrm_ls_cache_finder->resolveTlsBlock(
+                $process_specifier,
+                $target_php_settings,
+            );
+            if ($tls_block !== null) {
+                throw new RuntimeException(
+                    sprintf(
+                        '%s not found via TSRM on TID %d. The binary is ZTS '
+                        . '(PT_TLS present) but this thread\'s _tsrm_ls_cache slot '
+                        . 'is uninitialized -- typical of an idle FrankenPHP worker. '
+                        . 'Try a different worker TID, push a request through the '
+                        . 'server first, or run inspector:trace / inspector:daemon '
+                        . 'briefly to populate the TLS-offset cache.',
+                        $symbol_name,
+                        $process_specifier->pid,
+                    ),
+                );
+            }
             throw new RuntimeException('global symbol not found ' . $symbol_name);
         }
 

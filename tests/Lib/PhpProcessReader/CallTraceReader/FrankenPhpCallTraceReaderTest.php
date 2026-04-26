@@ -103,9 +103,23 @@ class FrankenPhpCallTraceReaderTest extends BaseTestCase
         );
 
         // FrankenPHP runs PHP in a worker thread; try all threads to find
-        // the one with valid PHP executor globals
+        // the one with valid PHP executor globals.
+        //
+        // The cache directory is shared across all iterations on purpose:
+        // earlier versions of PhpGlobalsFinder used to persist a negative
+        // 'has_tsrm_ls_cache: false' entry for the binary as soon as a single
+        // thread's brute force returned null (typical of an idle FrankenPHP
+        // worker whose TLS slot is still zero). Once that happened, every
+        // subsequent thread short-circuited to "global symbol not found
+        // executor_globals" and the test could only pass by using a fresh
+        // cache per iteration. With the fix in place, the negative is no
+        // longer written for ZTS targets, so a shared cache must keep working.
         $tids = self::enumerateThreads($pid);
         $this->assertNotEmpty($tids, 'Could not enumerate threads for the FrankenPHP process');
+
+        $shared_binary_analysis_cache = new BinaryAnalysisCache(
+            sys_get_temp_dir() . '/reli-test-' . uniqid()
+        );
 
         $php_tid = null;
         $executor_globals_address = null;
@@ -114,9 +128,7 @@ class FrankenPhpCallTraceReaderTest extends BaseTestCase
 
         foreach ($tids as $tid) {
             try {
-                $binary_analysis_cache = new BinaryAnalysisCache(
-                    sys_get_temp_dir() . '/reli-test-' . uniqid()
-                );
+                $binary_analysis_cache = $shared_binary_analysis_cache;
                 $process_memory_map_creator = ProcessMemoryMapCreator::create();
                 $php_symbol_reader_creator = new PhpSymbolReaderCreator(
                     new ProcessModuleSymbolReaderCreator(
