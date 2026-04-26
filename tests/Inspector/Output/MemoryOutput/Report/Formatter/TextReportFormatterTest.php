@@ -310,6 +310,79 @@ class TextReportFormatterTest extends BaseTestCase
         $this->assertStringNotContainsString("first line\nsecond line", $output);
     }
 
+    public function testTopArraysCollapseUniformIndexSiblings(): void
+    {
+        // N4: when several Top Arrays rows describe what is clearly the
+        // same shape — same retained size, same element_count, paths
+        // differing only in `[N]` — collapse into one representative
+        // line plus a "+N more" annotation. Without this, captures from
+        // workloads like rw3_graphql-shape spend half a screen on
+        // identical $queryResult[viewer][recentActivity][0..N] rows.
+        $facts_template = [
+            'table_size' => 1228800,
+            'retained_size' => 6553600,
+            'element_count' => 100,
+        ];
+        $findings = [];
+        for ($i = 0; $i < 5; $i++) {
+            $findings[] = new Finding(
+                kind: 'large_array',
+                severity: FindingSeverity::Medium,
+                confidence: FindingConfidence::High,
+                summary: 'sibling',
+                facts: $facts_template + [
+                    'node_id' => 1000 + $i,
+                    'owner_path' => "\$queryResult[viewer][recentActivity][{$i}]",
+                ],
+                impact_bytes: 6553600,
+            );
+        }
+        $output = (new TextReportFormatter())->format(new ReportResult([], $findings));
+
+        // First row renders normally.
+        $this->assertStringContainsString('$queryResult[viewer][recentActivity][0]', $output);
+        // Annotation appears on the row after the first.
+        $this->assertStringContainsString('+4 more similar siblings', $output);
+        $this->assertStringContainsString('indices [0..4]', $output);
+        // Members are skipped — the trailing siblings shouldn't print.
+        $this->assertStringNotContainsString('$queryResult[viewer][recentActivity][3]', $output);
+        $this->assertStringNotContainsString('$queryResult[viewer][recentActivity][4]', $output);
+    }
+
+    public function testTopStringsCollapseUniformVaryingProperty(): void
+    {
+        // N4 for Top Strings — same shape as Top Arrays: rw_logger-stack
+        // dumps several Carbon doc_comments with the same ~156 KB size,
+        // path differing on the class-name segment.
+        $facts_template = [
+            'preview' => '/**\n * A simple API extension for DateT...',
+        ];
+        $sizes_bytes = [159907, 159870, 159860, 159855];
+        $classes = ['CarbonInterface', 'CarbonImmutable', 'Carbon', 'Traits\\Date'];
+        $findings = [];
+        foreach ($classes as $i => $cls) {
+            $findings[] = new Finding(
+                kind: 'large_string',
+                severity: FindingSeverity::Medium,
+                confidence: FindingConfidence::High,
+                summary: 'doc_comment',
+                facts: $facts_template + [
+                    'node_id' => 2000 + $i,
+                    'size' => $sizes_bytes[$i],
+                    'owner_path' => "\$class_table->Carbon\\{$cls}->doc_comment",
+                ],
+                impact_bytes: $sizes_bytes[$i],
+            );
+        }
+        $output = (new TextReportFormatter())->format(new ReportResult([], $findings));
+
+        $this->assertStringContainsString('Carbon\\CarbonInterface', $output);
+        // The non-numeric-key form: enumerated values, kind-labelled
+        // as `property` because the varying segment is `->Class`.
+        $this->assertStringContainsString('+3 more similar siblings', $output);
+        $this->assertStringContainsString('varying property:', $output);
+    }
+
     public function testFormatRendersBottleneckSpineDropLineWithPathComponent(): void
     {
         // T2.2: the spine line should name the path component the
