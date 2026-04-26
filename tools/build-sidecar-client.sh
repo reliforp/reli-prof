@@ -48,4 +48,13 @@ find "$TEST_DIR" -maxdepth 1 -type f -name '*.php' -exec cp {} "$BUILD_DIR/tests
 # LNumber nodes, so a textual pass is the simpler fix than a Rector rule.
 find "$BUILD_DIR" -type f -name '*.php' -exec sed -i -E 's/\b0[oO]([0-7]+)\b/0\1/g' {} +
 
+# Replace the monorepo-internal `Reli\BaseTestCase` (extends MockeryTestCase
+# and adds trace logging used only inside the parent project) with vanilla
+# `PHPUnit\Framework\TestCase` so the standalone artifact's tests run with
+# nothing more than phpunit available — no Reli internals required.
+find "$BUILD_DIR/tests" -type f -name '*.php' -exec sed -i \
+    -e 's|use Reli\\BaseTestCase;|use PHPUnit\\Framework\\TestCase;|g' \
+    -e 's|extends BaseTestCase|extends TestCase|g' \
+    -e 's|expectExceptionMessageMatches|expectExceptionMessageRegExp|g' {} +
+
 echo "built $BUILD_DIR"

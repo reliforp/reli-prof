@@ -1,0 +1,96 @@
+name: build-sidecar-client
+
+on:
+  push:
+    branches:
+      - '[0-9]+.[0-9]+.x'
+    paths:
+      - 'src/Sidecar/Client/**'
+      - 'tests/Sidecar/Client/**'
+      - 'rector-sidecar-client.php'
+      - 'tools/rector/**'
+      - 'tools/build-sidecar-client.sh'
+      - '.github/workflows/build-sidecar-client.yml'
+      - 'composer.json'
+      - 'composer.lock'
+  pull_request:
+    branches:
+      - '*'
+    paths:
+      - 'src/Sidecar/Client/**'
+      - 'tests/Sidecar/Client/**'
+      - 'rector-sidecar-client.php'
+      - 'tools/rector/**'
+      - 'tools/build-sidecar-client.sh'
+      - '.github/workflows/build-sidecar-client.yml'
+      - 'composer.json'
+      - 'composer.lock'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Rector downgrade
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.5
+          coverage: none
+
+      - name: Get Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v5
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install monorepo dependencies (Rector + custom rules)
+        run: composer install --prefer-dist --no-progress --no-suggest
+
+      - name: Build downgraded artifact
+        run: tools/build-sidecar-client.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: sidecar-client-build
+          path: build/sidecar-client
+          retention-days: 7
+          if-no-files-found: error
+
+  verify-php70:
+    name: Verify on PHP 7.0
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download downgraded artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: sidecar-client-build
+          path: build/sidecar-client
+
+      - name: Setup PHP 7.0
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '7.0'
+          tools: composer:v1
+          coverage: none
+
+      - name: Lint downgraded files
+        working-directory: build/sidecar-client
+        run: find . -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n 1 php -l
+
+      - name: Install verification dependencies
+        working-directory: build/sidecar-client
+        run: composer install --no-interaction --no-progress
+
+      - name: Run downgraded test suite (phpunit 6.5 on PHP 7.0)
+        working-directory: build/sidecar-client
+        run: vendor/bin/phpunit tests/
