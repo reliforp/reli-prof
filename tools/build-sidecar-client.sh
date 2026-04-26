@@ -43,4 +43,9 @@ find "$TEST_DIR" -maxdepth 1 -type f -name '*.php' -exec cp {} "$BUILD_DIR/tests
 
 "$RECTOR_BIN" process --config=rector-sidecar-client.php --no-progress-bar
 
+# PHP 8.1+ explicit-octal literal (0o700) -> PHP 7.0 implicit-octal (0700).
+# php-parser's pretty-printer preserves the original token kind for unmodified
+# LNumber nodes, so a textual pass is the simpler fix than a Rector rule.
+find "$BUILD_DIR" -type f -name '*.php' -exec sed -i -E 's/\b0[oO]([0-7]+)\b/0\1/g' {} +
+
 echo "built $BUILD_DIR"

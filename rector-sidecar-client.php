@@ -12,8 +12,10 @@
 declare(strict_types=1);
 
 use Rector\Config\RectorConfig;
-use Rector\Set\ValueObject\DowngradeLevelSetList;
 use Rector\ValueObject\PhpVersion;
+use Reli\Tools\Rector\DowngradeConstVisibilityToPhp70Rector;
+use Reli\Tools\Rector\DowngradeNullableTypeToPhp70Rector;
+use Reli\Tools\Rector\DowngradeVoidReturnToPhp70Rector;
 
 /*
  * Downgrade the bundled sidecar-client tree to PHP 7.0 syntax.
@@ -24,14 +26,31 @@ use Rector\ValueObject\PhpVersion;
  * project's main PHP target — only the published package artifact
  * is downgraded so users on legacy PHP can still embed the client.
  *
- * The PHP version floor matches the profiler target floor
- * (see `--php-version` option: v70..v85).
+ * Why PHP 7.0:
+ *   reli-prof itself supports profiling targets v70..v85, so the
+ *   client floor matches the profiler floor for symmetry.
+ *
+ * Pipeline of transformations:
+ *   1. Rector's official downgrade level set covers PHP 8.x -> 7.1
+ *      via withDowngradeSets(php71: true).
+ *   2. The 7.1 -> 7.0 gap (Rector ships no rules for it) is filled by
+ *      our own rules in tools/rector/Downgrade*ToPhp70Rector:
+ *        - nullable type hints (?T)  : params get `T = null`, returns get type dropped
+ *        - void return type           : dropped
+ *        - class const visibility     : private/protected/public stripped
+ *   3. The 0o<digits> octal literal syntax (PHP 8.1+) is rewritten by
+ *      a sed pass in the build script after Rector finishes — Rector's
+ *      pretty-printer preserves the original token kind for unmodified
+ *      LNumber nodes, so a textual pass is the simpler fix.
  */
 return RectorConfig::configure()
     ->withPaths([
         __DIR__ . '/build/sidecar-client',
     ])
     ->withPhpVersion(PhpVersion::PHP_70)
-    ->withSets([
-        DowngradeLevelSetList::DOWN_TO_PHP_70,
+    ->withDowngradeSets(php71: true)
+    ->withRules([
+        DowngradeNullableTypeToPhp70Rector::class,
+        DowngradeVoidReturnToPhp70Rector::class,
+        DowngradeConstVisibilityToPhp70Rector::class,
     ]);

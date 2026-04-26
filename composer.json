@@ -54,7 +54,8 @@
   "autoload-dev": {
     "psr-4": {
       "Reli\\": "tests",
-      "Reli\\Command\\": "tests/Command/CommandEnumeratorTestData"
+      "Reli\\Command\\": "tests/Command/CommandEnumeratorTestData",
+      "Reli\\Tools\\Rector\\": "tools/rector"
     }
   },
   "bin": [
