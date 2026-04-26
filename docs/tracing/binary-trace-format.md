@@ -3,6 +3,15 @@
 **Version:** 1
 **Status:** Draft
 
+> [!NOTE]
+> **Most users do not need this format specification.**
+> To capture and read traces, start with
+> [capturing-traces.md](capturing-traces.md) and
+> [rbt-analyze-and-explore.md](rbt-analyze-and-explore.md). Read this
+> page if you are writing a converter, debugging a corrupted file with
+> `rbt:recover`, or integrating with the binary format from another
+> language.
+
 ## Overview
 
 The reli Binary Trace Format is an append-only binary stream format for efficient storage of PHP profiling traces. A `.rbt` file consists of one or more **self-contained segments**, each carrying its own header and definition events.

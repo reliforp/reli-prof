@@ -6,6 +6,13 @@ resolution — including for ZTS targets, which phpspy alone cannot
 resolve. The result is phpspy's sampling throughput with reli's
 ZTS support.
 
+> **Note:** The official `reliforp/reli-prof` Docker image does **not**
+> bundle phpspy. If you installed reli via the Docker wrapper, the
+> `phpspy:*` commands won't work out of the box — install phpspy
+> natively (e.g. via `phpspy:install` on a host install of reli) or
+> build a custom image that runs `phpspy:install` at build time. See
+> [docker-wrapper.md § Limitations](../docker-wrapper.md#limitations).
+
 ## Commands
 
 | Command | Purpose |

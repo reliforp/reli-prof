@@ -14,6 +14,48 @@ The `-S` option will give you better results. Using this option stops the execut
 
 First, try `cat /proc/<pid>/maps` to check the memory map of the target PHP process. If the first module does not indicate the location of the PHP binary and looks like an anonymous region, try to specify `--php-regex="^$"` as an option.
 
+## "Operation not permitted" / ptrace denied when attaching
+
+`inspector:trace`, `inspector:memory`, `inspector:peek-var`, `inspector:watch`, `inspector:sidecar` and friends all rely on `ptrace(2)` / `process_vm_readv(2)`. If attach fails with `EPERM`, walk the checklist:
+
+- **Permission**. Run reli as `root`, or grant `CAP_SYS_PTRACE` to the `php` binary you use to run reli (`sudo setcap cap_sys_ptrace=eip $(readlink -f $(which php))`).
+- **Docker wrapper**. Make sure you installed the **full** profile (`docker:print-wrapper`, not `--profile=minimal`). The minimal profile drops `CAP_SYS_PTRACE`, `--pid=host`, `--security-opt=apparmor=unconfined`, and `--network=host` on purpose — re-install with `--profile=full` for live attach. See [docker-wrapper.md](docker-wrapper.md).
+- **Yama / `ptrace_scope`**. On hardened hosts, `cat /proc/sys/kernel/yama/ptrace_scope` returning `2` or `3` blocks ptrace even for root. Temporarily lower it (`echo 1 | sudo tee /proc/sys/kernel/yama/ptrace_scope`), or use a native install.
+- **AppArmor / SELinux**. Some distros confine `docker` and similar tools with profiles that block ptrace. Pass `--security-opt=apparmor=unconfined` (already set by the full Docker wrapper).
+- **PID namespace**. In containers, the target process must be visible inside reli's PID namespace. The Docker wrapper passes `--pid=host`. For Kubernetes / docker-compose, set `shareProcessNamespace: true` / `pid: "service:app"`. The sidecar specifically requires this — see [monitoring/sidecar.md](monitoring/sidecar.md).
+
+## I installed `reli-view` and live-attach commands fail
+
+`reli-view` is the **minimal** Docker wrapper profile — viewers / converters only (`rbt:explore`, `rmem:explore`, `converter:*`, `inspector:memory:report`, `inspector:memory:compare`, …). It deliberately omits `CAP_SYS_PTRACE`, `--pid=host`, and `--network=host`, so any command that attaches to a live process or binds to a host port will fail.
+
+Re-install with the full profile and retry:
+
+```bash
+eval "$(docker run --rm reliforp/reli-prof docker:print-wrapper)"
+```
+
+The two profiles can coexist — see [docker-wrapper.md](docker-wrapper.md) for the side-by-side install pattern (`--name=reli` / `--name=reliv`).
+
+## "FFI extension not loaded" / "PCNTL not available"
+
+reli relies on FFI for VM struct layout and PCNTL for daemon mode. The two extensions are bundled in the official Docker image (use the wrapper — see [getting-started.md § 1. Install](getting-started.md#1-install)). For native installs, build PHP with `--with-ffi` and `--enable-pcntl`, or install your distro's `php-ffi` / `php-pcntl` packages.
+
+The sidecar **client** (the application-side library) does not require FFI — only the sidecar server / reli binary itself does. See [monitoring/sidecar.md § Client Library](monitoring/sidecar.md#client-library).
+
+## `rmem:explore` won't open my file
+
+`rmem:explore`, `rmem:serve`, and `rmem:mcp` read **`.rmem` only** (binary memory snapshots produced by `inspector:memory -f binary`, `inspector:memory:dump` + `inspector:memory:analyze -f binary`, or `inspector:coredump -f binary`).
+
+If your snapshot is a SQLite `.db` / `.sqlite` file, either re-capture with `-f binary -o snapshot.rmem`, or use the SQL-aware analysers instead (`inspector:memory:report`, `inspector:memory:compare`, raw `sqlite3` / `duckdb`). To convert an existing dump, run `inspector:memory:analyze <dump> -f binary -o snapshot.rmem`.
+
+See [memory/memory-dump.md](memory/memory-dump.md) and [memory/rmem-explore-and-serve.md](memory/rmem-explore-and-serve.md).
+
+## FrankenPHP: "no such PID" or empty trace when targeting the parent
+
+A FrankenPHP process is one OS process with many threads, but only the PHP worker threads carry valid executor globals. Targeting the Caddy parent PID gives no PHP state.
+
+Pass a **PHP worker TID** to `inspector:trace -p`, and add the three FrankenPHP flags (`--php-regex='.*/libphp\.so$'`, `--libpthread-regex='.*/libc\.so.*'`, plus `--target-thread-regex='^php-[0-9a-f]+$'` for `inspector:daemon` / `inspector:top` / `inspector:watch`). Full walkthrough: [tracing/frankenphp.md](tracing/frankenphp.md).
+
 ## Something seems stale after a PHP upgrade or container rebuild.
 
 reli caches expensive binary-analysis results (ELF symbol resolution, ZTS TLS offsets, PHP version detection) under `~/.cache/reli/binary-analysis/`. If you suspect a stale entry is being served — after upgrading the target PHP, rebuilding a container image, or any other "shouldn't that have worked?" moment — drop or bypass the cache:

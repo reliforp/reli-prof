@@ -26,7 +26,7 @@ when live dumping cannot be used.
 For live analysis of a still-running process, use
 [`inspector:memory`](memory-profiler.md) or
 [`inspector:memory:dump`](memory-dump.md). For reuse of an analyzer
-output across tools, use the SQLite pipeline described in
+output across tools, use the captured-snapshot pipeline described in
 [memory-report.md](memory-report.md) and [rmem-explore-and-serve.md](rmem-explore-and-serve.md).
 
 ## Quick start
@@ -36,21 +36,30 @@ output across tools, use the SQLite pipeline described in
 $ sudo gcore -o /tmp/myapp 12345
 # → /tmp/myapp.12345
 
-# Run the memory analyzer against the core file
+# Run the memory analyzer against the core file (.rmem is the fastest
+# format and is what every analyser reads natively)
 $ php ./reli inspector:coredump /tmp/myapp.12345 --pid 12345 \
-    -f sqlite3 -o snapshot.db
+    -f binary -o snapshot.rmem
 
 # Feed the output into the normal analysis pipeline
-$ php ./reli inspector:memory:report snapshot.db
-$ php ./reli rmem:explore snapshot.db
+$ php ./reli inspector:memory:report snapshot.rmem
+$ php ./reli rmem:explore snapshot.rmem
 ```
+
+`-f sqlite3` is also supported if you want to query the same snapshot
+with SQL tools — `inspector:memory:report` / `inspector:memory:compare`
+accept either format. `rmem:explore`, `rmem:serve`, and `rmem:mcp`
+read `.rmem` only.
 
 The output of `inspector:coredump` uses the same
 [`MemoryProfilerSettings`](../../src/Inspector/Settings/MemoryProfilerSettings/MemoryProfilerSettingsFromConsoleInput.php)
 as `inspector:memory`, so every output format (`json`, `sqlite3`,
-`binary`, `mysql`, `postgresql`, `report`, `report-json`) and every
-downstream tool (`inspector:memory:report`, `inspector:memory:compare`, `rmem:explore`,
-`rmem:serve`) works the same way.
+`binary`, `mysql`, `postgresql`, `report`, `report-json`) is supported.
+Which downstream tool you can feed depends on the format:
+
+- `inspector:memory:report` and `inspector:memory:compare` accept
+  `.rmem` (binary) or SQLite (`.db` / `.sqlite`).
+- `rmem:explore`, `rmem:serve`, and `rmem:mcp` require `.rmem`.
 
 ## Arguments and options
 
@@ -158,6 +167,6 @@ See `man 5 core` for the full bitmask.
 - [`inspector:memory:report`](memory-report.md) — generate an
   automated analysis report from the output.
 - [`rmem:explore`](rmem-explore-and-serve.md) — interactive
-  TUI over the SQLite output.
+  TUI over the `.rmem` output.
 - [`gcore` comparison](../internals/memory-dump-vs-gcore.md) — internals
   note on trade-offs between reli's native dump and ELF core files.

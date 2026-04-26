@@ -1,13 +1,18 @@
 # Profiler benchmark results
 
+> [!NOTE]
+> **Most users do not need this page.** If you're picking a profiler
+> for an operational decision, start with
+> [`docs/comparison.md`](../comparison.md) and only come back here
+> when you need raw numbers, methodology, or one-off findings to back
+> up a specific call.
+
 Numerical comparison data for the PHP profilers covered in
 [`docs/comparison.md`](../comparison.md). The doc you're
 reading is the heavy version — full tables, methodology notes, and
 one-off findings encountered during the runs.
 [`docs/comparison.md`](../comparison.md) is the lighter,
-selection-oriented companion. If you're picking a profiler for an
-operational decision, start there and come back here for "but how
-much does it actually cost in numbers?"
+selection-oriented companion.
 
 > Numbers are from the suite in [`bench/`](.). PHP 8.4 NTS on a
 > single Linux host, Docker not used (the sandbox couldn't reach

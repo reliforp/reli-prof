@@ -11,8 +11,8 @@
 
 This page documents `inspector:memory`'s default JSON output — the original memory-profiling entry point in reli — and the `jq`-based analysis style that grew up around it. `inspector:memory` itself still works exactly as described below; what has changed since its first iteration is the *recommended* way to use its output:
 
-- For interactive exploration and prioritised findings, reach for the SQLite-based pipeline ([memory-dump.md](memory-dump.md) → [rmem-explore-and-serve.md](rmem-explore-and-serve.md) / [memory-report.md](memory-report.md)). It stops the target for much less time and ships with purpose-built analysers.
-- Read *this* page when you need to hand-query snapshots with `jq`, understand the on-disk JSON structure, integrate with other tooling that expects JSON, or maintain pipelines that predate the SQLite format.
+- For interactive exploration and prioritised findings, reach for the captured-snapshot pipeline ([memory-dump.md](memory-dump.md) → [rmem-explore-and-serve.md](rmem-explore-and-serve.md) / [memory-report.md](memory-report.md)). It stops the target for much less time and ships with purpose-built analysers, all built around the `.rmem` format.
+- Read *this* page when you need to hand-query snapshots with `jq`, understand the on-disk JSON structure, integrate with other tooling that expects JSON, or maintain pipelines that predate the `.rmem` / report workflow.
 
 The canonical invocation:
 
@@ -27,34 +27,15 @@ You can use this mode to analyze the memory usage of the target process — for 
 The functionality of this mode is similar to [php-meminfo](https://github.com/BitOne/php-meminfo), but works in the [phpspy](https://github.com/adsr/phpspy)-ish way: it captures the memory contents of the target from outside the process, analyses them with knowledge of the PHP VM's internal structures, then dumps the whole analysis. Target programs don't need any modifications and don't need to load a specific extension.
 
 # Requirements
-- FFI and PCNTL
-- PHP 8.1 or above for execution
-- PHP 7.0+ for targets
-- Only NTS targets are tested currently
-- The capability to stab the target process with ptrace (CAP_SYS_PTRACE)
-  - Usually running as root is enough
+
+See [Getting started § Requirements](../getting-started.md#requirements) for the
+canonical runtime / target requirements (PHP version, NTS/ZTS support,
+platform notes). No command-specific overrides apply to `inspector:memory`.
 
 # Installation
-## From Composer
-```bash
-composer create-project reliforp/reli-prof
-cd reli-prof
-./reli
-```
 
-## From Git
-```bash
-git clone git@github.com:reliforp/reli-prof.git
-cd reli-prof
-composer install
-./reli
-```
-
-## From Docker
-```bash
-docker pull reliforp/reli-prof
-docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof
-```
+See [Getting started § Install](../getting-started.md#1-install) for the
+recommended install paths (Docker wrapper, Composer, Git).
 
 # Options
 ```bash
@@ -432,14 +413,18 @@ The example of the output is like below.
 
 ### Automatic analysis instead of manual jq
 
-If you prefer actionable findings over manual `jq` exploration, use the automatic report feature. Save to SQLite and generate a report:
+If you prefer actionable findings over manual `jq` exploration, use the automatic report feature. Capture once to `.rmem` (the fastest format and what every analyser reads natively), then run the report:
 
 ```bash
-sudo ./reli inspector:memory -p <pid> -f sqlite3 -o snapshot.db
-./reli inspector:memory:report snapshot.db
+sudo ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
+./reli inspector:memory:report snapshot.rmem
 ```
 
-Or generate directly:
+`-f sqlite3 -o snapshot.db` is also supported — useful when you want
+SQL access to the same snapshot. `inspector:memory:report` and
+`inspector:memory:compare` accept either format.
+
+Or generate the report directly from a live process, without going through a snapshot file:
 
 ```bash
 sudo ./reli inspector:memory -p <pid> -f report

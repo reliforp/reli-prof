@@ -24,9 +24,13 @@ When your application hits `memory_limit`, the handler automatically requests a 
 
 ## Requirements
 
-- Same as other `inspector:*` commands (FFI, PCNTL, PHP 8.1+ for execution, PHP 7.0+ for targets)
-- `CAP_SYS_PTRACE` capability (usually root)
-- The sidecar process must share the PID namespace with target processes (important for Docker setups)
+See [Getting started § Requirements](../getting-started.md#requirements) for the
+common runtime and target requirements.
+
+Command-specific notes:
+
+- The sidecar process must share the PID namespace with target processes
+  (important for Docker / Kubernetes — see [§ Docker / Kubernetes Setup](#docker--kubernetes-setup)).
 
 ## Why Use a Sidecar?
 
@@ -47,6 +51,26 @@ The sidecar approach:
 ## Client Library
 
 The client library requires **no FFI** and has **no heavy dependencies**. It's designed to work in shutdown handlers with minimal memory overhead.
+
+### Installing the client code in your application
+
+The classes under `Reli\Sidecar\Client\` (`MemoryLimitHandler`, `SidecarClient`, `SidecarClientResponse`) must be available in the target application's autoloader. There are two practical options today:
+
+- **Composer dependency** — add `reliforp/reli-prof` as a dependency
+  in the application (`composer require reliforp/reli-prof`). The
+  client classes are pulled in along with the rest of the package.
+  The client side has no FFI / PCNTL requirement, so this works on
+  any modern PHP runtime that hosts your application.
+- **Vendoring the three files** — for applications that don't want
+  the full dependency, copy `src/Sidecar/Client/MemoryLimitHandler.php`,
+  `src/Sidecar/Client/SidecarClient.php`, and
+  `src/Sidecar/Client/SidecarClientResponse.php` into your project
+  and wire them into your autoloader (PSR-4 under the
+  `Reli\Sidecar\Client\` namespace, or any namespace as long as you
+  update the `use` statements).
+
+Either way, only the `Reli\Sidecar\Client\` namespace is needed
+application-side; the rest of reli runs in the sidecar process.
 
 ### Emergency Memory Reserve
 
@@ -185,8 +209,12 @@ Binary memory dump in the same format as `inspector:memory:dump`. Can be analyze
 
 ```bash
 reli inspector:memory:analyze /tmp/dumps/sidecar-1234-20260403-120000-after-fixtures.dump \
-  --output-format sqlite3 --output result.db
+  -f binary -o result.rmem
 ```
+
+`-f sqlite3 -o result.db` is also supported (`inspector:memory:report`
+and `inspector:memory:compare` accept either format); `rmem:explore`
+and friends require `.rmem`.
 
 ### Metadata File (`.meta.json`)
 
@@ -319,8 +347,8 @@ v2.3.0 release                         v2.4.0 PR
 │ sidecar + benchmark  │                │ sidecar + benchmark  │
 │ → snapshot(baseline) │                │ → snapshot(baseline) │
 │ → snapshot(loaded)   │                │ → snapshot(loaded)   │
-│ → analyze → v2.3.db  │                │ → analyze → v2.4.db  │
-│ → upload artifact    │                │ → download v2.3.db   │
+│ → analyze → v2.3.rmem│                │ → analyze → v2.4.rmem│
+│ → upload artifact    │                │ → download v2.3.rmem │
 └─────────────────────┘                │ → compare → pass/fail│
                                         └─────────────────────┘
 ```
@@ -359,22 +387,33 @@ jobs:
           RELI_SIDECAR_SOCKET: /tmp/reli.sock
         run: php bench/memory_trend.php
 
-      # Analyze dumps
+      # Analyze dumps. Either .rmem or SQLite is fine — both are
+      # accepted by inspector:memory:compare. .rmem is the fastest
+      # default and is what the rest of the docs use; switch to
+      # `-f sqlite3 -o ....db` if your CI also runs ad-hoc SQL queries
+      # against the snapshots.
       - name: Analyze snapshots
         run: |
+          mkdir -p /tmp/analyzed
           for f in /tmp/dumps/sidecar-*.dump; do
             reli inspector:memory:analyze "$f" \
-              --output-format sqlite3 \
-              --output "/tmp/analyzed/$(basename "$f" .dump).db"
+              -f binary \
+              -o "/tmp/analyzed/$(basename "$f" .dump).rmem"
           done
 
-      # Compare with baseline (if available)
+      # Compare with baseline (if available). inspector:memory:compare
+      # takes one baseline + one target snapshot, so iterate over the
+      # labels (baseline, after-fixtures, …) and pair each one up.
       - name: Compare with baseline
-        if: hashFiles('baseline/*.db') != ''
+        if: hashFiles('baseline/*.rmem') != ''
         run: |
-          reli inspector:memory:compare \
-            baseline/*.db /tmp/analyzed/*.db \
-            --threshold 5%
+          for target in /tmp/analyzed/sidecar-*.rmem; do
+            label="$(basename "$target" .rmem | sed -E 's/^sidecar-[0-9]+-[0-9-]+(-(.+))?$/\2/')"
+            baseline="$(ls baseline/sidecar-*-"${label:-baseline}".rmem 2>/dev/null | head -n1)"
+            [ -n "$baseline" ] || { echo "no baseline for ${label:-baseline}"; continue; }
+            echo "=== ${label:-baseline} ==="
+            reli inspector:memory:compare "$baseline" "$target" --threshold 5
+          done
 
       # Save current results as new baseline
       - uses: actions/upload-artifact@v4
@@ -445,4 +484,4 @@ Clients can check `$response->isCompatible()` to detect whether the server's ver
 | `inspector:watch` | Passive monitoring with threshold triggers | Polling (automatic) |
 | **`inspector:sidecar`** | **Application-initiated dump on error/at specific points** | **On-demand (IPC)** |
 | `inspector:memory:analyze` | Offline analysis of dump files | Post-hoc (CLI) |
-| `inspector:memory:compare` | Diff two analysis databases | Post-hoc (CLI) |
+| `inspector:memory:compare` | Diff two analysis snapshots | Post-hoc (CLI) |
