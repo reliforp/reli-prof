@@ -959,3 +959,67 @@ Lists string keys with truncation after 4.
 Cross-section coverage stays unchanged. Each section (Top Arrays,
 Top Strings) collapses within itself. There's no cross-finding
 clustering — that's S12, separate T3 item.
+
+---
+
+## N2 verification (PR #660 — Observations vs Minor findings split)
+
+PR #660 splits the previous "Additional Info" section into two:
+
+- **Observations (no action needed)** — `shared_singleton` (CoW
+  sharing) and `shared_fanin` with refs/targets ≥ 100 (interning).
+  Tags relabelled from `[shared_singleton]` / `[shared_fanin]` to
+  `[CoW share]` / `[interning]`.
+- **Minor findings** — `shared_fanin` with refs/targets < 100
+  (including the [10, 100) middle band, defaulted to Minor per
+  the team's clarification), and other Info-severity findings.
+
+### Status: ✅ closed
+
+| Check                                                  | Result |
+|--------------------------------------------------------|--------|
+| Section split: legacy `Additional Info` gone           | ✅ 0 / 25 reports retain it |
+| New `Observations` section emitted                     | ✅ 22 / 25 reports |
+| New `Minor findings` section emitted                   | ✅ 24 / 25 reports |
+| Tag relabelling: `[shared_singleton]` → `[CoW share]` | ✅ 53 occurrences relabelled, 0 raw remain |
+| Tag relabelling: high-ratio fanin → `[interning]`      | ✅ 30 occurrences |
+| Mid-band [10, 100) defaults to Minor                   | ✅ all observed cases (15.0, 37.8, 55.7, 75.8 each) land in Minor |
+| Findings count regression                              | ✅ 0 changed across 25 reports |
+
+### Sample (rw3_reflection-heavy)
+
+    === Observations (no action needed) ===
+      [interning] key -> ? (9,026 refs -> 30 targets, 300.9 each)
+      [CoW share] AttributeMetadata::$ignoredAttributes: 4,499 refs -> 1 target [singleton]
+      [CoW share] PropertyInfoCacheEntry::$types: 4,499 refs -> 1 target [singleton]
+      [CoW share] ClassMetadata::$discriminatorMap: 299 refs -> 1 target [singleton]
+
+    === Minor findings ===
+      [dedup_candidate] AttributeMetadata::$name: 3,032 copies x 30 B = 88.83 KB
+      …
+      [shared_fanin] value -> ? (4,621 refs -> 83 targets, 55.7 each)
+      [shared_fanin] PropertyInfoCacheEntry::$className -> ? (4,501 refs -> 300 targets, 15.0 each)
+      [retained_exact] No cycles — retained size is exact
+
+The two `shared_fanin` rows in Minor findings have
+refs/targets ratios in the [10, 100) middle band (15.0 and 55.7).
+Per Q1 of the implementer's questions, the default-Minor rule
+sends them to Minor where they're visible as bullet points the
+reader can glance at without being told "everything's fine".
+
+### Mid-band cases observed
+
+| Report                | refs/targets | Bucket |
+|-----------------------|--------------|--------|
+| rw_logger-stack       | 272.8        | Observations |
+| rw3_reflection-heavy  | 300.9        | Observations |
+| rw3_messenger-envelopes | 13063.7    | Observations |
+| rw_logger-stack       | 37.8         | Minor |
+| rw3_reflection-heavy  | 15.0         | Minor |
+| rw3_reflection-heavy  | 55.7         | Minor |
+| rw3_messenger-envelopes | 75.8       | Minor |
+| rw_logger-stack       | 5.8          | Minor |
+
+The split keeps "this is the runtime working" cleanly separated
+from "this might be worth a glance" without forcing the reader to
+decode refs/target ratios mentally.
