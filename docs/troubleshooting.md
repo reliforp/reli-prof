@@ -56,6 +56,18 @@ A FrankenPHP process is one OS process with many threads, but only the PHP worke
 
 Pass a **PHP worker TID** to `inspector:trace -p`, and add the three FrankenPHP flags (`--php-regex='.*/libphp\.so$'`, `--libpthread-regex='.*/libc\.so.*'`, plus `--target-thread-regex='^php-[0-9a-f]+$'` for `inspector:daemon` / `inspector:top` / `inspector:watch`). Full walkthrough: [tracing/frankenphp.md](tracing/frankenphp.md).
 
+## "global symbol not found executor_globals" on FrankenPHP / ZTS.
+
+ZTS (FrankenPHP, embed-SAPI, custom ZTS builds) keeps `executor_globals` in TLS, so reli has to find `_tsrm_ls_cache` by brute-forcing the target thread's TLS block. If the chosen thread happens to never have served a request — its TLS slot is still zero — the search returns nothing, the negative result is cached for that binary, and subsequent runs short-circuit straight to a missing-symbol error.
+
+Recovery, in order of cost:
+
+1. Pick a different worker TID and retry. Once any one thread succeeds, the cached TLS offset works for every other thread of the process.
+2. If the negative result is already cached, drop it and retry: `./reli cache:clear` followed by a run against a different TID.
+3. Push some traffic through the server first so workers are warm, then attach.
+
+`inspector:daemon` and `inspector:trace` retry internally and will eventually self-recover; `inspector:memory:dump` / `inspector:memory` / `inspector:sidecar` exit on the first failure, so the workaround matters most for those. For FrankenPHP-specific guidance see [tracing/frankenphp.md](tracing/frankenphp.md#memory-and-watch-commands).
+
 ## Something seems stale after a PHP upgrade or container rebuild.
 
 reli caches expensive binary-analysis results (ELF symbol resolution, ZTS TLS offsets, PHP version detection) under `~/.cache/reli/binary-analysis/`. If you suspect a stale entry is being served — after upgrading the target PHP, rebuilding a container image, or any other "shouldn't that have worked?" moment — drop or bypass the cache:
