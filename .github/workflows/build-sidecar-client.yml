@@ -60,13 +60,19 @@ jobs:
       # Composer 1 was shut down on Packagist (2025-09-01) and Composer 2
       # requires PHP >= 7.2.5, so we cannot run `composer install` on the
       # PHP 7.0 verifier. Pre-populate the artifact's vendor/ here on
-      # PHP 8.5 with --prefer-lowest, which selects PHPUnit 6.5 (the only
-      # phpunit version in our constraint range that runs on PHP 7.0).
-      # --ignore-platform-req=php lets the resolver target our PHP 7.0
-      # floor while running on the build host's 8.5.
+      # PHP 8.5 with the phpunit constraint pinned to ~6.5.0 — the only
+      # phpunit major that runs on PHP 7.0. --ignore-platform-req=php
+      # lets the resolver target our PHP 7.0 floor while running on the
+      # build host's 8.5. (--prefer-lowest alone is not robust here;
+      # composer 2 on a recent host can still pick a higher PHPUnit
+      # major within the artifact's "^6.5 || ^7 || ^8 || ^9" range, as
+      # observed empirically on CI.)
       - name: Pre-install verification dependencies into artifact
         working-directory: build/sidecar-client
-        run: composer update --prefer-lowest --no-interaction --no-progress --ignore-platform-req=php
+        run: |
+          composer update --prefer-lowest --no-interaction --no-progress \
+            --ignore-platform-req=php \
+            --with 'phpunit/phpunit:~6.5.0'
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -91,6 +97,11 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '7.0'
+          # pcntl is needed by SidecarClientTest, which spawns child
+          # processes via pcntl_fork() to drive both ends of a Unix
+          # socket round-trip. PHP 7.0's CLI image doesn't enable it
+          # by default.
+          extensions: pcntl
           coverage: none
 
       - name: Lint downgraded files
