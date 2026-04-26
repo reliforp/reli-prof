@@ -33,5 +33,10 @@
       "Reli\\Sidecar\\Client\\": "tests/"
     }
   },
+  "config": {
+    "audit": {
+      "block-insecure": false
+    }
+  },
   "minimum-stability": "stable"
 }
