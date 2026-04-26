@@ -41,24 +41,15 @@ final class Elf64LazyParseSymbolResolver implements Elf64SymbolResolver
 
     private function loadResolver(): Elf64SymbolResolver
     {
-        // Cold attach often constructs several Elf64LazyParseSymbolResolver
-        // instances against the same libphp.so (PhpGlobalsFinder,
-        // resolveTlsBlock, TsrmGlobalsResolver each create their own symbol
-        // reader), and each instance would otherwise re-read and re-parse
-        // the 19 MB binary. The shared resolver cache, keyed on the binary
-        // fingerprint, lets the second-and-later instances skip straight
-        // to the parsed inner resolver.
-        if ($this->shared_resolver_cache !== null && $this->fingerprint !== null) {
-            $shared = $this->shared_resolver_cache->getResolver($this->fingerprint);
-            if ($shared !== null) {
-                return $shared;
-            }
-        }
-        $resolver = $this->loadResolverUncached();
-        if ($this->shared_resolver_cache !== null && $this->fingerprint !== null) {
-            $this->shared_resolver_cache->setResolver($this->fingerprint, $resolver);
-        }
-        return $resolver;
+        // BISECT PROBE: resolver sharing temporarily disabled. We still
+        // accept shared_resolver_cache + fingerprint constructor params
+        // (i.e. the constructor and call-site code paths are unchanged),
+        // but never actually consult or populate the cache. If ARM64 stays
+        // red here, the bug is in the structural changes (constructor
+        // signature, threading through ProcessModuleSymbolReaderCreator,
+        // PerBinarySymbolCacheRetriever methods). If ARM64 goes green,
+        // the bug is specifically in the shared-resolver code path.
+        return $this->loadResolverUncached();
     }
 
     private function loadResolverUncached(): Elf64SymbolResolver
