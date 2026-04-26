@@ -9,9 +9,9 @@
 [![Coverage Status](https://coveralls.io/repos/github/reliforp/reli-prof/badge.svg?branch=0.12.x)](https://coveralls.io/github/reliforp/reli-prof?branch=0.12.x)
 ![Psalm coverage](https://shepherd.dev/github/reliforp/reli-prof/coverage.svg?)
 
-Reli is a sampling profiler (or a VM state inspector) written in PHP. It can read information about running PHP script from outside of the process. It's a stand alone CLI tool, so target programs don't need any modifications. The former name of this tool was sj-i/php-profiler.
+Reli is a sampling profiler (or a VM state inspector) written in PHP. It can read information about a running PHP script from outside of the process. It's a standalone CLI tool, so target programs don't need any modifications.
 
-Use it for call-trace sampling (where time is spent), memory-graph analysis (where memory is used), runtime variable inspection, and condition-triggered captures. For first-use, see [docs/getting-started.md](docs/getting-started.md); for the task map, the [documentation index](docs/README.md).
+Use it for call-trace sampling (where time is spent), memory-graph analysis (where memory is used), runtime variable inspection, and condition-triggered captures. For first-use, see [docs/getting-started.md](docs/getting-started.md); for the task map, see the [documentation index](docs/README.md).
 
 ## Showcase
 
@@ -54,7 +54,7 @@ $ reli rbt:explore trace.rbt
 
 Full tour (keymap, filters, `--with-opcode`, mouse, live tail): [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-analyze-and-explore.md). `.rbt` format spec and `converter:*` outputs (flamegraph, speedscope, pprof, callgrind, folded, phpspy): [docs/tracing/binary-trace-format.md](docs/tracing/binary-trace-format.md). Advanced capture (opcodes / native frames / JIT): [docs/tracing/advanced-capture.md](docs/tracing/advanced-capture.md).
 
-### Memory graph visualization — `rmem:viz` / `rmem:live`
+### Memory graph visualization — `rmem:viz` / `rmem:explore`
 
 Render the heap as a standalone HTML file — Circle Pack, Treemap, Sunburst, 3D Force — or serve it live with a shared focus bus that `rmem:explore` (TUI), browsers, and an MCP client all follow in sync.
 
