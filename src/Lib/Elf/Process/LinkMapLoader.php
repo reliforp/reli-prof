@@ -72,27 +72,44 @@ final class LinkMapLoader
         // Cold-attach hot path: link-map traversal during cold-attach has
         // to read every loaded library's path (DT_NEEDED-style), and naive
         // byte-by-byte reads cost one process_vm_readv syscall per
-        // character. Reading in 256-byte chunks turns each typical 30-40
+        // character. Reading in larger chunks turns each typical 30-40
         // character path into a single syscall.
-        $chunk_size = 256;
+        //
+        // The string sits inside ld-linux's / the binary's .dynstr table,
+        // which is usually mapped contiguously, but the very last string
+        // in that table can land so close to the page boundary that a
+        // greedy read would cross into unmapped memory and trip EFAULT
+        // (process_vm_readv refuses partial transfers). To stay safe,
+        // never let a single read cross a page boundary -- that is the
+        // granularity at which mappings start and end. We always clip the
+        // chunk to the rest of the current page; if the string spans
+        // pages, the next iteration starts page-aligned and reads exactly
+        // one page. If we still have not found the terminator after a
+        // generous PATH_MAX-style budget, give up rather than walking
+        // into unrelated mappings.
+        $page_size = 4096;
+        $max_chunk = 256;
+        $max_total = 4 * $page_size;
+        $total = 0;
         $str = '';
-        while (true) {
+        while ($total < $max_total) {
+            $remaining_in_page = $page_size - ($address & ($page_size - 1));
+            $chunk_size = $remaining_in_page < $max_chunk ? $remaining_in_page : $max_chunk;
             $chunk = $this->memory_reader->read($pid, $address, $chunk_size);
-            $found_terminator = false;
             for ($i = 0; $i < $chunk_size; $i++) {
                 /** @var int $c */
                 $c = $chunk[$i];
                 if ($c === 0) {
-                    $found_terminator = true;
-                    break;
+                    return $str;
                 }
                 $str .= chr($c);
             }
-            if ($found_terminator) {
-                break;
-            }
             $address += $chunk_size;
+            $total += $chunk_size;
         }
+        // No terminator within the safety budget. Returning the prefix
+        // keeps searchByName() honest -- the result simply will not match
+        // any expected library path -- without exploding the cold attach.
         return $str;
     }
 }
