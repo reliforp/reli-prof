@@ -80,7 +80,18 @@ final class PhpTsrmLsCacheFinder
             $php_module_name,
         );
 
-        $byte_reader = new StringByteReader($this->file_reader->readAll($php_path));
+        // We only need the ELF header and the program header table here,
+        // both of which sit at the very start of the file -- typically
+        // within the first KB. Pulling the whole 19 MB libphp.so off disk
+        // (and through FFI::string) just to find PT_TLS is what made
+        // resolveTlsBlock the second-largest cold-attach cost after the
+        // symbol resolver. Read 64 KB and call it; that comfortably covers
+        // the program header table for any sane ELF binary.
+        $header_bytes = $this->file_reader->readSlice($php_path, 0, 64 * 1024);
+        if ($header_bytes === '') {
+            return null;
+        }
+        $byte_reader = new StringByteReader($header_bytes);
         $php_elf_header = $this->elf64_parser->parseElfHeader($byte_reader);
         $program_headers = $this->elf64_parser->parseProgramHeader($byte_reader, $php_elf_header);
         $tls_entries = $program_headers->findTls();

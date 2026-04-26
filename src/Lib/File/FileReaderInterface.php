@@ -16,4 +16,12 @@ namespace Reli\Lib\File;
 interface FileReaderInterface
 {
     public function readAll(string $path): string;
+
+    /**
+     * Read up to $size bytes starting at $offset. Implementations may return
+     * fewer bytes than requested if the file ends before $offset + $size.
+     * Returns an empty string when the file cannot be opened or the offset
+     * is past EOF.
+     */
+    public function readSlice(string $path, int $offset, int $size): string;
 }
