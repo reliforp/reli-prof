@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 
+use Reli\Lib\JitAtomic\AddressMap;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArrayContextPool;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ClosureContextPool;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ObjectContextPool;
@@ -61,10 +62,8 @@ final class ContextPools
     /**
      * Drain all pool entries (regardless of emit state) and record
      * their address→node_id mappings in the given map.
-     *
-     * @param array<int, int> $address_map
      */
-    public function drainToAddressMap(array &$address_map): void
+    public function drainToAddressMap(AddressMap $address_map): void
     {
         $this->drainPoolToAddressMap($this->string_context_pool->drainWithAddresses(), $address_map);
         $this->drainPoolToAddressMap($this->array_context_pool->drainWithAddresses(), $address_map);
@@ -84,10 +83,8 @@ final class ContextPools
     /**
      * Drain only emitted pool entries and record their address→node_id
      * mappings. Unemitted entries remain in the pools.
-     *
-     * @param array<int, int> $address_map
      */
-    public function drainEmittedToAddressMap(array &$address_map): void
+    public function drainEmittedToAddressMap(AddressMap $address_map): void
     {
         $this->drainPoolToAddressMap($this->string_context_pool->drainEmittedWithAddresses(), $address_map);
         $this->drainPoolToAddressMap($this->array_context_pool->drainEmittedWithAddresses(), $address_map);
@@ -106,17 +103,16 @@ final class ContextPools
 
     /**
      * @param iterable<int, ReferenceContext> $entries address => context
-     * @param array<int, int>                 $address_map
      */
     private function drainPoolToAddressMap(
         iterable $entries,
-        array &$address_map,
+        AddressMap $address_map,
     ): void {
         foreach ($entries as $address => $context) {
             $node_id = $context->getMemoNodeId();
             if ($node_id !== null) {
                 // Decode negative memo values (reserved but emitted)
-                $address_map[$address] = $node_id < 0 ? -$node_id - 1 : $node_id;
+                $address_map->set($address, $node_id < 0 ? -$node_id - 1 : $node_id);
             }
         }
     }

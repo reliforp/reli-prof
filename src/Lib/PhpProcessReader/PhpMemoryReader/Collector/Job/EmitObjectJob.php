@@ -49,7 +49,7 @@ final class EmitObjectJob implements CollectorJob
 
         // Dedup
         if ($ctx->memory_locations->has($address)) {
-            $existing_node_id = $ctx->address_map[$address] ?? null;
+            $existing_node_id = $ctx->address_map->get($address);
             if ($existing_node_id !== null) {
                 if ($this->parent_node_id !== null) {
                     $ctx->sink->emitReference(
@@ -65,7 +65,7 @@ final class EmitObjectJob implements CollectorJob
             if ($cached !== null) {
                 $node_id = $ctx->emitNode($cached, $this->parent_node_id, $this->link_name, $this->edge_strength);
                 if ($node_id >= 0) {
-                    $ctx->address_map[$address] = $node_id;
+                    $ctx->address_map->set($address, $node_id);
                 }
                 return;
             }
@@ -174,9 +174,9 @@ final class EmitObjectJob implements CollectorJob
             $this->edge_strength,
         );
         if ($object_node_id >= 0) {
-            $ctx->address_map[$object_location->address] = $object_node_id;
+            $ctx->address_map->set($object_location->address, $object_node_id);
             if ($object_location->address !== $address) {
-                $ctx->address_map[$address] = $object_node_id;
+                $ctx->address_map->set($address, $object_node_id);
             }
         }
 
@@ -318,7 +318,7 @@ final class EmitObjectJob implements CollectorJob
 
             $location = new FfiAllocationMemoryLocation(
                 $data_ptr,
-                (int)$alloc_size,
+                $alloc_size,
                 $is_persistent ? 'FFI\\CData::buffer(persistent)' : 'FFI\\CData::buffer',
             );
             $ctx->memory_locations->add($location);
@@ -387,9 +387,9 @@ final class EmitObjectJob implements CollectorJob
             $this->edge_strength,
         );
         if ($object_node_id >= 0) {
-            $ctx->address_map[$object_location->address] = $object_node_id;
+            $ctx->address_map->set($object_location->address, $object_node_id);
             if ($object_location->address !== $zend_object_address) {
-                $ctx->address_map[$zend_object_address] = $object_node_id;
+                $ctx->address_map->set($zend_object_address, $object_node_id);
             }
         }
 

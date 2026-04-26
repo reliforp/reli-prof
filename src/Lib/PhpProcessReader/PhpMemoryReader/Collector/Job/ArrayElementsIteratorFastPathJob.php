@@ -129,7 +129,7 @@ final class ArrayElementsIteratorFastPathJob implements CollectorJob
                         $key_string = (string)$i;
                     }
                 } else {
-                    $existing_node_id = $ctx->address_map[$key_address] ?? null;
+                    $existing_node_id = $ctx->address_map->get($key_address);
                     if ($existing_node_id !== null) {
                         $element_context->add('key', $existing_node_id);
                     } else {

@@ -50,7 +50,7 @@ final class EmitArrayJob implements CollectorJob
 
         // Dedup
         if ($ctx->memory_locations->has($address)) {
-            $existing_node_id = $ctx->address_map[$address] ?? null;
+            $existing_node_id = $ctx->address_map->get($address);
             if ($existing_node_id !== null) {
                 if ($this->parent_node_id !== null) {
                     $ctx->sink->emitReference(
@@ -66,7 +66,7 @@ final class EmitArrayJob implements CollectorJob
             if ($cached !== null) {
                 $node_id = $ctx->emitNode($cached, $this->parent_node_id, $this->link_name, $this->edge_strength);
                 if ($node_id >= 0) {
-                    $ctx->address_map[$address] = $node_id;
+                    $ctx->address_map->set($address, $node_id);
                 }
                 return;
             }
@@ -123,7 +123,7 @@ final class EmitArrayJob implements CollectorJob
                 $this->edge_strength,
             );
             if ($node_id >= 0) {
-                $ctx->address_map[$address] = $node_id;
+                $ctx->address_map->set($address, $node_id);
             }
             return;
         }
@@ -187,7 +187,7 @@ final class EmitArrayJob implements CollectorJob
             $this->edge_strength,
         );
         if ($header_node_id >= 0) {
-            $ctx->address_map[$address] = $header_node_id;
+            $ctx->address_map->set($address, $header_node_id);
         }
 
         // The array_elements_context we just created may not have a memo
@@ -236,7 +236,7 @@ final class EmitArrayJob implements CollectorJob
         if (is_null($array->arData) || $array->isUninitialized()) {
             $node_id = $ctx->emitNode($array_header_context, $parent_node_id, $link_name, $edge_strength);
             if ($node_id >= 0) {
-                $ctx->address_map[$array_header_location->address] = $node_id;
+                $ctx->address_map->set($array_header_location->address, $node_id);
             }
             return;
         }
@@ -260,7 +260,7 @@ final class EmitArrayJob implements CollectorJob
         // Emit the array header node
         $header_node_id = $ctx->emitNode($array_header_context, $parent_node_id, $link_name, $edge_strength);
         if ($header_node_id >= 0) {
-            $ctx->address_map[$array_header_location->address] = $header_node_id;
+            $ctx->address_map->set($array_header_location->address, $header_node_id);
         }
 
         // Get the node_id for array_elements so children can be attached.

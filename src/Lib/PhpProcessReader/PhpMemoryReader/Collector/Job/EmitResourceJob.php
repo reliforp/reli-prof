@@ -51,7 +51,7 @@ final class EmitResourceJob implements CollectorJob
 
         // Dedup
         if ($ctx->memory_locations->has($address)) {
-            $existing_node_id = $ctx->address_map[$address] ?? null;
+            $existing_node_id = $ctx->address_map->get($address);
             if ($existing_node_id !== null) {
                 if ($this->parent_node_id !== null) {
                     $ctx->sink->emitReference(
@@ -67,7 +67,7 @@ final class EmitResourceJob implements CollectorJob
             if ($cached !== null) {
                 $node_id = $ctx->emitNode($cached, $this->parent_node_id, $this->link_name, $this->edge_strength);
                 if ($node_id >= 0) {
-                    $ctx->address_map[$address] = $node_id;
+                    $ctx->address_map->set($address, $node_id);
                 }
                 return;
             }
@@ -90,7 +90,7 @@ final class EmitResourceJob implements CollectorJob
             $this->edge_strength,
         );
         if ($node_id >= 0) {
-            $ctx->address_map[$address] = $node_id;
+            $ctx->address_map->set($address, $node_id);
         }
     }
 

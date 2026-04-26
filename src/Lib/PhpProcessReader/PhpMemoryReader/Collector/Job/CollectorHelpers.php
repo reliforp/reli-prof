@@ -55,7 +55,7 @@ final class CollectorHelpers
     ): StringContext|int {
         $address = $pointer->address;
         if ($ctx->memory_locations->has($address)) {
-            $existing_node_id = $ctx->address_map[$address] ?? null;
+            $existing_node_id = $ctx->address_map->get($address);
             if ($existing_node_id !== null) {
                 return $existing_node_id;
             }
@@ -113,7 +113,7 @@ final class CollectorHelpers
     ): FunctionCollectionResult|int {
         $address = $pointer->address;
         if ($ctx->memory_locations->has($address)) {
-            $existing_node_id = $ctx->address_map[$address] ?? null;
+            $existing_node_id = $ctx->address_map->get($address);
             if ($existing_node_id !== null) {
                 return $existing_node_id;
             }

@@ -84,7 +84,7 @@ final class ArrayElementsIteratorJob implements CollectorJob
                     $element_context->add('key', $key_context);
                     $key_string = $zend_string->toString($ctx->dereferencer);
                 } else {
-                    $existing_node_id = $ctx->address_map[$key_address] ?? null;
+                    $existing_node_id = $ctx->address_map->get($key_address);
                     if ($existing_node_id !== null) {
                         $element_context->add('key', $existing_node_id);
                     } else {
