@@ -40,7 +40,19 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
         private ProcessPathResolver $process_path_resolver,
         private BinaryAnalysisCache $binary_analysis_cache,
         private ?ThreadPointerRetrieverInterface $thread_pointer_retriever = null,
+        private ?BinaryFingerprintCreator $binary_fingerprint_creator = null,
     ) {
+    }
+
+    private function fingerprint(int $pid, ProcessModuleMemoryMap $module_memory_map): BinaryFingerprint
+    {
+        if ($this->binary_fingerprint_creator !== null) {
+            return $this->binary_fingerprint_creator->createFromProcessModuleMemoryMap(
+                $pid,
+                $module_memory_map,
+            );
+        }
+        return BinaryFingerprint::fromProcessModuleMemoryMap($module_memory_map);
     }
 
     #[\Override]
@@ -61,7 +73,19 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
         $module_name = $module_memory_map->getModuleName();
         $path = $binary_path ?? $this->process_path_resolver->resolve($pid, $module_name);
 
-        $binary_fingerprint = BinaryFingerprint::fromProcessModuleMemoryMap($module_memory_map);
+        // Use the strong fingerprint (device_id + inode + module_name + ELF
+        // header bytes) rather than the weak fingerprint
+        // (BinaryFingerprint::fromProcessModuleMemoryMap, which is just
+        // device_id + inode + name). The weak fingerprint can collide
+        // across different binaries in container environments where
+        // overlayfs reassigns device_id / inode. Now that resolver_cache
+        // caches the parsed Elf64SymbolResolver per binary fingerprint, a
+        // collision means a different binary's symbol table gets handed
+        // back, yielding garbage st_value addresses, garbage process_vm_readv
+        // reads, and zend_mm_heap corruption when MemoryDumper walks the
+        // wrong region. (Bisect probe: ARM64 CI failure reproduces in
+        // MemoryDumpCommandTest / MemoryCompareCommandIntegrationTest.)
+        $binary_fingerprint = $this->fingerprint($pid, $module_memory_map);
         $symbol_resolver = new Elf64CachedSymbolResolver(
             new Elf64LazyParseSymbolResolver(
                 $path,
@@ -84,9 +108,7 @@ final class ProcessModuleSymbolReaderCreator implements ProcessModuleSymbolReade
                 $libpthread_fingerprint = null;
                 if ($libpthread_memory_areas !== []) {
                     $libpthread_module_map = new ProcessModuleMemoryMap($libpthread_memory_areas);
-                    $libpthread_fingerprint = BinaryFingerprint::fromProcessModuleMemoryMap(
-                        $libpthread_module_map
-                    );
+                    $libpthread_fingerprint = $this->fingerprint($pid, $libpthread_module_map);
                 }
                 $thread_pointer_retriever = $this->thread_pointer_retriever
                     ?? match (Architecture::detect()) {
