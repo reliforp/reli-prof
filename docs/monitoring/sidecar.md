@@ -347,8 +347,8 @@ v2.3.0 release                         v2.4.0 PR
 │ sidecar + benchmark  │                │ sidecar + benchmark  │
 │ → snapshot(baseline) │                │ → snapshot(baseline) │
 │ → snapshot(loaded)   │                │ → snapshot(loaded)   │
-│ → analyze → v2.3.db  │                │ → analyze → v2.4.db  │
-│ → upload artifact    │                │ → download v2.3.db   │
+│ → analyze → v2.3.rmem│                │ → analyze → v2.4.rmem│
+│ → upload artifact    │                │ → download v2.3.rmem │
 └─────────────────────┘                │ → compare → pass/fail│
                                         └─────────────────────┘
 ```
@@ -394,6 +394,7 @@ jobs:
       # against the snapshots.
       - name: Analyze snapshots
         run: |
+          mkdir -p /tmp/analyzed
           for f in /tmp/dumps/sidecar-*.dump; do
             reli inspector:memory:analyze "$f" \
               -f binary \
