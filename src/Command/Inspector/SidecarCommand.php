@@ -18,7 +18,7 @@ use Reli\Inspector\Settings\SidecarSettings\SidecarSettingsFromConsoleInput;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use Reli\Inspector\Sidecar\SidecarDumpHandler;
 use Reli\Inspector\Sidecar\SidecarServer;
-use Reli\Inspector\Sidecar\SocketPathResolver;
+use Reli\Sidecar\Client\SocketPathResolver;
 use Reli\Inspector\Watch\DiskUsageTracker;
 use Reli\Inspector\Watch\HeapStatsReader;
 use Reli\Inspector\Watch\RssReader;
