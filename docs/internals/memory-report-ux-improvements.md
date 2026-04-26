@@ -1935,3 +1935,162 @@ This belongs in the same file with the `impact_bytes` semantics
 refactor and the `class_definition_overhead` proposal — all three
 are "if a future round wants to invest in proper architecture,
 this is the move" parking lots.
+
+---
+
+## Parked: engine-internal type vocabulary in user-facing output
+
+### Symptoms (N18, N19)
+
+Captured during the impl14 fresh-eye review.
+
+**N18** — `choke_point` owner-name leaks `MemoryLocation` /
+`ReferenceContext` class names into the report:
+
+```
+choke_point: ZendArrayTableMemoryLocation (781.26 KB shallow)
+  holds 185.86 MB via 50000 children — $processedEnvelopes
+choke_point: ClassDefinitionContext (0 B shallow)
+  holds 1.01 MB via 9 children — class_table->Carbon\Carbon
+```
+
+A general PHP developer hitting this for the first time has to
+look up what `ZendArrayTableMemoryLocation` is and how it
+differs from `ZendArrayMemoryLocation` and
+`ZendArrayTableOverhead`, none of which appear in their own
+codebase or in the PHP manual.
+
+**N19** — same vocabulary leak in `=== Type Breakdown ===`:
+
+```
+ZendArrayTable                  1,010,010    213.86 MB    48.4%
+ZendArrayTableOverhead          1,010,009    109.45 MB    24.8%
+ZendString                      1,500,095     64.78 MB    14.7%
+ZendArray                       1,010,011     53.94 MB    12.2%
+```
+
+Across the impl14 corpus the `Zend*` types dominate every
+breakdown. They *are* what's allocated, so we can't just collapse
+them — but the labels demand engine-level mental models from the
+reader.
+
+### Why a naive rename doesn't work
+
+Initial impulse was to rename in-report to PHP-friendly
+language: "array bucket storage" instead of
+`ZendArrayTableMemoryLocation`, "object" instead of
+`ZendObject`, etc. The user pushed back: each of these distinct
+internal types carries precision the report needs to keep:
+
+- `ZendArrayMemoryLocation` (~56 B `zend_array` header) vs.
+  `ZendArrayTableMemoryLocation` (the `arData` bucket buffer)
+  vs. `ZendArrayTableOverhead` (unused capacity within
+  `arData`) — these are three physically distinct allocations
+  that resize independently. Collapsing all three under
+  "array" hides where the bytes actually went.
+- `MemoryLocation` (real heap allocation, freeable from PHP)
+  vs. `ReferenceContext` (analyzer-inserted virtual grouping
+  node, often 0 B shallow, no PHP-level handle) — these are
+  semantically opposite kinds of nodes. Both currently surface
+  with engine-style class names, but the user can act on a
+  Location and not on a Context.
+
+Losing those distinctions to gain readability is a regression
+for power users (and for diagnostic precision in support
+tickets).
+
+### Design discussion outcomes (still open)
+
+Three approaches surfaced; none chosen yet.
+
+**(a) Role labels + technical name in-report**
+
+```
+choke_point: $processedEnvelopes — array bucket storage
+  (ZendArrayTableMemoryLocation; 781.26 KB shallow)
+  holds 185.86 MB via 50,000 children
+```
+
+Add a `displayRole(): string` to the `MemoryLocation` and
+`ReferenceContext` hierarchies. Findings and Type Breakdown
+render the role label first, technical name in parentheses.
+Cheap to ship, doesn't sacrifice precision, but the role label
+still needs a one-time explanation for full understanding.
+
+**(b) Glossary documentation**
+
+Single doc covering all surfaceable types. Two-part structure
+(Memory Locations vs Reference Contexts), categorised
+sub-groups, three-tier depth (commonly-seen entries get
+intent + sizing + actionable hint; rarer ones get one-line
+definition).
+
+Scope is **larger than report-surfacing types**: `rmem:explore`
+does not elide path nodes the way the report does, so any
+`*Context` from `src/Lib/PhpProcessReader/PhpMemoryReader/ReferenceContext/`
+(53 classes) can show up under the cursor. Reducing glossary
+scope to "only what the report prints" would leave the
+explorer underdocumented.
+
+Estimated 25–30 entries with full treatment + ~40 entries
+with one-line treatment ≈ 600–800 lines markdown.
+
+**(c) HTML report**
+
+The vocabulary problem becomes a mostly-solved problem in
+HTML: every type name becomes an inline link to the glossary
+section (or a hover-popover with the definition). No
+loss of precision because the technical name stays; the
+role / definition is one click away rather than mandatory
+upfront knowledge.
+
+HTML output also unlocks adjacent UX wins identified during
+the same review — circle-pack visualization for retained-size
+hierarchy, click-to-focus cross-linking between findings and
+viz, filter / search, click-through from `Top Arrays` rows
+into the tree. These are not strictly required to fix N18/N19
+but the HTML scaffold makes them natural follow-ups.
+
+Phasing sketch:
+- P1: curated HTML, no viz, glossary inline links — solves
+  N17/N18/N19/N28 directly. ~2k lines.
+- P2: D3 circle-pack viz + finding↔region focus highlight.
+  ~1.5k lines.
+- P3: filter / search / cross-linking. ~1k lines.
+- P4 (stretch): replace or augment `rmem:explore` with the
+  HTML viewer.
+
+Output flag: `--format=text` (default) | `--format=html` |
+`--format=json`. Self-contained single `.html` file with
+embedded curated subset of nodes (top-N + spine + finding
+targets, ~1k–10k node budget) plus the full `.rmem` for users
+who want to drill further with `rmem:explore`. Glossary URL
+embedding pinned to the release tag (build-time
+substitution), not `main`, so a v1.2 binary's report links
+the v1.2 glossary.
+
+### Why this is parked
+
+(a) is the cheapest fix but doesn't fully solve N18/N19 on
+its own — readers still need glossary access to act on the
+role label. (b) is necessary content regardless of which
+delivery vector wins. (c) is the most thorough fix but a
+substantial new surface (HTML templating, JS bundling,
+versioned static assets, viz performance budgeting) that
+wants to be planned as its own initiative rather than tacked
+onto a polish round.
+
+The right next move is probably **(b) glossary first**,
+because that content is reused by all of (a)/(c) anyway. (a)
+becomes a small follow-up. (c) becomes a planned major
+feature once (b) exists.
+
+For now: keep N18 and N19 unaddressed in code, accept the
+current `Zend*` / `*Context` labels in output, and treat
+this section as the design memo to revisit when capacity is
+available for the glossary doc.
+
+Related: rendering precision concerns ("array bucket storage
+vs. array header vs. unused capacity") parallel the typed-edges
+park above — both are about not collapsing engine-level
+distinctions just because the surface text is awkward.
