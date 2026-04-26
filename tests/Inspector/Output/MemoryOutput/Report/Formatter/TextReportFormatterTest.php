@@ -855,6 +855,343 @@ class TextReportFormatterTest extends BaseTestCase
         $this->assertStringNotContainsString('Also detected as:', $output);
     }
 
+    public function testBottleneckPathRendersVerticalDescentForDeepPath(): void
+    {
+        // T4: rw3_messenger-envelopes shape — 4 user-visible segments.
+        // The text output must NOT echo `summary` (which sticks the
+        // 186 MB spine total next to the leaf path and reads as if the
+        // leaf weighs that). Instead emit a per-step descent block from
+        // facts.path[] + facts.sizes[], one line per step with the
+        // size at that depth.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'bottleneck_path',
+                severity: FindingSeverity::High,
+                confidence: FindingConfidence::High,
+                summary: "\$processedEnvelopes[0]->stamps['RetryStamp'] (186.11 MB)",
+                facts: [
+                    'path' => [
+                        'global_variables', 'array_elements', 'processedEnvelopes',
+                        'array_elements', '0',
+                        'object_properties', 'stamps',
+                        'array_elements', 'RetryStamp', 'value',
+                    ],
+                    'path_types' => [
+                        '', '', '',
+                        '', 'ArrayElementContext',
+                        '', '',
+                        '', 'ArrayElementContext', '',
+                    ],
+                    'sizes' => [
+                        195_159_654, 195_159_654, 195_159_654,
+                        194_887_741, 194_887_741,
+                        4_403, 4_403,
+                        2_150, 2_150, 2_150,
+                    ],
+                    'summary_path' => "\$processedEnvelopes[0]->stamps['RetryStamp']",
+                    'depth' => 10,
+                ],
+                impact_bytes: 195_159_654,
+            ),
+        ]);
+        $output = (new TextReportFormatter())->format($result);
+
+        // Heading line — descent block follows on subsequent lines.
+        $this->assertStringContainsString("\n    bottleneck_path:\n", $output);
+        // The path-total parenthetical that misled readers in the
+        // legacy summary line must NOT appear.
+        $this->assertStringNotContainsString('(186.11 MB)', $output);
+        // Each user-visible step appears on its own line with its
+        // own size. Structural intermediaries (`array_elements`,
+        // `object_properties`) and the synthesised array key are
+        // elided by PathFormatter, so the four segments are
+        // `$processedEnvelopes`, `[0]`, `->stamps`, `['RetryStamp']`.
+        $this->assertStringContainsString('$processedEnvelopes', $output);
+        $this->assertStringContainsString('└ [0]', $output);
+        // Property delta strips the leading `->`: the tree indent
+        // already conveys descent, so the arrow is redundant.
+        $this->assertStringContainsString('└ stamps', $output);
+        $this->assertStringNotContainsString('└ ->stamps', $output);
+        $this->assertStringContainsString("└ ['RetryStamp']", $output);
+        // Per-step sizes — each step's own retained, not the spine total.
+        // 195_159_654 B / 1048576 ≈ 186.12 MB; 194_887_741 ≈ 185.86 MB.
+        $this->assertStringContainsString('186.12 MB', $output);
+        $this->assertStringContainsString('185.86 MB', $output);
+        $this->assertStringContainsString('4.30 KB', $output);
+        $this->assertStringContainsString('2.10 KB', $output);
+    }
+
+    public function testBottleneckPathRendersInlineDescentForShallowPath(): void
+    {
+        // 3 user-visible segments — short enough that a vertical block
+        // would be oversized. Render inline with `→` separators.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'bottleneck_path',
+                severity: FindingSeverity::High,
+                confidence: FindingConfidence::High,
+                summary: '$bus->listeners[\'request.completed\'] (11.37 MB)',
+                facts: [
+                    'path' => [
+                        'global_variables', 'array_elements', 'bus',
+                        'object_properties', 'listeners',
+                        'array_elements', 'request.completed', 'value',
+                    ],
+                    'path_types' => [
+                        '', '', '',
+                        '', '',
+                        '', 'ArrayElementContext', '',
+                    ],
+                    'sizes' => [
+                        11_923_456, 11_923_456, 11_923_456,
+                        7_490_125, 7_490_125,
+                        2724, 2724, 2724,
+                    ],
+                    'summary_path' => "\$bus->listeners['request.completed']",
+                    'depth' => 8,
+                ],
+                impact_bytes: 11_923_456,
+            ),
+        ]);
+        $output = (new TextReportFormatter())->format($result);
+
+        // Inline form on the kind line — single line, arrows between
+        // steps. Every step renders its own size, including the first:
+        // `sizes[0]` (carried by `[HIGH] X impacted`) is the path's
+        // true root retained, not the first user-visible step's, and
+        // the two diverge whenever `global_variables` etc. hold
+        // non-trivial state outside the descent.
+        $this->assertStringContainsString(
+            '    bottleneck_path: $bus (11.37 MB) → listeners (7.14 MB)',
+            $output,
+        );
+        $this->assertStringContainsString('→', $output);
+        // No vertical heading — distinguish from the deep-path mode.
+        $this->assertStringNotContainsString("    bottleneck_path:\n", $output);
+    }
+
+    public function testInlineDescentShowsFirstStepSizeWhenGapToImpact(): void
+    {
+        // Locks in the inline-mode invariant from the verification
+        // pass on the impl15 corpus: when sizes[0] (path-total
+        // retained, often `global_variables`) is bigger than the
+        // first user-visible step's retained — because other state
+        // lives in global_variables outside the chosen descent —
+        // the first step must STILL render its own size, otherwise
+        // the gap becomes unobservable in inline mode. Mirrors
+        // `rw3_reflection-heavy`: 7.21 MB impact vs 4.63 MB at
+        // `$propertyInfoCache`.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'bottleneck_path',
+                severity: FindingSeverity::High,
+                confidence: FindingConfidence::High,
+                summary: "\$propertyInfoCache['attr_key']->accessors (4.63 MB)",
+                facts: [
+                    'path' => [
+                        'global_variables', 'array_elements', 'propertyInfoCache',
+                        'array_elements', 'attr_key',
+                        'object_properties', 'accessors', 'value',
+                    ],
+                    'path_types' => [
+                        '', '', '',
+                        '', 'ArrayElementContext',
+                        '', '', '',
+                    ],
+                    // sizes[0] = 7.21 MB (global_variables total —
+                    // includes other globals besides the cache).
+                    // sizes[2] = 4.63 MB (the cache itself, first
+                    // user-visible step). The 2.58 MB gap must be
+                    // observable from the rendered output.
+                    'sizes' => [
+                        7_558_184, 7_558_184, 4_858_787,
+                        4_858_787, 4_858_787,
+                        497, 497, 497,
+                    ],
+                    'summary_path' =>
+                        "\$propertyInfoCache['attr_key']->accessors",
+                    'depth' => 8,
+                ],
+                impact_bytes: 7_558_184,
+            ),
+        ]);
+        $output = (new TextReportFormatter())->format($result);
+
+        // [HIGH] line carries sizes[0] = 7.21 MB.
+        $this->assertStringContainsString('[HIGH] 7.21 MB impacted', $output);
+        // First inline step explicitly carries its own retained
+        // (4.63 MB), distinct from impact_bytes — without this the
+        // 2.58 MB held by other globals would be invisible.
+        $this->assertStringContainsString(
+            '$propertyInfoCache (4.63 MB)',
+            $output,
+        );
+        // All three user-visible steps render with their own size.
+        $this->assertStringContainsString("['attr_key']", $output);
+        $this->assertStringContainsString('accessors', $output);
+        // 497 B = the leaf size — last step carries it inline.
+        $this->assertStringContainsString('497 B', $output);
+    }
+
+    public function testBottleneckPathTruncatesLongSegment(): void
+    {
+        // A property name longer than 40 chars must truncate so the
+        // descent block doesn't push past terminal width. Mirrors the
+        // Top Classes name-column treatment.
+        $long = str_repeat('A', 60) . 'TAIL';
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'bottleneck_path',
+                severity: FindingSeverity::High,
+                confidence: FindingConfidence::High,
+                summary: "\$x->{$long}->y (1.00 MB)",
+                facts: [
+                    'path' => [
+                        'global_variables', 'array_elements', 'x',
+                        'object_properties', $long,
+                        'object_properties', 'y',
+                        'value',
+                    ],
+                    'path_types' => ['', '', '', '', '', '', '', ''],
+                    'sizes' => [
+                        1_048_576, 1_048_576, 1_048_576,
+                        524_288, 524_288,
+                        262_144, 262_144,
+                        262_144,
+                    ],
+                    'summary_path' => "\$x->{$long}->y",
+                    'depth' => 8,
+                ],
+                impact_bytes: 1_048_576,
+            ),
+        ]);
+        $output = (new TextReportFormatter())->format($result);
+
+        // 60-A property truncates: 3 chars `...` + last 37 chars of
+        // the segment. The trailing `TAIL` plus a partial run of `A`s
+        // must remain so the discriminating tail is visible.
+        $this->assertStringContainsString('...', $output);
+        $this->assertStringContainsString('TAIL', $output);
+        // Full 60-char prefix must NOT appear verbatim.
+        $this->assertStringNotContainsString(str_repeat('A', 60), $output);
+    }
+
+    public function testBottleneckPathFallsBackToSummaryWhenAllStructural(): void
+    {
+        // Pathological path with only structural intermediaries —
+        // PathFormatter has nothing to anchor on. Don't emit a descent
+        // block (it would be structural noise); fall back to the
+        // legacy `kind: summary` line.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'bottleneck_path',
+                severity: FindingSeverity::High,
+                confidence: FindingConfidence::High,
+                summary: 'all-structural fallback',
+                facts: [
+                    'path' => [
+                        'global_variables', 'array_elements',
+                        'object_properties', 'value',
+                    ],
+                    'path_types' => ['', '', '', ''],
+                    'sizes' => [10_000_000, 1_000_000, 500_000, 100_000],
+                ],
+                impact_bytes: 10_000_000,
+            ),
+        ]);
+        $output = (new TextReportFormatter())->format($result);
+
+        $this->assertStringContainsString(
+            'bottleneck_path: all-structural fallback',
+            $output,
+        );
+        $this->assertStringNotContainsString('└ ', $output);
+    }
+
+    public function testBottleneckPathFallsBackToSummaryWhenFactsMissing(): void
+    {
+        // Older fixtures (pre-T2.2) don't carry path / path_types /
+        // sizes. The descent builder must defensively return [] so
+        // legacy reports keep rendering as before.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'bottleneck_path',
+                severity: FindingSeverity::High,
+                confidence: FindingConfidence::High,
+                summary: 'legacy form (no facts.path)',
+                facts: ['some' => 'unrelated'],
+                impact_bytes: 1024,
+            ),
+        ]);
+        $output = (new TextReportFormatter())->format($result);
+
+        $this->assertStringContainsString(
+            'bottleneck_path: legacy form (no facts.path)',
+            $output,
+        );
+        $this->assertStringNotContainsString('└ ', $output);
+    }
+
+    public function testBottleneckPathDescentStopsAtSummaryPathWhenLeafDiverges(): void
+    {
+        // When summary_path != leaf_path (the existing
+        // selectSummaryPath truncation case), the descent must stop
+        // at summary_path's depth. The leaf example beyond is rendered
+        // separately by the existing `Leaf example: …` hypothesis
+        // line. Use a deeper path (4 user-visible segments in
+        // summary_path) so we land in vertical mode where the cut-off
+        // is unambiguous to assert.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'bottleneck_path',
+                severity: FindingSeverity::High,
+                confidence: FindingConfidence::High,
+                summary: '$rows[0]->frames->inner (54.50 KB)',
+                facts: [
+                    'path' => [
+                        'global_variables', 'array_elements', 'rows',
+                        'array_elements', '0',
+                        'object_properties', 'frames',
+                        'object_properties', 'inner',
+                        'array_elements', 'leaf_inner', 'value',
+                    ],
+                    'path_types' => [
+                        '', '', '',
+                        '', 'ArrayElementContext',
+                        '', '',
+                        '', '',
+                        '', 'ArrayElementContext', '',
+                    ],
+                    'sizes' => [
+                        100_000_000, 100_000_000, 100_000_000,
+                        99_500_000, 99_500_000,
+                        55_808, 55_808,
+                        30_000, 30_000,
+                        100, 100, 100,
+                    ],
+                    'summary_path' => '$rows[0]->frames->inner',
+                    'leaf_path' => "\$rows[0]->frames->inner['leaf_inner']",
+                    'depth' => 12,
+                ],
+                hypothesis: "Heaviest retained branch — primary chain\n"
+                    . "Leaf example: \$rows[0]->frames->inner['leaf_inner']",
+                impact_bytes: 100_000_000,
+            ),
+        ]);
+        $output = (new TextReportFormatter())->format($result);
+
+        // Descent runs through `->inner`; the deeper `['leaf_inner']`
+        // segment must NOT appear in the descent block. (Property
+        // delta strips the leading `->` — tree indent conveys descent.)
+        $this->assertStringContainsString('└ inner', $output);
+        $this->assertStringNotContainsString("└ ['leaf_inner']", $output);
+        // Leaf example survives on the hypothesis line.
+        $this->assertStringContainsString(
+            "Leaf example: \$rows[0]->frames->inner['leaf_inner']",
+            $output,
+        );
+    }
+
     public function testNonSharedInfoFindingFallsIntoMinorFindings(): void
     {
         // Generic Info-severity finding kinds (anything outside the

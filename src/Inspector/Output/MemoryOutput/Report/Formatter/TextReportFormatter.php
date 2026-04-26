@@ -117,7 +117,31 @@ final class TextReportFormatter implements ReportFormatterInterface
                     . ' impacted'
                     : "\u{2014}";
                 $lines[] = "  [{$tag}] {$impact}";
-                $lines[] = "    {$finding->kind}: {$finding->summary}";
+                if ($finding->kind === 'bottleneck_path') {
+                    // T4: render the descent step-by-step from
+                    // facts.path[] + facts.sizes[] instead of echoing
+                    // `summary`, where the path-total size sits next to
+                    // the leaf path and reads as if the leaf weighs the
+                    // total. The summary stays on Finding::$summary for
+                    // JSON consumers; this is text-only narrative.
+                    $descent_steps = self::buildBottleneckDescent($finding);
+                    if ($descent_steps === []) {
+                        // Facts missing or malformed (legacy fixtures,
+                        // or paths shorter than one user-visible step):
+                        // fall back to the legacy summary line.
+                        $lines[] = "    {$finding->kind}: {$finding->summary}";
+                    } elseif (count($descent_steps) >= 4) {
+                        $lines[] = "    {$finding->kind}:";
+                        foreach (self::renderDescentVertical($descent_steps) as $dl) {
+                            $lines[] = "      {$dl}";
+                        }
+                    } else {
+                        $lines[] = "    {$finding->kind}: "
+                            . self::renderDescentInline($descent_steps);
+                    }
+                } else {
+                    $lines[] = "    {$finding->kind}: {$finding->summary}";
+                }
 
                 if ($finding->kind === 'bottleneck_path') {
                     foreach (self::renderBottleneckSpine($finding) as $spine_line) {
@@ -514,20 +538,240 @@ final class TextReportFormatter implements ReportFormatterInterface
     }
 
     /**
+     * Walk `facts.path[]` step-by-step (with PathFormatter applied to
+     * each prefix) and emit one entry per *user-visible* step — the
+     * structural intermediaries (`array_elements`, `object_properties`,
+     * etc.) are elided, the leading call-frame label (`<main>()::`) is
+     * stripped, and only the bare token added at each step appears in
+     * `delta`. Sizes come straight from `facts.sizes[i]` at the same
+     * index that produced the user-visible token; identical adjacent
+     * sizes are *not* collapsed because the steps individually
+     * communicate which variable name lives at which depth. T4.
+     *
+     * Stops at `facts.summary_path`'s depth — the leaf example beyond
+     * a uniform-sibling truncation is rendered separately by the
+     * existing `Leaf example: …` hypothesis line, not as a parallel
+     * descent.
+     *
+     * Returns `[]` when facts are missing or malformed (older fixtures
+     * predating this work, or pass-level bugs); the caller falls back
+     * to the legacy summary line.
+     *
+     * @return list<array{delta: string, size: int}>
+     * @psalm-suppress MixedAssignment, MixedArgument, MixedArgumentTypeCoercion
+     */
+    private static function buildBottleneckDescent(Finding $finding): array
+    {
+        /** @var mixed $raw_path */
+        $raw_path = $finding->facts['path'] ?? null;
+        /** @var mixed $raw_types */
+        $raw_types = $finding->facts['path_types'] ?? null;
+        /** @var mixed $raw_sizes */
+        $raw_sizes = $finding->facts['sizes'] ?? null;
+        if (!is_array($raw_path) || !is_array($raw_types) || !is_array($raw_sizes)) {
+            return [];
+        }
+        $n = count($raw_path);
+        if ($n === 0 || $n !== count($raw_types) || $n !== count($raw_sizes)) {
+            return [];
+        }
+        /** @var list<string> $path */
+        $path = [];
+        foreach ($raw_path as $p) {
+            if (!is_string($p)) {
+                return [];
+            }
+            $path[] = $p;
+        }
+        /** @var list<string> $types */
+        $types = [];
+        foreach ($raw_types as $t) {
+            $types[] = is_string($t) ? $t : '';
+        }
+        /** @var list<int> $sizes */
+        $sizes = [];
+        foreach ($raw_sizes as $s) {
+            if (!is_int($s) || $s < 0) {
+                return [];
+            }
+            $sizes[] = $s;
+        }
+        $summary_path = is_string($finding->facts['summary_path'] ?? null)
+            ? (string)$finding->facts['summary_path']
+            : '';
+
+        $steps = [];
+        $prev_formatted = '';
+        for ($i = 0; $i < $n; $i++) {
+            // Structural intermediaries (`array_elements`,
+            // `object_properties`, …) are elided by PathFormatter, so
+            // they contribute nothing user-visible — skip without
+            // recomputing the prefix. This also dodges PathFormatter's
+            // " -> "-joined fallback for entirely-structural prefixes,
+            // the same case `formatSpineDropLabel` defends against.
+            if (PathFormatter::isStructuralLink($path[$i])) {
+                continue;
+            }
+            $cur = PathFormatter::toPhpSyntax(
+                array_slice($path, 0, $i + 1),
+                array_slice($types, 0, $i + 1),
+            );
+            if ($cur === $prev_formatted || $cur === '(root)') {
+                continue;
+            }
+            // PathFormatter adds `Class::method()::` segments for call
+            // frames that haven't yet been followed by a variable. Skip
+            // those — they're not a user-visible descent step on their
+            // own; the next step glues a `$var` onto them and that's
+            // where the descent starts.
+            if (str_ends_with($cur, '::')) {
+                $prev_formatted = $cur;
+                continue;
+            }
+            // Stop once we descend past the chosen summary_path. The
+            // leaf example beyond it is rendered separately by the
+            // hypothesis "Leaf example: …" line.
+            if (
+                $summary_path !== ''
+                && !str_starts_with($summary_path, $cur)
+                && $cur !== $summary_path
+            ) {
+                break;
+            }
+            // Compute what was newly added at this step. For the very
+            // first user-visible step, drop any leading `<main>()::` /
+            // `Foo::method()::` so the descent reads as the user-named
+            // variable (matching summary_path's behaviour). For later
+            // steps, the delta is the suffix beyond the previous step's
+            // formatted output.
+            if ($prev_formatted === '' || str_ends_with($prev_formatted, '::')) {
+                $delta = preg_replace('/^[^\$\[]+::/', '', $cur);
+                if (!is_string($delta)) {
+                    $delta = $cur;
+                }
+            } elseif (str_starts_with($cur, $prev_formatted)) {
+                $delta = substr($cur, strlen($prev_formatted));
+            } else {
+                $delta = $cur;
+            }
+            if ($delta === '') {
+                $prev_formatted = $cur;
+                continue;
+            }
+            $steps[] = ['delta' => $delta, 'size' => $sizes[$i]];
+            $prev_formatted = $cur;
+            if ($cur === $summary_path) {
+                break;
+            }
+        }
+        return $steps;
+    }
+
+    /**
+     * Vertical descent block. One line per user-visible step; each
+     * line is `<indent + bullet><name>   <right-aligned size>`.
+     * Both name and size columns are sized to the descent's own max
+     * widths — same approach the Top Arrays / Top Strings tables use,
+     * so reading `186.11 MB` next to `2.10 KB` keeps the right-edge
+     * units aligned.
+     *
+     * @param list<array{delta: string, size: int}> $steps
+     * @return list<string>
+     */
+    private static function renderDescentVertical(array $steps): array
+    {
+        $lefts = [];
+        $size_strs = [];
+        foreach ($steps as $depth => $step) {
+            // depth 0 is the variable root: no bullet, no indent. From
+            // depth 1 onward each level adds 2 spaces and a `└ ` to
+            // signal "we descended into …". The Unicode glyph is
+            // already in use elsewhere (the em-dash on the `[—]`
+            // empty-impact tag) so terminal compatibility is moot.
+            if ($depth === 0) {
+                $prefix = '';
+            } else {
+                $prefix = str_repeat('  ', $depth - 1) . '└ ';
+            }
+            $lefts[] = $prefix . self::truncatePathSegment($step['delta']);
+            $size_strs[] = SizeFormatter::format($step['size']);
+        }
+        $max_left = 0;
+        foreach ($lefts as $left) {
+            $w = mb_strlen($left, 'UTF-8');
+            if ($w > $max_left) {
+                $max_left = $w;
+            }
+        }
+        $max_size = 0;
+        foreach ($size_strs as $s) {
+            $w = mb_strlen($s, 'UTF-8');
+            if ($w > $max_size) {
+                $max_size = $w;
+            }
+        }
+        $lines = [];
+        foreach ($lefts as $i => $left) {
+            $size = $size_strs[$i];
+            $left_pad = str_repeat(' ', max(0, $max_left - mb_strlen($left, 'UTF-8')));
+            $size_pad = str_repeat(' ', max(0, $max_size - mb_strlen($size, 'UTF-8')));
+            $lines[] = $left . $left_pad . '   ' . $size_pad . $size;
+        }
+        return $lines;
+    }
+
+    /**
+     * Inline descent block: `$root (size) → step (size) → leaf (size)`.
+     * Used for shallow descents (≤ 3 user-visible steps) where a
+     * vertical block would feel oversized. Every step — including the
+     * first — renders its own size, because `sizes[0]` (carried by the
+     * `[HIGH] X impacted` line above) is the path's *true root*
+     * retained, which differs from the first user-visible step's
+     * retained whenever structural prefix nodes (`global_variables` /
+     * `array_elements`) hold non-trivial state outside the chosen
+     * descent. Concrete corpus cases — `rw3_reflection-heavy`
+     * (7.21 MB impact vs 4.63 MB at `$propertyInfoCache`),
+     * `rw4_graph-recursion` (110.97 MB vs 49.51 MB) — would otherwise
+     * leave the first step's retained unobservable.
+     *
+     * @param list<array{delta: string, size: int}> $steps
+     */
+    private static function renderDescentInline(array $steps): string
+    {
+        $parts = [];
+        foreach ($steps as $step) {
+            $name = self::truncatePathSegment($step['delta']);
+            $parts[] = $name . ' (' . SizeFormatter::format($step['size']) . ')';
+        }
+        return implode(' → ', $parts);
+    }
+
+    /**
+     * Strip a leading `->` (the tree indent already conveys "descended
+     * into …", so the arrow is redundant on a property step) and
+     * shorten the result if it would push the descent past terminal
+     * width. Brackets `[]` are kept because they *are* the index
+     * syntax — a bare key would be unrecognisable out of context.
+     */
+    private static function truncatePathSegment(string $s): string
+    {
+        if (str_starts_with($s, '->')) {
+            $s = substr($s, 2);
+        }
+        if (mb_strlen($s, 'UTF-8') > 40) {
+            return '...' . mb_substr($s, -37, null, 'UTF-8');
+        }
+        return $s;
+    }
+
+    /**
      * Render `bottleneck_path` spine info from `facts.sizes`.
      *
-     * The summary string already shows `<path> (<size>)`, but on a
-     * descent like `$decoded[data][10100][profile]` the displayed size
-     * is the spine *root's* retained size while the path is the spine's
-     * *leaf*. When the heaviest-child descent crosses into a uniform-
-     * sibling region (e.g. one of 25,000 ~3 KB profiles), the size and
-     * the path describe opposite ends of the chain.
-     *
-     * Detect the first dominance drop (sizes[i+1] < sizes[i] * 0.5) and
-     * print one explanatory line — the leaf retained size, plus a note
-     * if the descent flatlines after the drop (uniform-sibling region).
-     *
-     * Returns 0–2 lines to be rendered under the standard summary.
+     * Detects the first dominance drop (sizes[i+1] < sizes[i] * 0.5)
+     * and prints one explanatory line — the leaf retained size, plus
+     * a note if the descent flatlines after the drop (uniform-sibling
+     * region). Returns 0–2 lines to be rendered under the descent
+     * block.
      *
      * @return list<string>
      * @psalm-suppress MixedAssignment, MixedArgument
