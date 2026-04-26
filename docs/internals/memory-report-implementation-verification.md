@@ -1023,3 +1023,90 @@ reader can glance at without being told "everything's fine".
 The split keeps "this is the runtime working" cleanly separated
 from "this might be worth a glance" without forcing the reader to
 decode refs/target ratios mentally.
+
+---
+
+## S12 verification (PR #661 — cross-kind finding clustering)
+
+PR #661 implements S12 from the T3 set. `FindingClusterer`
+groups findings by target identity (class_name / owned_class /
+target_class fact, with evidence_node_ids[0] as fallback) and
+collapses them to one representative + an `Also detected as` line
+listing the other detector kinds (with `×N` for repeats).
+
+### Status: ✅ closed
+
+| Check                                                    | Result |
+|----------------------------------------------------------|--------|
+| `Also detected as` annotations across corpus             | ✅ 27 total |
+| Findings count drop on noisy reports                     | ✅ see table below |
+| JSON output unchanged                                    | ✅ (per PR description; clustering is text-only) |
+| Insertion-order preserved across mixed singletons + groups | ✅ confirmed by spot-check on doctrine-uow |
+| `×N` count form on repeated kinds                        | ✅ `expensive_property×4` on rw3_doctrine-uow |
+
+### Findings count delta on noisy reports
+
+| Report                    | Pre-S12 | Post-S12 | Δ   |
+|---------------------------|---------|----------|-----|
+| `rw3_doctrine-uow`        | 25      | 14       | -11 |
+| `rw3_messenger-envelopes` | 23      | 15       | -8  |
+| `rw2_error-context-capture` | 12    | 5        | -7  |
+| `rw_logger-stack`         | 16      | 11       | -5  |
+| `rw2_eloquent-hydration`  | 9       | 4        | -5  |
+| `rw4_enum-collections`    | 9       | 4        | -5  |
+| `rw2_spreadsheet-xlsx`    | 14      | 9        | -5  |
+| `rw3_closure-leak`        | 10      | 7        | -3  |
+| `rw_twig`                 | 10      | 9        | -1  |
+| `rw_phpunit`              | 4       | 3        | -1  |
+| `rw3_graphql-shape`       | 7       | 6        | -1  |
+| `rw3_reflection-heavy`    | 7       | 6        | -1  |
+
+Reports without same-target convergence
+(`rw_symfony-console`: 0→0, `rw2_csv-mega`: 2→2, etc.) stay
+unchanged.
+
+### Sample collapse (rw3_doctrine-uow)
+
+The `Variant` class accumulated five separate findings before:
+
+    [HIGH] dominant_class: Variant: 90,000 instances ...
+    [MEDIUM] property_scaling: Variant ...
+    [MEDIUM] expensive_property: Variant::$sku ...
+    [LOW] dedup_candidate: ... target=Variant ...
+    [LOW] structural_duplicate: Variant: 89,999 identical shapes ...
+
+After S12 they fold into one representative entry plus:
+
+    Also detected as: property_scaling, expensive_property, dedup_candidate, structural_duplicate
+
+`Product::$description` similarly collapses to one
+`expensive_property` entry plus
+`Also detected as: expensive_property×4, structural_duplicate` —
+the `×4` showing four other property-level detections folded in.
+
+### Sample collapse (rw3_messenger-envelopes)
+
+The `RetryStamp::$replay` cluster collapses to:
+
+    [MEDIUM] 16.40 MB impacted
+      expensive_property: RetryStamp::$replay: 50,000 occurrences x 344 B = 16.40 MB
+      ...
+      Also detected as: structural_duplicate
+
+Other classes (Envelope, BusNameStamp, etc.) get their own
+clusters, since the grouping key is class-scoped — the corpus
+correctly produces multiple representative entries for distinct
+target classes rather than over-aggregating.
+
+### Net effect on the corpus
+
+The "messenger-envelopes — 22 findings for one phenomenon" case
+that was the empirical motivator for S12 is now 15 visible
+entries with 7 collapse annotations summarising the missing 8
+findings. The reader sees the same evidence breadth (which
+detectors agreed) but in less screen real-estate.
+
+Combined with N4 (-38 rows from Top Arrays / Top Strings) and N2
+(re-section + tag rename), the report is materially less noisy
+across the entire corpus while retaining all the underlying
+data on the JSON path.
