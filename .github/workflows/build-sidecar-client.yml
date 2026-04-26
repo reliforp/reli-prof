@@ -88,7 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download downgraded artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: sidecar-client-build
           path: build/sidecar-client
@@ -126,7 +126,7 @@ jobs:
         php: ['8.4', '8.5']
     steps:
       - name: Download downgraded artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: sidecar-client-build
           path: build/sidecar-client
