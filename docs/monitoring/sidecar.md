@@ -400,13 +400,19 @@ jobs:
               -o "/tmp/analyzed/$(basename "$f" .dump).rmem"
           done
 
-      # Compare with baseline (if available)
+      # Compare with baseline (if available). inspector:memory:compare
+      # takes one baseline + one target snapshot, so iterate over the
+      # labels (baseline, after-fixtures, …) and pair each one up.
       - name: Compare with baseline
         if: hashFiles('baseline/*.rmem') != ''
         run: |
-          reli inspector:memory:compare \
-            baseline/*.rmem /tmp/analyzed/*.rmem \
-            --threshold 5%
+          for target in /tmp/analyzed/sidecar-*.rmem; do
+            label="$(basename "$target" .rmem | sed -E 's/^sidecar-[0-9]+-[0-9-]+(-(.+))?$/\2/')"
+            baseline="$(ls baseline/sidecar-*-"${label:-baseline}".rmem 2>/dev/null | head -n1)"
+            [ -n "$baseline" ] || { echo "no baseline for ${label:-baseline}"; continue; }
+            echo "=== ${label:-baseline} ==="
+            reli inspector:memory:compare "$baseline" "$target" --threshold 5
+          done
 
       # Save current results as new baseline
       - uses: actions/upload-artifact@v4

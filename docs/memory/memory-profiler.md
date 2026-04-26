@@ -413,14 +413,18 @@ The example of the output is like below.
 
 ### Automatic analysis instead of manual jq
 
-If you prefer actionable findings over manual `jq` exploration, use the automatic report feature. Save to SQLite and generate a report:
+If you prefer actionable findings over manual `jq` exploration, use the automatic report feature. Capture once to `.rmem` (the fastest format and what every analyser reads natively), then run the report:
 
 ```bash
-sudo ./reli inspector:memory -p <pid> -f sqlite3 -o snapshot.db
-./reli inspector:memory:report snapshot.db
+sudo ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
+./reli inspector:memory:report snapshot.rmem
 ```
 
-Or generate directly:
+`-f sqlite3 -o snapshot.db` is also supported — useful when you want
+SQL access to the same snapshot. `inspector:memory:report` and
+`inspector:memory:compare` accept either format.
+
+Or generate the report directly from a live process, without going through a snapshot file:
 
 ```bash
 sudo ./reli inspector:memory -p <pid> -f report
