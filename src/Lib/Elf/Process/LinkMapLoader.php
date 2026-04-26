@@ -69,17 +69,29 @@ final class LinkMapLoader
 
     private function readCString(int $pid, int $address): string
     {
-        $bytes = $this->memory_reader->read($pid, $address, 1);
+        // Cold-attach hot path: link-map traversal during cold-attach has
+        // to read every loaded library's path (DT_NEEDED-style), and naive
+        // byte-by-byte reads cost one process_vm_readv syscall per
+        // character. Reading in 256-byte chunks turns each typical 30-40
+        // character path into a single syscall.
+        $chunk_size = 256;
         $str = '';
         while (true) {
-            /** @var int $c */
-            $c = $bytes[0];
-            if ($c === 0) {
+            $chunk = $this->memory_reader->read($pid, $address, $chunk_size);
+            $found_terminator = false;
+            for ($i = 0; $i < $chunk_size; $i++) {
+                /** @var int $c */
+                $c = $chunk[$i];
+                if ($c === 0) {
+                    $found_terminator = true;
+                    break;
+                }
+                $str .= chr($c);
+            }
+            if ($found_terminator) {
                 break;
             }
-            $str .= chr($c);
-            $address += 1;
-            $bytes = $this->memory_reader->read($pid, $address, 1);
+            $address += $chunk_size;
         }
         return $str;
     }
