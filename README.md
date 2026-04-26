@@ -115,7 +115,7 @@ Under the hood, reli:
 - Reads memory of the outer process through `ptrace(2)` and `process_vm_readv(2)` via FFI.
 - Analyses the internal data structures of the PHP VM (aka Zend Engine).
 
-If you have a bit of extra CPU resource to spare on the profiling host, the overhead of this software is negligible.
+This keeps target-side overhead low in our benchmarks: 1.00–1.06× baseline at typical sampling rates, with profiler CPU spent in the separate reli process. See [docs/bench/RESULTS.md](docs/bench/RESULTS.md) for the numbers.
 
 ## Goals
 We would like to achieve the following 5 goals through this project.

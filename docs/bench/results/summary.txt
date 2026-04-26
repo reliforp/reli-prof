@@ -1,0 +1,56 @@
+config                 bench                      n      p25      p50      p75  iqr/p50  vs base
+-----------------------------------------------------------------------------------------------
+baseline               fib-32                     3    0.108s    0.110s    0.112s     3.2%    1.00x
+baseline               sort-100k-x10              3    0.230s    0.230s    0.234s     2.2%    1.00x
+baseline               mandelbrot-200             3    0.086s    0.086s    0.087s     1.7%    1.00x
+baseline               depth-30                   3    0.190s    0.193s    0.221s    16.1%    1.00x
+baseline               depth-100                  3    0.210s    0.211s    0.216s     2.8%    1.00x
+
+xdebug-profile         fib-32                     3    6.652s    6.818s    6.938s     4.2%   61.98x
+xdebug-profile         sort-100k-x10              3    0.211s    0.222s    0.228s     8.1%    0.97x
+xdebug-profile         mandelbrot-200             3    0.414s    0.417s    0.465s    12.0%    4.85x
+xdebug-profile         depth-30                   3    8.259s    8.275s    8.487s     2.8%   42.88x
+xdebug-profile         depth-100                  3   10.692s   10.879s   11.029s     3.1%   51.56x
+
+xhprof                 fib-32                     3   67.486s   69.887s   70.471s     4.3%  635.34x
+xhprof                 sort-100k-x10              3    0.207s    0.217s    0.222s     7.1%    0.94x
+xhprof                 mandelbrot-200             3    0.080s    0.090s    0.090s    11.1%    1.05x
+xhprof                 depth-30                   3   53.334s   54.924s   56.195s     5.2%  284.58x
+xhprof                 depth-100                  3   84.402s   84.542s   85.570s     1.4%  400.67x
+
+excimer-1ms            fib-32                     3    0.108s    0.109s    0.111s     2.3%    0.99x
+excimer-1ms            sort-100k-x10              3    0.229s    0.239s    0.244s     6.3%    1.04x
+excimer-1ms            mandelbrot-200             3    0.070s    0.070s    0.080s    14.3%    0.81x
+excimer-1ms            depth-30                   3    0.194s    0.194s    0.217s    12.1%    1.01x
+excimer-1ms            depth-100                  3    0.191s    0.214s    0.223s    15.2%    1.01x
+
+spx-instr              fib-32                     3    4.344s    4.472s    4.499s     3.5%   40.65x
+spx-instr              sort-100k-x10              3    0.232s    0.235s    0.236s     1.7%    1.02x
+spx-instr              mandelbrot-200             3    0.077s    0.086s    0.088s    12.2%    1.00x
+spx-instr              depth-30                   3    3.572s    3.586s    3.674s     2.8%   18.58x
+spx-instr              depth-100                  3    6.200s    6.220s    6.293s     1.5%   29.48x
+
+spx-sample-1ms         fib-32                     3    0.260s    0.290s    0.295s    12.2%    2.64x
+spx-sample-1ms         sort-100k-x10              3    0.228s    0.228s    0.235s     3.1%    0.99x
+spx-sample-1ms         mandelbrot-200             3    0.088s    0.088s    0.092s     4.5%    1.02x
+spx-sample-1ms         depth-30                   3    0.315s    0.317s    0.320s     1.6%    1.64x
+spx-sample-1ms         depth-100                  3    0.453s    0.455s    0.455s     0.5%    2.16x
+
+datadog-prof           fib-32                    10    0.108s    0.108s    0.111s     2.3%    0.98x
+datadog-prof           sort-100k-x10             10    0.240s    0.242s    0.244s     1.3%    1.05x
+datadog-prof           mandelbrot-200            10    0.088s    0.088s    0.088s     0.0%    1.02x
+datadog-prof           depth-30                  10    0.242s    0.243s    0.246s     1.5%    1.26x
+datadog-prof           depth-100                 10    0.213s    0.214s    0.217s     1.7%    1.02x
+
+phpspy-1khz            fib-32                     3    0.111s    0.111s    0.114s     2.3%    1.01x
+phpspy-1khz            sort-100k-x10              3    0.231s    0.232s    0.234s     1.3%    1.01x
+phpspy-1khz            mandelbrot-200             3    0.079s    0.088s    0.088s    10.8%    1.02x
+phpspy-1khz            depth-30                   3    0.229s    0.256s    0.261s    12.3%    1.33x
+phpspy-1khz            depth-100                  3    0.220s    0.222s    0.224s     1.6%    1.05x
+
+reli-1khz              fib-32                     3    0.101s    0.109s    0.110s     7.8%    0.99x
+reli-1khz              sort-100k-x10              3    0.233s    0.233s    0.234s     0.4%    1.01x
+reli-1khz              mandelbrot-200             3    0.089s    0.089s    0.089s     0.6%    1.03x
+reli-1khz              depth-30                   3    0.226s    0.246s    0.246s     8.3%    1.27x
+reli-1khz              depth-100                  3    0.199s    0.224s    0.226s    12.1%    1.06x
+

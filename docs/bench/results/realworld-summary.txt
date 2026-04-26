@@ -1,0 +1,20 @@
+config                 bench                      n      p25      p50      p75  iqr/p50  vs base
+-----------------------------------------------------------------------------------------------
+baseline               laravel-route-2000         5    6.611s    6.614s    6.635s     0.4%    1.00x
+baseline               composer-install           5   10.267s   11.135s   11.240s     8.7%    1.00x
+
+excimer                laravel-route-2000         5    6.721s    6.980s    7.016s     4.2%    1.06x
+excimer                composer-install           5   11.538s   11.572s   11.743s     1.8%    1.04x
+
+datadog-prof           laravel-route-2000         5    6.879s    6.904s    6.913s     0.5%    1.04x
+datadog-prof           composer-install           5   11.823s   11.991s   12.076s     2.1%    1.08x
+
+
+
+
+phpspy-200hz           laravel-route-2000         5   10.998s   12.299s   12.951s    15.9%    1.86x
+phpspy-200hz           composer-install           5    8.579s    8.719s    8.749s     1.9%    0.78x
+
+reli-200hz             laravel-route-2000         5   11.709s   12.648s   12.784s     8.5%    1.91x
+reli-200hz             composer-install           5    8.654s    9.004s    9.052s     4.4%    0.81x
+
