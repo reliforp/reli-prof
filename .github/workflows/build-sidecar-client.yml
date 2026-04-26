@@ -115,3 +115,53 @@ jobs:
         # executable bit, so `vendor/bin/phpunit` returns exit 126
         # (permission denied) when called as a binary.
         run: php vendor/bin/phpunit tests/
+
+  verify-modern-php:
+    name: Verify on PHP ${{ matrix.php }} (no deprecations)
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.4', '8.5']
+    steps:
+      - name: Download downgraded artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: sidecar-client-build
+          path: build/sidecar-client
+
+      - name: Setup PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Lint downgraded files
+        working-directory: build/sidecar-client
+        run: find . -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n 1 php -l
+
+      # End users on modern PHP `composer require` the downgraded artifact,
+      # so the downgraded source must autoload AND exercise its constructors
+      # without emitting Deprecated/Warning/Notice. This catches regressions
+      # like the PHP 8.4 implicit-nullable-parameter deprecation
+      # (`int $x = null` is deprecated; use `?int $x = null` or no type).
+      - name: Smoke load + instantiate (no PHP-level diagnostics expected)
+        working-directory: build/sidecar-client
+        run: |
+          set -o pipefail
+          out=$(php -d error_reporting=E_ALL -d display_errors=1 -r '
+            require "vendor/autoload.php";
+            new Reli\Sidecar\Client\SidecarClient("/tmp/reli-smoke.sock", 5);
+            new Reli\Sidecar\Client\SidecarClientResponse(
+                "ok", 1, "/tmp/x", 100, ["frame"], null, null, null
+            );
+            Reli\Sidecar\Client\SidecarClientResponse::fromJson(json_encode(["status"=>"ok"]));
+            echo "OK\n";
+          ' 2>&1)
+          printf '%s\n' "$out"
+          if printf '%s\n' "$out" | grep -qE '^(PHP )?(Deprecated|Warning|Notice|Strict standards|Fatal error):'; then
+            echo "::error::PHP emitted diagnostics on modern PHP — downgrade pipeline regression"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -q '^OK$' || { echo "::error::smoke did not reach OK marker"; exit 1; }
