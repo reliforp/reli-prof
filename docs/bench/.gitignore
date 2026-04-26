@@ -1,0 +1,4 @@
+results/*.log
+
+# In-progress CSV (committed manually once a run completes).
+results/realworld.csv

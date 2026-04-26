@@ -1,0 +1,16 @@
+tool,workload,bytes,format
+xhprof,laravel-route-2000,799970,serialized PHP array
+excimer-200hz,laravel-route-2000,847342,collapsed text
+xdebug-profile,laravel-route-2000,959520808,cachegrind
+spx-default,laravel-route-2000,121378618,SPX JSON (JIT off)
+spx-period-1ms,laravel-route-2000,1376773,SPX JSON (JIT off)
+phpspy,laravel-route-2000@200hz,323522,phpspy text
+reli-200hz,laravel-route-2000,25461,rbt binary
+reli-200hz-z,laravel-route-2000,0,rbt binary (gzip)
+excimer-200hz,depth-100-1M,12359,collapsed text (130 samples)
+phpspy-200hz,depth-100-1M,150244,phpspy text (77 samples)
+reli-200hz,depth-100-1M,4344,rbt binary (117 samples)
+reli-200hz-z,depth-100-1M,720,rbt binary (gzip; 114 samples)
+reli-200hz-S,laravel-route-2000,108315,rbt binary -S (1475 samples)
+reli-200hz-zS,laravel-route-2000,33371,rbt binary --rbt-compress -S (1369 samples)
+phpspy-200hz-S,laravel-route-2000,553278,phpspy text -S (304 samples)

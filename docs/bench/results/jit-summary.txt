@@ -1,0 +1,60 @@
+=== Long sampling configs vs baseline-jit (JIT-on, n=10) ===
+config                 bench                      n      p25      p50      p75  iqr/p50  vs base
+baseline               fib-37                    10    0.366s    0.368s    0.373s     2.0%    1.00x
+baseline               sort-100k-x100            10    2.242s    2.289s    2.329s     3.8%    1.00x
+baseline               mandelbrot-500            10    0.422s    0.425s    0.432s     2.4%    1.00x
+baseline               depth-30-2M               10    0.506s    0.514s    0.516s     1.9%    1.00x
+baseline               depth-100-1M              10    0.635s    0.637s    0.642s     1.2%    1.00x
+
+excimer-1ms-jit        fib-37                    10    0.367s    0.370s    0.374s     1.8%    1.01x
+excimer-1ms-jit        sort-100k-x100            10    2.293s    2.313s    2.331s     1.6%    1.01x
+excimer-1ms-jit        mandelbrot-500            10    0.425s    0.429s    0.432s     1.7%    1.01x
+excimer-1ms-jit        depth-30-2M               10    0.511s    0.512s    0.516s     0.9%    1.00x
+excimer-1ms-jit        depth-100-1M              10    0.504s    0.622s    0.642s    22.3%    0.98x
+
+datadog-prof-jit       fib-37                    10    0.345s    0.351s    0.359s     3.9%    0.95x
+datadog-prof-jit       sort-100k-x100            10    2.329s    2.361s    2.378s     2.1%    1.03x
+datadog-prof-jit       mandelbrot-500            10    0.411s    0.423s    0.433s     5.2%    1.00x
+datadog-prof-jit       depth-30-2M               10    0.508s    0.514s    0.522s     2.6%    1.00x
+datadog-prof-jit       depth-100-1M              10    0.632s    0.645s    0.650s     2.8%    1.01x
+
+
+
+
+phpspy-1khz-jit        fib-37                    10    0.368s    0.371s    0.375s     1.9%    1.01x
+phpspy-1khz-jit        sort-100k-x100            10    2.255s    2.285s    2.320s     2.9%    1.00x
+phpspy-1khz-jit        mandelbrot-500            10    0.427s    0.431s    0.444s     3.9%    1.01x
+phpspy-1khz-jit        depth-30-2M               10    0.458s    0.506s    0.511s    10.5%    0.99x
+phpspy-1khz-jit        depth-100-1M              10    0.643s    0.647s    0.651s     1.2%    1.01x
+
+reli-1khz-jit          fib-37                    10    0.367s    0.370s    0.372s     1.2%    1.01x
+reli-1khz-jit          sort-100k-x100            10    2.292s    2.303s    2.310s     0.7%    1.01x
+reli-1khz-jit          mandelbrot-500            10    0.425s    0.429s    0.433s     1.8%    1.01x
+reli-1khz-jit          depth-30-2M               10    0.504s    0.512s    0.516s     2.2%    1.00x
+reli-1khz-jit          depth-100-1M              10    0.614s    0.642s    0.649s     5.5%    1.01x
+
+reli-1khz-relijit      fib-37                    10    0.370s    0.372s    0.377s     1.7%    1.01x
+reli-1khz-relijit      sort-100k-x100            10    2.241s    2.298s    2.323s     3.6%    1.00x
+reli-1khz-relijit      mandelbrot-500            10    0.348s    0.419s    0.428s    19.0%    0.98x
+reli-1khz-relijit      depth-30-2M               10    0.409s    0.504s    0.513s    20.8%    0.98x
+reli-1khz-relijit      depth-100-1M              10    0.639s    0.640s    0.642s     0.4%    1.00x
+
+
+=== Heavy/short configs vs baseline-jit-short (JIT-on, n=3 heavy / n=10 baseline) ===
+config                 bench                      n      p25      p50      p75  iqr/p50  vs base
+-----------------------------------------------------------------------------------------------
+baseline               fib-32                    10    0.038s    0.038s    0.040s     4.6%    1.00x
+baseline               sort-100k-x10             10    0.226s    0.229s    0.233s     3.2%    1.00x
+baseline               mandelbrot-200            10    0.041s    0.048s    0.050s    17.7%    1.00x
+baseline               depth-30                  10    0.043s    0.049s    0.053s    21.4%    1.00x
+baseline               depth-100                 10    0.065s    0.067s    0.067s     2.6%    1.00x
+xhprof-jit             fib-32                     3   62.044s   62.340s   62.340s     0.5% 1640.53x
+xhprof-jit             sort-100k-x10              3    0.233s    0.233s    0.236s     1.7%    1.02x
+xhprof-jit             mandelbrot-200             3    0.047s    0.047s    0.047s     0.0%    0.98x
+xhprof-jit             depth-30                   3   52.392s   52.489s   53.459s     2.0% 1071.20x
+xhprof-jit             depth-100                  3   84.445s   84.514s   84.532s     0.1% 1270.89x
+xdebug-profile-jit     fib-32                     3    6.899s    6.900s    6.910s     0.2%  181.58x
+xdebug-profile-jit     sort-100k-x10              3    0.227s    0.230s    0.233s     2.8%    1.00x
+xdebug-profile-jit     mandelbrot-200             3    0.483s    0.497s    0.508s     5.0%   10.35x
+xdebug-profile-jit     depth-30                   3    8.016s    8.092s    8.110s     1.2%  165.14x
+xdebug-profile-jit     depth-100                  3   10.636s   10.641s   10.646s     0.1%  160.02x
