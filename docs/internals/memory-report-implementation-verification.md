@@ -1110,3 +1110,148 @@ Combined with N4 (-38 rows from Top Arrays / Top Strings) and N2
 (re-section + tag rename), the report is materially less noisy
 across the entire corpus while retaining all the underlying
 data on the JSON path.
+
+## T4 verification (PR #665 — `bottleneck_path` descent rendering from `facts.path` / `sizes`)
+
+### Status: ✅ closed (after one round of spec clarification)
+
+PR #665 implements the T4 handoff spec: render `bottleneck_path`
+text output as a per-step descent block sourced from
+`facts.path[]` + `facts.sizes[]`, replacing the legacy
+`{path} ({size})` summary line where the spine total sat next to
+the leaf path and read as if the leaf weighed the total (N17).
+This is the first finding migrated under the new "Text formatter
+chartering" principle in `memory-report-ux-improvements.md`.
+
+### Two-mode rendering
+
+- **Vertical** (≥4 user-visible steps): tree-style block with `└ `
+  bullets, per-step retained right-aligned to the block's own max
+  width.
+- **Inline** (≤3 steps): single line with `→` arrows, every step
+  carrying its own size (see "Inline first-step size" below).
+- **Fallback** to legacy `kind: summary` line for: missing /
+  malformed facts (older fixtures), all-structural paths with no
+  user-named anchor, and zero-step descents after call-frame
+  stripping.
+
+User-visible step count keys off `PathFormatter::isStructuralLink`
+elision plus a call-frame-only-segment skip (output ending in
+`::`), matching the same defence `formatSpineDropLabel` already
+uses. Identical adjacent sizes are not collapsed — each step
+individually communicates which variable name lives at which
+depth, and a flatlining run is itself diagnostic.
+
+`DrillDownPass.summary` is unchanged — JSON consumers reading
+`Finding.summary` see no change. Fix is purely text-side.
+
+### Mode distribution on the 25-report corpus
+
+|  Mode    | Count | Examples                                         |
+|----------|-------|--------------------------------------------------|
+| Vertical | 18    | messenger-envelopes, doctrine-uow, closure-leak, |
+|          |       | static-cache, phpunit, twig, eloquent-hydration  |
+| Inline   |  6    | reflection-heavy, graph-recursion,               |
+|          |       | laravel-collections, parsedown, s1, wordpress    |
+| Fallback |  2    | xml-dom-huge (pre-T2.2 path), s4 (1-segment)     |
+
+### Sample (rw3_messenger-envelopes — N17's canonical case)
+
+Before (impl14):
+
+    [HIGH] 186.11 MB impacted
+        bottleneck_path: $processedEnvelopes[0]->stamps['RetryStamp'] (186.11 MB)
+        Spine: heaviest-child mass drops after $processedEnvelopes[0] (185.86 MB → 4.30 KB); leaf retains only 2.10 KB
+
+After (impl16):
+
+    [HIGH] 186.10 MB impacted
+        bottleneck_path:
+          $processedEnvelopes    186.10 MB
+          └ [0]                    4.30 KB
+            └ stamps               4.23 KB
+              └ ['RetryStamp']     2.10 KB
+        Spine: heaviest-child mass drops after $processedEnvelopes[0] (185.86 MB → 4.30 KB); leaf retains only 2.10 KB
+
+Each user-visible step carries its own retained; the previous
+single-line `(186.11 MB)` parenthetical that read as the leaf's
+weight is gone. The Spine line stays — it explicitly identifies
+the heaviest-child drop point, which is informative even when the
+descent block makes the same numbers visible.
+
+### Inline first-step size — spec oversight surfaced and fixed
+
+The first PR head (`c4fb9ad`) implemented inline mode with the
+first step's size omitted, on the assumption that the
+`[HIGH] X impacted` line already carried it. The impl15
+verification pass surfaced that this assumption only holds when
+`sizes[0]` (path-total retained, often `global_variables`) equals
+the first user-visible step's retained — which it does NOT when
+non-trivial state lives outside the chosen descent.
+
+Affected cases on the impl15 corpus:
+
+| report                 | impact (sizes[0]) | first-step retained          | gap     |
+|------------------------|-------------------|------------------------------|---------|
+| rw3_reflection-heavy   | 7.21 MB           | 4.75 MB ($propertyInfoCache) | 2.46 MB |
+| rw4_graph-recursion    | 110.97 MB         | 49.60 MB ($reachabilityCache)| 61.4 MB |
+| rw_laravel-collections | 7.52 MB           | 5.06 MB ($source)            | 2.46 MB |
+| rw_parsedown           | 1.73 MB           | 988.96 KB ($lines)           | 0.77 MB |
+
+The handoff spec was updated (commit `cc6b01a` on the docs branch)
+to make "every step renders its size, including the first" an
+explicit rule with the four corpus cases as evidence. PR head
+`42312c7` picked this up — `renderDescentInline` now renders all
+steps uniformly, with a new `testInlineDescentShowsFirstStepSizeWhenGapToImpact`
+test locking in the invariant against an `rw3_reflection-heavy`-shaped
+fixture.
+
+Verified on impl16: all 6 inline cases render the first step's
+own size; the four where the gap was meaningful now make it
+observable.
+
+### Lessons
+
+- **Spec example numerical accuracy matters.** The original spec
+  example used `closure-leak` as an inline case, but `closure-leak`
+  actually has 4 user-visible steps and lands in vertical mode.
+  The numerical mismatch was caught only after the implementation
+  was running against real corpus data, not at spec-review time.
+- **Inline mode's invariant should be stated as a rule, not as
+  example.** Showing `$bus → listeners (11.37 MB) → ...` in spec
+  text was meant to say "all steps have sizes" but read as
+  "first-step size optional"; an explicit rule prevents the
+  optimisation drift.
+- **Verification against the corpus is the real check.** Test
+  fixtures are necessarily synthetic — the impl15 mode-distribution
+  count (6 inline / 18 vertical / 2 fallback) and the gap-to-impact
+  counts could not have come from unit tests alone.
+
+### Files touched
+
+- `src/Inspector/Output/MemoryOutput/Report/Formatter/TextReportFormatter.php`
+  (~250 lines added: `buildBottleneckDescent`,
+  `renderDescentVertical`, `renderDescentInline`,
+  `truncatePathSegment`, plus the actionable-loop integration)
+- `tests/Inspector/Output/MemoryOutput/Report/Formatter/TextReportFormatterTest.php`
+  (~340 lines added: 7 new test cases covering vertical, inline,
+  inline first-step gap, long-segment truncation, all-structural
+  fallback, missing-facts fallback, summary_path divergence stop)
+
+`DrillDownPass.php` not touched — `Finding.summary` /
+`Finding.facts.{path,sizes,path_types,summary_path,leaf_path,depth}`
+all unchanged on the producer side.
+
+### Net effect on the corpus
+
+Of 25 reports, 24 produce a `bottleneck_path` finding; all 24 now
+render with per-step sizes (18 vertical + 6 inline). The
+remaining 2 reports (`rw2_xml-dom-huge` with all-structural path,
+`s4_big_string` with 1-segment path) use the fallback to legacy
+summary, both correctly. N17 is closed.
+
+The "Text formatter chartering" principle now has its first
+concrete migration. Next candidates from the principle (when
+capacity permits): `choke_point` per-child distribution,
+`dedup_candidate.examples[]` (currently truncated to 3),
+`companion_cluster` per-class breakdown for clusters > 3 members.
