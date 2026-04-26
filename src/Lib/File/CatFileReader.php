@@ -46,4 +46,17 @@ final class CatFileReader implements FileReaderInterface
 
         return $contents;
     }
+
+    #[\Override]
+    public function readSlice(string $path, int $offset, int $size): string
+    {
+        // CatFileReader is the proc_open(cat) fallback; we don't shell out
+        // to dd here, so just slice the full read. Callers in the cold-attach
+        // hot path use NativeFileReader anyway.
+        $all = $this->readAll($path);
+        if ($offset < 0 || $offset >= strlen($all)) {
+            return '';
+        }
+        return substr($all, $offset, $size);
+    }
 }
