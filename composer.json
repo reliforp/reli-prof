@@ -31,6 +31,9 @@
     "monolog/monolog": "3.10.0",
     "webmozart/assert": "2.3.0"
   },
+  "replace": {
+    "reliforp/reli-prof-sidecar-client": "self.version"
+  },
   "require-dev": {
     "ext-posix": "*",
     "phpunit/phpunit": "13.1.7",

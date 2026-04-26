@@ -1,0 +1,29 @@
+{
+  "name": "reliforp/reli-prof-sidecar-client",
+  "description": "Lightweight, FFI-free PHP client for the reli-prof sidecar daemon. Embed in user applications to request memory dumps from the sidecar without pulling in the full reli-prof toolchain.",
+  "type": "library",
+  "license": "MIT",
+  "keywords": [
+    "php",
+    "profiler",
+    "sidecar",
+    "memory",
+    "client"
+  ],
+  "authors": [
+    {
+      "name": "sji",
+      "homepage": "https://twitter.com/sji_ch"
+    }
+  ],
+  "require": {
+    "php": "^8.1",
+    "ext-json": "*"
+  },
+  "autoload": {
+    "psr-4": {
+      "Reli\\Sidecar\\Client\\": ""
+    }
+  },
+  "minimum-stability": "stable"
+}
