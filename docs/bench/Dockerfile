@@ -1,4 +1,4 @@
-FROM php:8.4-cli
+FROM php:8.5-cli
 
 # Build deps + ptrace tools for external samplers used inside the container.
 RUN apt-get update && apt-get install -y --no-install-recommends \
