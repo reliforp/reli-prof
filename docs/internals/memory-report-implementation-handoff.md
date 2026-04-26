@@ -1555,9 +1555,38 @@ bottleneck_path:
 **B. Inline with arrows (good for ≤3 segments)**:
 
 ```
-bottleneck_path: $bus → listeners (11.37 MB) → ['request.completed'] (7.14 MB) → [0] (2.66 KB)
-  Spine: heaviest-child mass drops after $bus->listeners (11.37 MB → 7.14 MB)
+bottleneck_path: $propertyInfoCache (4.63 MB) → ['App\\Dto\\Dto0::attr_0'] (1.33 KB) → accessors (486 B)
+  Spine: heaviest-child mass drops after $propertyInfoCache['App\\Dto\\Dto0::attr_0'] (4.63 MB → 1.33 KB)
 ```
+
+**Each step gets its own size — including the first.** Don't try to
+elide the first step's size on the assumption that the
+`[HIGH] X impacted` line carries it. The two numbers are not the
+same when the path has any structural prefix (`global_variables` /
+`array_elements` / etc.) above the first user-visible step:
+
+- `[HIGH] X impacted` carries `impact_bytes = sizes[0]` — the
+  retained size at the path's *true root*, which in most reports is
+  `global_variables` (i.e. all globals, not just one).
+- The first user-visible step (`$propertyInfoCache`) lives at
+  `sizes[i]` for some `i > 0` after `PathFormatter::isStructuralLink`
+  skips the structural intermediaries.
+
+When non-trivial state lives in `global_variables` outside the
+chosen path, `sizes[0] > sizes[i]` and the user has no honest way
+to read the first step's retained from the descent if it's omitted.
+Concrete impl15 cases where the gap is meaningful:
+
+| report | impact (sizes[0]) | first user-visible step retained |
+|---|---|---|
+| `rw3_reflection-heavy` | 7.21 MB (`global_variables`) | 4.63 MB (`$propertyInfoCache`) |
+| `rw4_graph-recursion` | 110.97 MB (`global_variables`) | 49.51 MB (`$reachabilityCache`) |
+| `rw_laravel-collections` | 7.52 MB | 5.06 MB (`$source`) |
+| `rw_parsedown` | 1.77 MB | 758 KB (`$lines`) |
+
+Vertical mode does not have this problem because every step renders
+its size. For inline mode parity, render the size at every step
+including index 0.
 
 Recommendation: vertical for `depth >= 4`, inline otherwise. The
 existing `summary_path` + `leaf_path` strings can stay for JSON
