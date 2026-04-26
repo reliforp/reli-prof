@@ -625,4 +625,162 @@ class TextReportFormatterTest extends BaseTestCase
         $this->assertStringContainsString('...', $output);
         $this->assertStringContainsString('ClassName', $output);
     }
+
+    public function testSharedSingletonRendersUnderObservations(): void
+    {
+        // N2: a shared_singleton (1 target, many refs) means CoW share
+        // is working — always an observation, never a "finding to fix".
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'shared_singleton',
+                severity: FindingSeverity::Info,
+                confidence: FindingConfidence::High,
+                summary: 'AttributeMetadata::$ignoredAttributes (4,499 refs -> 1 target) [singleton]',
+                facts: [
+                    'ref_count' => 4499,
+                    'target_count' => 1,
+                ],
+            ),
+        ]);
+        $output = (new TextReportFormatter())->format($result);
+
+        $this->assertStringContainsString('=== Observations (no action needed) ===', $output);
+        // Reader-facing label rather than the internal kind tag.
+        $this->assertStringContainsString('[CoW share] AttributeMetadata', $output);
+        // Must NOT appear under Minor findings, and the legacy combined
+        // section header must not appear either.
+        $this->assertStringNotContainsString('=== Minor findings ===', $output);
+        $this->assertStringNotContainsString('=== Additional Info ===', $output);
+    }
+
+    public function testSharedFaninWithHighRatioRendersAsInterning(): void
+    {
+        // refs/targets = 4,500,030 / 39 ≈ 115k each — classic interning
+        // (PDO HashTable keys, real corpus example). Above the 100x
+        // threshold so it lands in Observations with the [interning] tag.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'shared_fanin',
+                severity: FindingSeverity::Info,
+                confidence: FindingConfidence::Medium,
+                summary: 'key -> ? (4,500,030 refs -> 39 targets, 115385.4 each)',
+                facts: [
+                    'ref_count' => 4500030,
+                    'target_count' => 39,
+                ],
+            ),
+        ]);
+        $output = (new TextReportFormatter())->format($result);
+
+        $this->assertStringContainsString('=== Observations (no action needed) ===', $output);
+        $this->assertStringContainsString('[interning] key', $output);
+        $this->assertStringNotContainsString('=== Minor findings ===', $output);
+    }
+
+    public function testSharedFaninWithLowRatioRendersUnderMinorFindings(): void
+    {
+        // refs/targets = 4391 / 686 ≈ 6.4 each — well below 100x. This
+        // is a small dedup opportunity, not a working interning pattern,
+        // so it lands in Minor findings with the raw kind tag.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'shared_fanin',
+                severity: FindingSeverity::Info,
+                confidence: FindingConfidence::Medium,
+                summary: 'config -> Setting (4,391 refs -> 686 targets, 6.4 each)',
+                facts: [
+                    'ref_count' => 4391,
+                    'target_count' => 686,
+                ],
+            ),
+        ]);
+        $output = (new TextReportFormatter())->format($result);
+
+        $this->assertStringContainsString('=== Minor findings ===', $output);
+        $this->assertStringContainsString('[shared_fanin] config', $output);
+        $this->assertStringNotContainsString('=== Observations', $output);
+    }
+
+    public function testSharedFaninWithMidRatioStaysInMinorFindings(): void
+    {
+        // refs/targets = 4501 / 300 ≈ 15 each — sits in the [10, 100)
+        // middle band. Per the bucketing rules, mid-ratio cases stay
+        // in Minor findings: a 15x ratio is borderline enough to be
+        // worth a glance, not loud enough to call "everything's fine".
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'shared_fanin',
+                severity: FindingSeverity::Info,
+                confidence: FindingConfidence::Medium,
+                summary: 'PropertyInfoCacheEntry::$className -> ? (4,501 refs -> 300 targets, 15 each)',
+                facts: [
+                    'ref_count' => 4501,
+                    'target_count' => 300,
+                ],
+            ),
+        ]);
+        $output = (new TextReportFormatter())->format($result);
+
+        $this->assertStringContainsString('=== Minor findings ===', $output);
+        $this->assertStringContainsString('[shared_fanin] PropertyInfoCacheEntry', $output);
+        $this->assertStringNotContainsString('=== Observations', $output);
+    }
+
+    public function testObservationsAndMinorFindingsCoexist(): void
+    {
+        // Both buckets populated — make sure both section headers print
+        // and findings sort into the right one. Verifies the buckets
+        // are independently emitted, not mutually exclusive.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'shared_singleton',
+                severity: FindingSeverity::Info,
+                confidence: FindingConfidence::High,
+                summary: 'Singleton::$instance (200 refs -> 1 target)',
+                facts: ['ref_count' => 200, 'target_count' => 1],
+            ),
+            new Finding(
+                kind: 'shared_fanin',
+                severity: FindingSeverity::Info,
+                confidence: FindingConfidence::Medium,
+                summary: 'cfg -> Setting (40 refs -> 8 targets, 5.0 each)',
+                facts: ['ref_count' => 40, 'target_count' => 8],
+            ),
+        ]);
+        $output = (new TextReportFormatter())->format($result);
+
+        $this->assertStringContainsString('=== Observations (no action needed) ===', $output);
+        $this->assertStringContainsString('=== Minor findings ===', $output);
+        $this->assertStringContainsString('[CoW share] Singleton', $output);
+        $this->assertStringContainsString('[shared_fanin] cfg', $output);
+        // Observations should come before Minor findings — section order
+        // is part of the narrative ("here's what's working, here's the
+        // smaller stuff"). pos comparison guarantees the order.
+        $obs_pos = strpos($output, '=== Observations');
+        $min_pos = strpos($output, '=== Minor findings');
+        $this->assertNotFalse($obs_pos);
+        $this->assertNotFalse($min_pos);
+        $this->assertLessThan($min_pos, $obs_pos);
+    }
+
+    public function testNonSharedInfoFindingFallsIntoMinorFindings(): void
+    {
+        // Generic Info-severity finding kinds (anything outside the
+        // shared_* family) are not "everything's fine" signals, so they
+        // belong in Minor findings rather than Observations.
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'retained_approximate',
+                severity: FindingSeverity::Info,
+                confidence: FindingConfidence::Medium,
+                summary: 'approximate retained size note',
+                facts: [],
+            ),
+        ]);
+        $output = (new TextReportFormatter())->format($result);
+
+        $this->assertStringContainsString('=== Minor findings ===', $output);
+        $this->assertStringContainsString('[retained_approximate]', $output);
+        $this->assertStringNotContainsString('=== Observations', $output);
+    }
 }

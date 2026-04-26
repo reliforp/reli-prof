@@ -376,7 +376,12 @@ final class TextReportFormatter implements ReportFormatterInterface
             $lines[] = '';
         }
 
-        // Info findings (non-table)
+        // Info findings (non-table). N2: split into "Observations" (this
+        // is the system working as intended — CoW sharing, string
+        // interning) vs "Minor findings" (small dedup opportunities or
+        // diagnostics worth a glance). Without the split, a working
+        // singleton or interning pattern reads identical to a real
+        // problem because both render with the same `[shared_*]` tag.
         $other_info = array_filter(
             $info,
             fn(Finding $f) => !in_array($f->kind, [
@@ -388,9 +393,26 @@ final class TextReportFormatter implements ReportFormatterInterface
                 'large_string',
             ], true)
         );
-        if ($other_info !== []) {
-            $lines[] = '=== Additional Info ===';
-            foreach ($other_info as $finding) {
+        $observations = [];
+        $minor_findings = [];
+        foreach ($other_info as $finding) {
+            if (self::isObservation($finding)) {
+                $observations[] = $finding;
+            } else {
+                $minor_findings[] = $finding;
+            }
+        }
+        if ($observations !== []) {
+            $lines[] = '=== Observations (no action needed) ===';
+            foreach ($observations as $finding) {
+                $label = self::observationLabel($finding);
+                $lines[] = "  [{$label}] {$finding->summary}";
+            }
+            $lines[] = '';
+        }
+        if ($minor_findings !== []) {
+            $lines[] = '=== Minor findings ===';
+            foreach ($minor_findings as $finding) {
                 $lines[] = "  [{$finding->kind}] {$finding->summary}";
             }
             $lines[] = '';
@@ -423,6 +445,54 @@ final class TextReportFormatter implements ReportFormatterInterface
             FindingSeverity::Medium => 2,
             FindingSeverity::Low => 3,
             FindingSeverity::Info => 4,
+        };
+    }
+
+    /**
+     * Bucket selection for the Additional Info split (N2).
+     *
+     * - `shared_singleton` is always an observation: by definition it
+     *   means many references collapsed onto one target, which is the
+     *   CoW share working as intended.
+     * - `shared_fanin` becomes an observation only when the refs/targets
+     *   ratio is >= 100. Real-world examples: PDO HashTable keys at
+     *   4.5M refs → 39 interned strings (~115k each). Below that
+     *   threshold, the ratio represents a small-pool dedup opportunity
+     *   worth surfacing as a minor finding rather than hiding as an
+     *   "all good" observation. The [10, 100) middle band defaults to
+     *   Minor — borderline patterns are worth a glance.
+     *
+     * @psalm-suppress MixedAssignment
+     */
+    private static function isObservation(Finding $finding): bool
+    {
+        if ($finding->kind === 'shared_singleton') {
+            return true;
+        }
+        if ($finding->kind === 'shared_fanin') {
+            $refs = $finding->facts['ref_count'] ?? 0;
+            $targets = $finding->facts['target_count'] ?? 0;
+            if (!is_int($refs) || !is_int($targets) || $targets <= 0) {
+                return false;
+            }
+            return $refs / $targets >= 100;
+        }
+        return false;
+    }
+
+    /**
+     * Reader-facing tag for the Observations bucket. The raw kinds
+     * (`shared_singleton`, `shared_fanin`) document what the detector
+     * looked for; the observation tag documents what it *means* — CoW
+     * share, string interning. Both forms remain accessible on JSON
+     * output via `Finding::$kind`; this is text-only narrative.
+     */
+    private static function observationLabel(Finding $finding): string
+    {
+        return match ($finding->kind) {
+            'shared_singleton' => 'CoW share',
+            'shared_fanin' => 'interning',
+            default => $finding->kind,
         };
     }
 
