@@ -55,14 +55,16 @@ jobs:
       - name: Clone mirror repository
         run: git clone git@github.com:reliforp/reli-prof-sidecar-client.git mirror
 
-      - name: Sync artifact into mirror (preserve .git and README.md)
+      - name: Sync artifact into mirror (preserve .git, .github, README.md)
         run: |
           cd mirror
-          # Wipe everything except .git/ and README.md (the mirror's
-          # README is hand-maintained on the mirror side and explains
-          # that this is a generated repository).
+          # Wipe everything except mirror-side hand-maintained tooling:
+          #   .git/      — repository state
+          #   .github/   — mirror-only workflows (e.g. PR-to-upstream redirect)
+          #   README.md  — explains that this repo is a generated mirror
           find . -mindepth 1 -maxdepth 1 \
             -not -name '.git' \
+            -not -name '.github' \
             -not -name 'README.md' \
             -exec rm -rf {} +
           # Copy build artifact contents (the trailing /. copies the
