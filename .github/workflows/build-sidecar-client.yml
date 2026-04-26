@@ -99,4 +99,8 @@ jobs:
 
       - name: Run downgraded test suite (phpunit 6.5 on PHP 7.0)
         working-directory: build/sidecar-client
-        run: vendor/bin/phpunit tests/
+        # Invoke phpunit through `php` rather than executing it directly:
+        # actions/upload-artifact and actions/download-artifact strip the
+        # executable bit, so `vendor/bin/phpunit` returns exit 126
+        # (permission denied) when called as a binary.
+        run: php vendor/bin/phpunit tests/
