@@ -6,12 +6,13 @@ Unlike `inspector:watch` (polling-based monitoring), the sidecar responds to **e
 
 ## Quick Start
 
-**Start the sidecar:**
+**Start the sidecar** (uses the per-user systemd runtime dir, which is
+already mode 0700 on most distros — no setup needed):
 
 ```bash
-reli inspector:sidecar \
-  --socket=/tmp/reli-sidecar.sock \
-  --output-dir=/tmp/reli-dumps
+mkdir -p /tmp/reli-dumps
+reli inspector:sidecar --output-dir=/tmp/reli-dumps
+# → [sidecar] Listening on /run/user/<uid>/reli/sidecar.sock
 ```
 
 **In your PHP application (one line in bootstrap):**
@@ -20,7 +21,27 @@ reli inspector:sidecar \
 \Reli\Sidecar\Client\MemoryLimitHandler::register();
 ```
 
-When your application hits `memory_limit`, the handler automatically requests a dump from the sidecar. The dump file and a `.meta.json` with the call trace and memory stats are written to `--output-dir`.
+When your application hits `memory_limit`, the handler automatically
+requests a dump from the sidecar. The dump file and a `.meta.json` with
+the call trace and memory stats are written to `--output-dir`.
+
+> [!NOTE]
+> The sidecar refuses to bind to a socket whose parent directory is not
+> mode 0700, owned by the current uid, and not a symlink — without that
+> guard a co-tenant could pre-create the socket path on a shared host
+> like `/tmp` and intercept dump requests, since the IPC has no
+> on-the-wire authentication. The default
+> `$XDG_RUNTIME_DIR/reli/sidecar.sock` (typically
+> `/run/user/<uid>/reli/sidecar.sock`) satisfies this. If you must
+> override `--socket` on a host without `XDG_RUNTIME_DIR`, prepare a
+> dedicated parent directory first, e.g.
+>
+> ```bash
+> mkdir -p /var/run/reli && chmod 0700 /var/run/reli
+> reli inspector:sidecar \
+>   --socket=/var/run/reli/sidecar.sock \
+>   --output-dir=/tmp/reli-dumps
+> ```
 
 ## Requirements
 
@@ -169,7 +190,7 @@ Usage:
 
 Options:
   -s, --socket=SOCKET              Unix domain socket path
-                                   [default: /var/run/reli-sidecar.sock]
+                                   [default: $XDG_RUNTIME_DIR/reli/sidecar.sock]
   -o, --output-dir=OUTPUT-DIR      Directory for dump output files [default: .]
       --disk-usage-limit=LIMIT     Max total disk usage for dumps (e.g., 1G, 512M)
                                    [default: 1G]
@@ -179,6 +200,139 @@ Options:
       --memory-limit=LIMIT         Set PHP memory_limit for the sidecar process
       --no-cache                   Disable the binary analysis cache
 ```
+
+## Operations
+
+The sidecar is a single PHP process: one server, one socket, no internal
+parallelism. The notes below cover the things you need to size and
+operate it sensibly under that model.
+
+### Sizing `--memory-limit`
+
+The dumper buffers every region of the target's heap as a PHP string
+before writing the dump file, so the sidecar's peak resident memory
+during a dump is roughly `target heap + ~80 MB baseline`. Size
+`--memory-limit` (and the matching cgroup / pod limit) at least to:
+
+```
+--memory-limit  ≥  max(target memory_limit across all clients) + 100 MB
+```
+
+The sidecar refuses any request it knows it cannot fit and replies with
+a structured error like
+`sidecar memory_limit too small for this target: need ~512 MiB, …` —
+the daemon stays up, only that one request fails. Without enough
+headroom, every oversized dump request returns this error instead of
+producing a snapshot, so set the limit conservatively.
+
+### Run under a supervisor
+
+The sidecar can still die from things outside its pre-flight check
+(unexpected crashes, OOM kills from the cgroup, kernel signals, etc.).
+Always run it under a supervisor that restarts it. A minimal systemd
+unit:
+
+```ini
+# /etc/systemd/system/reli-sidecar.service
+[Unit]
+Description=reli-prof sidecar
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/reli inspector:sidecar \
+  --output-dir=/var/lib/reli/dumps \
+  --memory-limit=2G
+Restart=always
+RestartSec=2s
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Install]
+WantedBy=multi-user.target
+```
+
+In Kubernetes, the sidecar container's spec needs `restartPolicy: Always`
+(the pod default) plus enough `resources.limits.memory` to cover the
+`--memory-limit` value above; see [§ Docker / Kubernetes Setup](#docker--kubernetes-setup)
+for the rest of the deployment shape.
+
+### Client timeout sizing
+
+`SidecarClient` blocks on the response read for the full dump duration
+because the protocol delivers a single JSON reply at the end. Measured
+dump throughput is roughly 100 MB/s (`process_vm_readv` + disk write),
+so size `timeout_seconds` against the target's `memory_limit`:
+
+| Target `memory_limit` | Dump time at ~100 MB/s | Recommended `timeout_seconds` |
+|---|---|---|
+| 128 M | ~1.3 s | 5  |
+| 256 M | ~2.5 s | 10 |
+| 512 M | ~5  s  | 15 |
+| 1 G   | ~10 s  | 30 (default) |
+| 2 G   | ~20 s  | 60 |
+
+Do **not** lower the default to make the shutdown handler "feel
+faster". Raise it if your `memory_limit` exceeds the value the default
+covers. `MemoryLimitHandler::register(...)` accepts `timeout_seconds`
+directly:
+
+```php
+\Reli\Sidecar\Client\MemoryLimitHandler::register(
+    timeout_seconds: 60, // memory_limit ~ 2G
+);
+```
+
+### Concurrency model and queue behaviour
+
+Requests are served strictly first-in / first-out by a single worker.
+While one dump is in flight, additional client connections sit in the
+kernel's listen backlog (`SOMAXCONN`, typically 4096 on Linux) and
+**block in `fgets()` on the client side until the daemon gets to
+them**. The protocol does not expose queue depth, so a client cannot
+distinguish "queued for 8 seconds" from "actively being dumped for 8
+seconds".
+
+Practical implications:
+
+- If a burst of N clients arrives at once, the last client waits
+  roughly N × *previous-dump duration* for its response. Size
+  `timeout_seconds` accordingly when you expect bursts (e.g. many
+  PHP-FPM workers OOM-ing at once).
+- If a queued client times out and closes its socket, the request
+  it already wrote to the kernel buffer is **still served** when
+  its turn arrives; the sidecar produces the dump and writes the
+  file to `--output-dir`. The client never sees the response, but
+  the dump itself is recoverable — see § Orphan dump recovery.
+- If the queued client's *target process* dies before the sidecar
+  reaches its request (common when the trigger was an OOM
+  shutdown and the supervisor took longer than expected), the
+  sidecar replies with `process <pid> not found`. No work
+  performed.
+
+### Orphan dump recovery
+
+A client can give up — typically because its `timeout_seconds`
+expired, or the OOM-handler PHP process exited — while the sidecar is
+still running its dump. When that happens the dump file is **already
+fully written** to `--output-dir`; the only thing missing is the JSON
+reply that would have told the client where it landed.
+
+So:
+
+- Successful dumps land at `--output-dir/sidecar-<pid>-<datetime>[-<label>].dump`
+  with their `.meta.json` sibling regardless of whether the client
+  was still listening.
+- After a client `on_error` ("`failed to connect to reli sidecar`",
+  null result, etc.), an operator can usually find the dump by
+  matching `<pid>` in the output directory.
+- The sidecar logs a single `sidecar client disconnected before reply`
+  line per orphan, with the response path, so grep-based audits work
+  without ploughing through PHP `Notice` output.
+
+This is a useful safety net for OOM diagnosis: even if the client's
+shutdown handler ran out of time, the snapshot you actually wanted is
+still on disk.
 
 ## Session Tags
 

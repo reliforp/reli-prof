@@ -56,12 +56,17 @@ final class MemoryLimitHandler
      * @param (callable(SidecarClientResponse): void)|null $on_response
      * @param (callable(string): void)|null $on_error called with error message on failure
      * @param int $reserve_bytes emergency memory reserve size (default: 256 KB)
+     * @param int $timeout_seconds socket I/O timeout passed to {@see SidecarClient}.
+     *     Sidecar dump throughput is roughly 100 MB/s, and the client blocks on
+     *     the response read for the full dump duration, so size this against the
+     *     target's `memory_limit` (default 30 s comfortably covers ~3 GB heaps).
      */
     public static function register(
         ?string $socket_path = null,
         ?callable $on_response = null,
         ?callable $on_error = null,
         int $reserve_bytes = self::DEFAULT_RESERVE_BYTES,
+        int $timeout_seconds = 30,
     ): void {
         // Pre-load classes so autoload doesn't run inside the shutdown handler.
         // Autoloading involves file I/O + parsing which can easily exceed
@@ -71,7 +76,7 @@ final class MemoryLimitHandler
 
         self::$reserve = str_repeat("\0", $reserve_bytes);
         register_shutdown_function(
-            self::createHandler($socket_path, $on_response, $on_error),
+            self::createHandler($socket_path, $on_response, $on_error, $timeout_seconds),
         );
     }
 
@@ -85,8 +90,9 @@ final class MemoryLimitHandler
         ?string $socket_path,
         ?callable $on_response,
         ?callable $on_error,
+        int $timeout_seconds,
     ): \Closure {
-        return static function () use ($socket_path, $on_response, $on_error): void {
+        return static function () use ($socket_path, $on_response, $on_error, $timeout_seconds): void {
             // Release emergency reserve to free memory for socket operations
             self::$reserve = null;
 
@@ -104,7 +110,7 @@ final class MemoryLimitHandler
                 return;
             }
 
-            $client = new SidecarClient($socket_path);
+            $client = new SidecarClient($socket_path, $timeout_seconds);
             $response = $client->requestDump(
                 pid: $pid,
                 error_file: $error['file'] ?? null,

@@ -51,6 +51,14 @@ final class MemoryDumper
      *
      * @param TargetPhpSettings<'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'|'v82'|'v83'|'v84'|'v85'> $target_php_settings
      * @param list<array{address: int, count: int}> $interned_string_arrays
+     * @param \Closure|null $on_read_complete invoked once after every remote
+     *     memory region has been read into local PHP strings, before the dump
+     *     file is opened for writing. The sidecar uses this hook to
+     *     `PTRACE_DETACH` the target right after the read phase, so the target
+     *     can resume while the (potentially slow) disk write happens. Other
+     *     callers can leave it null and pay the read+write window as one stop
+     *     window. Typed as a `Closure` so the resume logic can capture the
+     *     `$stopped` flag by reference.
      */
     public function dump(
         ProcessSpecifier $process_specifier,
@@ -61,6 +69,7 @@ final class MemoryDumper
         bool $include_binary = false,
         bool $include_heap = false,
         array $interned_string_arrays = [],
+        ?\Closure $on_read_complete = null,
     ): MemoryDumpResult {
         $php_version = $target_php_settings->php_version;
         $zend_type_reader = $this->zend_type_reader_creator->create(
@@ -608,6 +617,16 @@ final class MemoryDumper
                     . ': ' . $e->getMessage(),
                 );
             }
+        }
+
+        // All remote reads are now buffered locally as PHP strings, so the
+        // target no longer has to stay stopped while we open the dump file
+        // and stream the regions out to disk. Callers that pass a
+        // `$on_read_complete` hook (currently the sidecar) take advantage of
+        // this to release the ptrace stop early; the rest still pay the
+        // combined read+write stop window.
+        if ($on_read_complete !== null) {
+            $on_read_complete();
         }
 
         $all_areas = $memory_map->findByNameRegex('.*');
