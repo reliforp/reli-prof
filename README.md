@@ -76,7 +76,7 @@ $ reli rmem:explore snapshot.rmem --http-bridge 8080
   <img src="docs/images/rmem-explore-viz-demo.gif" alt="rmem:explore ↔ browser follow mode" width="100%">
 </p>
 
-**What you're looking at.** reli walks the target's PHP heap into a graph — every value (objects, arrays, strings, call frames…) is a node, every reference is an edge. `rmem:viz` renders that graph as a standalone HTML page; `rmem:explore --http-bridge` (or the standalone `rmem:live`) serves it over HTTP with a shared cursor that the terminal TUI, browser views, and an MCP client all follow at once. Useful for chasing memory leaks, finding which classes eat the most memory, and visualising reference cycles.
+**What you're looking at.** reli walks the target's PHP heap into a graph — every value (objects, arrays, strings, call frames…) is a node, every reference is an edge. `rmem:viz` renders that graph as a standalone HTML page; `rmem:explore --http-bridge` (or the standalone `rmem:live`) serves it over HTTP with a shared cursor that the terminal TUI, browser views, and an MCP client all follow at once. Useful for chasing memory leaks and finding which classes eat the most memory.
 
 Full tour (views, palettes, focus bus, mouse, MCP): [docs/memory/rmem-explore-and-serve.md](docs/memory/rmem-explore-and-serve.md).
 
