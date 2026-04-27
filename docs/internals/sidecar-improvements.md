@@ -1,11 +1,17 @@
-# Sidecar Improvements (Working Notes)
+# Sidecar — Improvement Notes
 
-> **Status:** Working scratchpad, similar in spirit to `future-ideas.md`.
-> Captures concrete improvement ideas that came out of an end-to-end
-> check of `reli inspector:sidecar` + `reliforp/reli-prof-sidecar-client`
-> (installed via Packagist) on 2026-04-27. Items marked `[x]` have
-> already shipped on the current branch; the rest are split across the
-> 0.12.0 release polish pass and the 0.12.x roadmap.
+Design and follow-up notes for `inspector:sidecar` and the standalone
+`reliforp/reli-prof-sidecar-client` package, accumulated alongside
+the 0.12.0 launch. Items marked `[x]` shipped with the launch batch;
+the rest are tracked candidates for 0.12.x.
+
+This document is in the spirit of `future-ideas.md` — opinionated
+design discussion rather than a contract — and is organised around
+the failure modes and trade-offs surfaced while bringing the
+sidecar to release quality. Each section motivates the change in
+terms of *what currently happens* and *what we want instead*, so
+future revisions can re-evaluate the trade-off when the surrounding
+code shifts.
 
 ## Shipped on this branch (0.12.0 release-blocker batch)
 
@@ -485,11 +491,11 @@ per-PR basis.
 
 ### G2. `bench/sidecar-roundtrip.php`
 
-A minimal demo committed to the repo. The scratch scripts created
-during this check
-(`/home/user/demo-app/{bench,oom,timing,rss_watch}.php`) can be
-cleaned up and dropped under `bench/` so anyone can reproduce the
-roundtrip with a single `docker compose up`.
+A minimal demo committed to the repo so anyone can reproduce the
+roundtrip with a single `docker compose up`. Should cover both the
+manual-snapshot path (`SidecarClient::snapshot`) and the OOM path
+(`MemoryLimitHandler::register`) since the failure modes around
+each are different. Useful as a fixture for G1.
 
 ---
 
@@ -523,17 +529,20 @@ type) remain open discussion items rather than tracked tasks.
 
 ---
 
-## Verification notes (kept for future reference)
+## Operational notes that informed this document
 
-- Host PHP is 8.4; reli requires `^8.5`. Used
-  `composer install --ignore-platform-req=php` to install the dev
-  dependencies.
-- Packagist's `dev-main` tracks the actual head of main on the
-  generated `reliforp/reli-prof-sidecar-client` repository
-  (commit `423ee89` at time of writing). The GitHub → Packagist
-  webhook is in place.
-- `/tmp/reli-dumps/` is auto-rotated by `--disk-usage-limit=1G`.
-  When the verification left ~1.4 GB of dumps behind, manual
-  `rm -rf` was needed.
-- Verification scripts live at `/home/user/demo-app/`. They can be
-  cleaned up and re-used as the basis for G2.
+- The Packagist mirror at `reliforp/reli-prof-sidecar-client`
+  currently exposes `dev-main` only and tracks the upstream
+  `main` branch via the GitHub → Packagist webhook. F2 is what
+  closes the gap to a tagged version.
+- `/tmp/reli-dumps/` (or whatever `--output-dir` points at) is
+  auto-rotated by `--disk-usage-limit` (default `1G`). Stress
+  testing for the H series should keep an eye on this — when the
+  rotator deletes a dump that an orphan reference still mentions
+  in logs, the recovery story in § Operations gets murkier.
+- The current `MemoryDumper` runs the read phase entirely under
+  ptrace stop, which is what makes A1's resume-after-read
+  rearrangement safe. Any future refactor that lets the read phase
+  yield back to the event loop must preserve that invariant
+  (regions read at different ptrace stops are not a consistent
+  snapshot).

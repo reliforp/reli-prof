@@ -158,10 +158,11 @@ final class SidecarServer
     }
 
     /**
-     * Write the response back to the client, swallowing the broken-pipe
-     * case that happens whenever the client gave up before the dump
-     * completed (most commonly due to its own `stream_set_timeout`
-     * firing while we were still doing `process_vm_readv` + disk write).
+     * Write the response back to the client, looping over short
+     * `fwrite()` returns and swallowing the broken-pipe case that
+     * happens whenever the client gave up before the dump completed
+     * (most commonly due to its own `stream_set_timeout` firing while
+     * we were still doing `process_vm_readv` + disk write).
      *
      * The dump file itself is already on disk at this point — see
      * {@see SidecarDumpHandler}. We log a single structured info line so
@@ -177,8 +178,21 @@ final class SidecarServer
         ?SidecarRequest $request = null,
     ): void {
         $payload = $response->toJson() . "\n";
-        $written = @fwrite($client, $payload);
-        if ($written !== false && $written === strlen($payload)) {
+        $total = strlen($payload);
+        $offset = 0;
+        // Loop over short writes. PHP's stream layer may return fewer
+        // bytes than requested even on blocking sockets (e.g. when the
+        // kernel send buffer fills); a single `fwrite` is not enough to
+        // claim "delivered". Stop when the kernel rejects the write
+        // (false / 0) — that is the broken-pipe case we want to log.
+        while ($offset < $total) {
+            $chunk = @fwrite($client, substr($payload, $offset));
+            if ($chunk === false || $chunk === 0) {
+                break;
+            }
+            $offset += $chunk;
+        }
+        if ($offset === $total) {
             return;
         }
 
@@ -188,6 +202,8 @@ final class SidecarServer
             'response_status' => $response->status,
             'response_path' => $response->path,
             'response_bytes' => $response->bytes,
+            'bytes_written' => $offset,
+            'bytes_total' => $total,
         ]);
 
         if ($response->status === 'ok' && $response->path !== null) {

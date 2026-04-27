@@ -287,14 +287,22 @@ final class SidecarDumpHandler
     }
 
     /**
-     * Returns an error response if the target's heap clearly cannot fit in
-     * what's left of the sidecar's own `memory_limit`, or null when the
-     * dump should proceed. The 1.15 multiplier and 16 MiB headroom cover
-     * per-region overhead from the PHP-string copies that
-     * {@see \Reli\Inspector\MemoryDump\MemoryDumper} accumulates before
-     * writing; if the dumper is later switched to a streaming mode that
-     * does not buffer everything in PHP strings, this check should be
-     * relaxed accordingly (or skipped for that mode).
+     * Returns an error response when the target's *heap* alone clearly
+     * cannot fit in what's left of the sidecar's own `memory_limit`, or
+     * null when the dump should proceed.
+     *
+     * This is a best-effort early reject, not a hard guarantee that the
+     * dump will succeed. {@see \Reli\Inspector\MemoryDump\MemoryDumper}
+     * also collects opcache SHM, the VM stack, the compiler arena, and
+     * (when `--include-binary` is set) read-only binary segments, none
+     * of which {@see \Reli\Inspector\Watch\HeapStatsReader} reports.
+     * The check therefore catches the common case — the target's
+     * ZendMM heap is bigger than the sidecar can possibly hold — but a
+     * dump can still OOM the sidecar later if the non-heap regions
+     * push it over the limit. The 1.15 multiplier and 16 MiB headroom
+     * are a small buffer for the per-region PHP-string overhead the
+     * dumper currently accumulates; once a streaming dump mode lands
+     * this whole check can be skipped in that mode.
      */
     private static function preflightMemoryCheck(int $target_heap_bytes): ?SidecarResponse
     {
@@ -315,16 +323,18 @@ final class SidecarDumpHandler
         }
 
         $msg = sprintf(
-            'sidecar memory_limit too small for this target: '
+            'sidecar memory_limit too small for the target heap alone: '
             . 'need ~%d MiB, %d MiB available (limit=%d MiB, used=%d MiB). '
-            . 'Raise --memory-limit on the sidecar process to roughly '
-            . '(max target heap + 100 MiB).',
+            . 'Raise --memory-limit on the sidecar process; size it to at '
+            . 'least (max target heap + opcache SHM + 100 MiB), since the '
+            . 'dump may also include opcache, VM stack, and compiler arena '
+            . 'that are not counted here.',
             (int)ceil($needed / (1024 * 1024)),
             (int)floor($available / (1024 * 1024)),
             (int)floor($limit / (1024 * 1024)),
             (int)ceil(memory_get_usage(true) / (1024 * 1024)),
         );
-        Log::info('sidecar pre-flight rejected dump', [
+        Log::info('sidecar pre-flight rejected dump (target heap alone exceeds memory_limit)', [
             'target_heap_bytes' => $target_heap_bytes,
             'needed_bytes' => $needed,
             'available_bytes' => $available,
