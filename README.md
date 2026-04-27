@@ -93,7 +93,7 @@ $ reli inspector:memory:report snapshot.rmem
   <img src="docs/images/memory-report-output.png" alt="inspector:memory:report — findings and tables" width="100%">
 </p>
 
-**What you're looking at.** reli scans the captured heap graph for known waste patterns and prints each one as a finding, with a severity, a hypothesis, and a next-investigation step. The patterns include *dominant* classes (one type eats most of the heap), reference *cycles* (objects keeping each other alive even when no one else references them), *choke points* (one node through which most of the retention flows downstream), and *dedup* candidates (identical values stored over and over). No SQL or `jq` required.
+**What you're looking at.** reli scans the captured heap graph for known waste patterns — dominant classes, reference cycles, choke points, dedup candidates — and prints each finding with a severity, a hypothesis, and a next-investigation step.
 
 Compare two snapshots to track regressions or verify fixes:
 
