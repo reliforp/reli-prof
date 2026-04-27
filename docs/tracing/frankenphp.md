@@ -80,9 +80,11 @@ A few realities on FrankenPHP that the snippet above is built around:
   well under a second on a normal dev box; sandboxed or
   IO-constrained environments may take a few seconds. Either way,
   don't time the very first run out aggressively.
-- **Some hex-named workers fail brute-forcing.** A worker that has
-  not yet served a request leaves `_tsrm_ls_cache` zeroed, so the
-  search returns nothing and the call dies with:
+- **Some hex-named workers fail brute-forcing on first attach.**
+  Before the per-binary TLS-offset cache exists, reli locates
+  `_tsrm_ls_cache` by scanning the target's TLS block for a
+  recognisable pattern. On a worker that has not yet served a
+  request that scan can come up empty, and the call dies with:
 
   ```
   executor_globals not found via TSRM on TID <n>. The binary is
@@ -90,18 +92,28 @@ A few realities on FrankenPHP that the snippet above is built around:
   uninitialized -- typical of an idle FrankenPHP worker.
   ```
 
-  Pick a different worker, or push traffic through and retry. A
-  single sequential request usually only warms one worker (Caddy
-  picks the first idle one and sends the rest there too), so the
-  TID you happened to grab from `ps` may stay cold. Concurrent
-  load that saturates all workers — e.g. fire `num_threads`+ slow
-  requests in parallel before attaching — warms every worker at
-  once. Once any one worker succeeds, the per-binary TLS-offset
-  cache lets every other warm worker resolve instantly; only
-  workers that have *still* never served a request stay
-  unresolvable. `inspector:trace` retries roughly ten times at
-  10 ms intervals before giving up, so it sometimes wins races
-  that `inspector:memory:dump` (no retry) loses.
+  Recovery: pick another worker, or push traffic through to warm
+  one. A single sequential request usually only warms one worker
+  (Caddy picks the first idle one and routes follow-on requests
+  there too), so the TID you happened to grab from `ps` may stay
+  cold. Concurrent load that saturates all workers — e.g. fire
+  `num_threads`+ slow requests in parallel before attaching —
+  warms every worker at once. Once **any one worker** succeeds
+  and writes the offset to the per-binary cache, subsequent
+  attaches against the same FrankenPHP process skip the
+  brute-force scan, read the cached offset directly, and resolve
+  TSRM in microseconds — including against workers that have
+  still never served a request, provided their slot was
+  populated at thread startup (which is the case in current
+  FrankenPHP builds).
+
+  TSRM resolving is not the same as having something to look at:
+  `inspector:memory:dump` against a TSRM-resolved cold worker in
+  regular mode still fails downstream with "failed to find ZendMM
+  main chunk" because the request scope hasn't been set up — see
+  the [Memory and watch commands](#memory-and-watch-commands)
+  section. Worker mode keeps the request scope alive throughout
+  the worker's lifetime and so doesn't have this second hurdle.
 
 `--target-thread-regex` is not honoured by `inspector:trace`: the
 single-process mode samples exactly the TID you pass in, so choose
@@ -143,17 +155,20 @@ sudo php ./reli inspector:memory:dump -p "$(
     -o ./frankenphp.relimem
 ```
 
-Unlike `inspector:trace`, `inspector:memory:dump` does **not**
-retry TLS resolution. If the chosen worker happens to be one that
-never handled a request, the dump fails with the
-`executor_globals not found via TSRM on TID <n>` error described
-in the [single-worker section](#attach-to-a-single-worker).
-Recovery: rerun against a different TID, or saturate the workers
-with concurrent traffic and retry. Running a brief
-`inspector:trace` / `inspector:daemon` first populates the
-TLS-offset cache and lets every subsequent **warm** worker TID
-succeed instantly (a thread that has still never served a
-request stays unresolvable until it does).
+If the chosen worker has not yet served a request and the
+per-binary TLS-offset cache is also still empty, the dump fails
+with the `executor_globals not found via TSRM on TID <n>` error
+described in the [single-worker section](#attach-to-a-single-worker).
+Both `inspector:memory:dump` and `inspector:trace` fail at the
+same point in this case — the `--max-retries` knob on
+`inspector:trace` retries failed memory reads inside the sampling
+loop, not the cold-attach TSRM resolution itself. Recovery: rerun
+against a different TID, or saturate the workers with concurrent
+traffic and retry. Running a brief `inspector:trace` /
+`inspector:daemon` first populates the TLS-offset cache and lets
+every subsequent attach against the same FrankenPHP process
+resolve TSRM via the cache regardless of whether the chosen TID
+itself has served a request.
 
 ### Memory commands and FrankenPHP modes
 
