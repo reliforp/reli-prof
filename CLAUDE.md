@@ -145,6 +145,19 @@ non-obvious things bite single-shot `inspector:trace -p` users:
   before treating that as a binary-level fact, so the negative result
   is not persisted and the next attach against a warm worker succeeds
   without intervention.
+- **Sequential traffic warms one worker, not all of them.** When
+  reproducing a "cold worker" failure interactively, fire `num_threads`+
+  parallel slow requests rather than a single curl — Caddy reuses
+  the first idle worker for serial requests, so the TID you grab from
+  `ps` may stay cold no matter how many requests you throw at it.
+- **`inspector:memory:dump` has a second cold-attach failure mode** beyond
+  the TSRM one. The chunk finder reads `eg.current_execute_data` and
+  walks 2 MB-aligned addresses to locate the request heap; between
+  requests `current_execute_data` is 0 and the dump fails with "failed
+  to find ZendMM main chunk". The worker has to be mid-request at the
+  moment of attach. Reproduce with a long `usleep`-tail script and
+  saturate the workers; CLI mode (`frankenphp php-cli script.php`)
+  sidesteps it because the worker stays in PHP for the whole script.
 - **Tests in `tests/Lib/PhpProcessReader/CallTraceReader/FrankenPhpCallTraceReaderTest`
   share one `BinaryAnalysisCache` across thread iterations.** That's the
   regression test for the cache-poisoning fix; if you put a fresh cache

@@ -78,13 +78,26 @@ A few realities on FrankenPHP that the snippet above is built around:
   don't time the very first run out aggressively.
 - **Some hex-named workers fail brute-forcing.** A worker that has
   not yet served a request leaves `_tsrm_ls_cache` zeroed, so the
-  search returns nothing and the call dies with `global symbol
-  not found executor_globals`. Pick a different worker (or push
-  some traffic through and retry) — once any one worker succeeds,
-  the cached offset works for every other thread of the same
-  process. `inspector:daemon` and `inspector:trace` retry
-  internally; `inspector:memory:dump` and friends do not, so cold
-  failures are most visible there.
+  search returns nothing and the call dies with:
+
+  ```
+  executor_globals not found via TSRM on TID <n>. The binary is
+  ZTS (PT_TLS present) but this thread's _tsrm_ls_cache slot is
+  uninitialized -- typical of an idle FrankenPHP worker.
+  ```
+
+  Pick a different worker, or push traffic through and retry. A
+  single sequential request usually only warms one worker (Caddy
+  picks the first idle one and sends the rest there too), so the
+  TID you happened to grab from `ps` may stay cold. Concurrent
+  load that saturates all workers — e.g. fire `num_threads`+ slow
+  requests in parallel before attaching — warms every worker at
+  once. Once any one worker succeeds, the per-binary TLS-offset
+  cache lets every other warm worker resolve instantly; only
+  workers that have *still* never served a request stay
+  unresolvable. `inspector:trace` retries roughly ten times at
+  10 ms intervals before giving up, so it sometimes wins races
+  that `inspector:memory:dump` (no retry) loses.
 
 `--target-thread-regex` is not honoured by `inspector:trace`: the
 single-process mode samples exactly the TID you pass in, so choose
@@ -128,12 +141,37 @@ sudo php ./reli inspector:memory:dump -p "$(
 
 Unlike `inspector:trace`, `inspector:memory:dump` does **not**
 retry TLS resolution. If the chosen worker happens to be one that
-never handled a request, the dump fails with `global symbol not
-found executor_globals`. Recovery: rerun against a different TID,
-or push a request through the server and retry. Running a brief
+never handled a request, the dump fails with the
+`executor_globals not found via TSRM on TID <n>` error described
+in the [single-worker section](#attach-to-a-single-worker).
+Recovery: rerun against a different TID, or saturate the workers
+with concurrent traffic and retry. Running a brief
 `inspector:trace` / `inspector:daemon` first populates the
-TLS-offset cache and lets every subsequent worker TID succeed
-immediately.
+TLS-offset cache and lets every subsequent **warm** worker TID
+succeed instantly (a thread that has still never served a
+request stays unresolvable until it does).
+
+There is a second failure mode unique to memory commands in
+HTTP-daemon mode: `inspector:memory:dump`, `inspector:memory`,
+and `inspector:watch -p <pid>` locate the request heap by reading
+`executor_globals.current_execute_data` and walking 2 MB-aligned
+addresses near it. Between requests, FrankenPHP workers park on
+a Go channel with `current_execute_data == 0`, and the chunk
+finder bails out with:
+
+```
+failed to find ZendMM main chunk
+```
+
+The worker has to be **mid-request at the moment of attach** for
+the dump to succeed. Saturating all workers with a long-running
+PHP page (e.g. a script that does the work you want to capture
+and then `usleep`s for a few seconds) is the most reliable way
+to keep one in PHP code long enough; an idle or short-running
+production server can be very hard to capture without hooking
+the request itself. CLI-style invocations
+(`frankenphp php-cli script.php`) keep the worker in PHP for the
+whole script lifetime and don't have this problem.
 
 ## Caveats
 
