@@ -273,8 +273,9 @@ upper bound for your workload.
 
 The sidecar can still die from things outside its pre-flight check
 (unexpected crashes, OOM kills from the cgroup, kernel signals, etc.).
-Always run it under a supervisor that restarts it. A minimal systemd
-unit:
+Always run it under a supervisor that restarts it. A systemd unit
+that creates its own runtime / state directories with the right
+permissions:
 
 ```ini
 # /etc/systemd/system/reli-sidecar.service
@@ -284,8 +285,20 @@ After=network.target
 
 [Service]
 Type=simple
+User=reli
+Group=reli
+# %t = $RUNTIME_DIRECTORY (= /run/reli for system services).
+# %S = $STATE_DIRECTORY  (= /var/lib/reli).
+# Both are created by systemd with the User/Group above and the
+# specified mode, so the sidecar's 0700 parent-dir check passes
+# without any pre-create dance.
+RuntimeDirectory=reli
+RuntimeDirectoryMode=0700
+StateDirectory=reli
+StateDirectoryMode=0700
 ExecStart=/usr/local/bin/reli inspector:sidecar \
-  --output-dir=/var/lib/reli/dumps \
+  --socket=%t/reli/sidecar.sock \
+  --output-dir=%S/reli \
   --memory-limit=2G
 Restart=always
 RestartSec=2s
@@ -295,6 +308,22 @@ StartLimitIntervalSec=60
 [Install]
 WantedBy=multi-user.target
 ```
+
+The application processes need to run as the same uid (see
+[§ Security model](#security-model)) and read `RELI_SIDECAR_SOCKET`
+from the environment, e.g.
+
+```ini
+# in the app unit
+[Service]
+User=reli
+Environment=RELI_SIDECAR_SOCKET=/run/reli/sidecar.sock
+```
+
+Create the `reli` system user once at install time
+(`useradd --system --no-create-home --shell /usr/sbin/nologin reli`),
+or replace `User=reli` / `Group=reli` with `DynamicUser=yes` if no
+non-systemd processes on the host need to share the uid.
 
 In Kubernetes, the sidecar container's spec needs `restartPolicy: Always`
 (the pod default) plus enough `resources.limits.memory` to cover the
@@ -471,19 +500,43 @@ This information can be passed to `inspector:memory:analyze` with `--memory-limi
 
 ```yaml
 services:
+  # One-shot helper: prepare /var/run/reli with the right ownership +
+  # mode 0700 *before* either app or sidecar starts. Without it the
+  # sidecar refuses to bind (parent dir must be 0700 + owned by uid 1000)
+  # and the app cannot traverse into the volume.
+  reli-sock-init:
+    image: busybox:1
+    command: >
+      sh -c "mkdir -p /var/run/reli && chmod 0700 /var/run/reli
+             && chown 1000:1000 /var/run/reli"
+    user: "0:0"  # root so the chown works
+    volumes:
+      - reli-sock:/var/run/reli
+
   app:
     image: my-php-app
+    user: "1000:1000"
+    depends_on:
+      reli-sock-init:
+        condition: service_completed_successfully
+    environment:
+      RELI_SIDECAR_SOCKET: /var/run/reli/sidecar.sock
     volumes:
       - reli-sock:/var/run/reli
       - reli-dumps:/tmp/reli-dumps
 
   reli-sidecar:
     image: reliforp/reli-prof
+    user: "1000:1000"  # must match `app` so the 0700 parent dir works
     command: >
       inspector:sidecar
         --socket=/var/run/reli/sidecar.sock
         --output-dir=/tmp/reli-dumps
+        --memory-limit=2G
         --tag product=my-app
+    depends_on:
+      reli-sock-init:
+        condition: service_completed_successfully
     pid: "service:app"
     cap_add:
       - SYS_PTRACE
@@ -498,20 +551,31 @@ volumes:
   reli-dumps:
 ```
 
-Set the socket path in the application container:
-
-```yaml
-services:
-  app:
-    environment:
-      RELI_SIDECAR_SOCKET: /var/run/reli/sidecar.sock
-```
+If your application image already pins `USER 1000` in the Dockerfile,
+drop the `user:` line on `app`; the `reli-sidecar` line still has to
+match. To run everything as root instead, drop both `user:` lines and
+the `reli-sock-init` `chown` step — it just needs to be consistent
+across all three.
 
 ### Kubernetes (sidecar container)
 
 ```yaml
 spec:
   shareProcessNamespace: true
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  initContainers:
+    # Ensure the shared socket dir is 0700 before the sidecar tries to
+    # bind. fsGroup gives 1000 write access to the emptyDir, but the
+    # sidecar's parent-dir checks require mode 0700 specifically.
+    - name: reli-sock-init
+      image: busybox:1
+      command: ["sh", "-c", "chmod 0700 /var/run/reli"]
+      volumeMounts:
+        - name: reli-sock
+          mountPath: /var/run/reli
   containers:
     - name: app
       image: my-php-app
@@ -527,6 +591,7 @@ spec:
         - inspector:sidecar
         - --socket=/var/run/reli/sidecar.sock
         - --output-dir=/tmp/reli-dumps
+        - --memory-limit=2G
       securityContext:
         capabilities:
           add: ["SYS_PTRACE"]
@@ -541,6 +606,11 @@ spec:
     - name: reli-dumps
       emptyDir: {}
 ```
+
+The pod-level `securityContext.runAsUser` ensures both containers
+share uid `1000`; `fsGroup` makes the `emptyDir` volumes writable by
+that uid. The init container narrows the socket directory to mode
+`0700`, which is what the sidecar's parent-dir check requires.
 
 ## CI Workflow: Cross-Release Memory Comparison
 
