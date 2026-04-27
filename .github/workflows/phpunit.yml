@@ -21,7 +21,7 @@ jobs:
 
   phpunit-unit:
     name: phpunit (unit)
-    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
+    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') && !contains(github.head_ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -75,7 +75,7 @@ jobs:
 
   build-dev-image:
     name: Build dev image
-    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
+    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') && !contains(github.head_ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -125,7 +125,7 @@ jobs:
 
   build-test-mysql-images:
     name: Build PHP ${{ matrix.php_version }}+pdo_mysql
-    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
+    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') && !contains(github.head_ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -178,7 +178,7 @@ jobs:
 
   phpunit-target-version:
     name: phpunit (${{ matrix.name }})
-    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
+    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') && !contains(github.head_ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
     needs: [build-dev-image, build-test-mysql-images]
     runs-on: ubuntu-latest
     permissions:
@@ -350,7 +350,7 @@ jobs:
 
   phpunit-frankenphp:
     name: phpunit (FrankenPHP)
-    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
+    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') && !contains(github.head_ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
     needs: build-dev-image
     runs-on: ubuntu-latest
     permissions:
@@ -432,7 +432,7 @@ jobs:
 
   phpunit-unit-arm64:
     name: phpunit (unit, ARM64)
-    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
+    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') && !contains(github.head_ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
