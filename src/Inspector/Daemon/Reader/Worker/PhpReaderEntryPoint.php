@@ -58,10 +58,8 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
             $sampling_period_us = 10000;
         }
 
-        // Open the output file once; segments share the stream
         if ($use_binary_direct && $output_settings->output_path !== null) {
             $this->compress = $output_settings->rbt_compress;
-            $this->openBinaryStream($output_settings->output_path);
         }
 
         $this->installSignalHandler();
@@ -70,6 +68,13 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
             $attach_message = $this->protocol->receiveAttach();
             Log::debug('attach_message', [$attach_message]);
             $pid = $attach_message->process_descriptor->pid;
+
+            // Open one rbt per target. Naming by target pid (not the
+            // worker's getmypid()) keeps file paths unique under thread
+            // mode where every worker shares a process id.
+            if ($use_binary_direct && $output_settings->output_path !== null) {
+                $this->openBinaryStream($output_settings->output_path, $pid);
+            }
 
             // Start a new self-contained segment for this attach.
             // A fresh BinaryTraceWriter resets frame/stack intern state.
@@ -128,6 +133,7 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
                 $this->binary_writer = null;
                 $this->flushCompressedSegment();
             }
+            $this->closeBinaryStream();
 
             Log::debug('detaching worker');
             $this->protocol->sendDetachWorker(
@@ -139,12 +145,10 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
         $this->closeBinaryStream();
     }
 
-    private function openBinaryStream(string $output_dir): void
+    private function openBinaryStream(string $output_dir, int $target_pid): void
     {
-        $my_pid = getmypid();
-        $worker_id = $my_pid !== false ? $my_pid : 0;
         $ext = $this->compress ? '.rbt.gz' : '.rbt';
-        $path = rtrim($output_dir, '/') . "/worker_{$worker_id}{$ext}";
+        $path = rtrim($output_dir, '/') . "/target_{$target_pid}{$ext}";
         $stream = fopen($path, 'wb');
         if ($stream === false) {
             Log::debug('failed to open binary trace file', ['path' => $path]);
