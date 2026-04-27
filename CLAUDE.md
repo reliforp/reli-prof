@@ -150,14 +150,30 @@ non-obvious things bite single-shot `inspector:trace -p` users:
   parallel slow requests rather than a single curl — Caddy reuses
   the first idle worker for serial requests, so the TID you grab from
   `ps` may stay cold no matter how many requests you throw at it.
-- **`inspector:memory:dump` has a second cold-attach failure mode** beyond
-  the TSRM one. The chunk finder reads `eg.current_execute_data` and
-  walks 2 MB-aligned addresses to locate the request heap; between
-  requests `current_execute_data` is 0 and the dump fails with "failed
-  to find ZendMM main chunk". The worker has to be mid-request at the
-  moment of attach. Reproduce with a long `usleep`-tail script and
+- **`inspector:memory:dump` only works while the worker is mid-request.**
+  The chunk finder reads `eg.current_execute_data` and walks 2 MB-aligned
+  addresses to locate the request heap; between requests
+  `current_execute_data` is 0 and the dump fails with "failed to find
+  ZendMM main chunk". Reproduce with a long `usleep`-tail script and
   saturate the workers; CLI mode (`frankenphp php-cli script.php`)
   sidesteps it because the worker stays in PHP for the whole script.
+  In production, prefer `inspector:watch --action=memory-dump` (which
+  fires only when its condition holds, naturally inside a request) or
+  `inspector:sidecar` (which is invoked from PHP itself). This is not a
+  FrankenPHP quirk but a property of ZendMM, which is request-scoped in
+  every SAPI.
+- **`module_registry` is preempted by the embedding executable.**
+  `frankenphp` statically links libphp, so the dynamic linker binds the
+  shared symbols to the executable's copy and leaves libphp.so's BSS at
+  zero. `findModuleRegistry` therefore probes `/proc/{pid}/exe` first
+  and falls back to the libphp.so reader only when the executable does
+  not define it; do not "tidy up" by deleting that fallback ordering.
+  The `*_offset` (TSRM) symbols are also preempted but `TsrmGlobalsResolver`
+  already handles that with the `_offset == 0 → _id` fallback at
+  `TsrmGlobalsResolver.php:111`. `PhpVersionDetector` must NOT cache the
+  host-PHP fallback (`'v' . PHP_MAJOR_VERSION . PHP_MINOR_VERSION`) when
+  detection fails, because doing so silently mis-resolves chunk and
+  struct layouts on every subsequent run against the same binary.
 - **Tests in `tests/Lib/PhpProcessReader/CallTraceReader/FrankenPhpCallTraceReaderTest`
   share one `BinaryAnalysisCache` across thread iterations.** That's the
   regression test for the cache-poisoning fix; if you put a fresh cache

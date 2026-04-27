@@ -151,27 +151,29 @@ TLS-offset cache and lets every subsequent **warm** worker TID
 succeed instantly (a thread that has still never served a
 request stays unresolvable until it does).
 
-There is a second failure mode unique to memory commands in
-HTTP-daemon mode: `inspector:memory:dump`, `inspector:memory`,
-and `inspector:watch -p <pid>` locate the request heap by reading
-`executor_globals.current_execute_data` and walking 2 MB-aligned
-addresses near it. Between requests, FrankenPHP workers park on
-a Go channel with `current_execute_data == 0`, and the chunk
-finder bails out with:
+The other reality memory commands have to live with is that
+ZendMM's main chunk only exists while a request is in flight —
+between requests the worker tears it down. `inspector:memory:dump`,
+`inspector:memory`, and `inspector:watch -p <pid>` therefore need
+the worker to be **mid-request at the moment of attach**, just
+like in any other SAPI. For a one-shot snapshot under HTTP-daemon
+mode that means saturating workers with a long-running PHP page
+(e.g. one that does the work you want to capture and then
+`usleep`s for a few seconds). For automated capture, prefer the
+condition-driven workflows that fire while a request is active by
+construction:
 
-```
-failed to find ZendMM main chunk
-```
+- [`inspector:watch`](capturing-traces.md) with `--memory-usage`,
+  `--watch-function`, `--cpu-usage` etc. plus `--action=memory-dump`
+  polls the target and only triggers when the condition holds, so
+  it naturally lands inside a request.
+- [`inspector:sidecar`](../monitoring/sidecar.md) takes the dump on
+  request from the application (e.g. from a `memory_limit` shutdown
+  handler), guaranteeing the call stack and heap are still set up.
 
-The worker has to be **mid-request at the moment of attach** for
-the dump to succeed. Saturating all workers with a long-running
-PHP page (e.g. a script that does the work you want to capture
-and then `usleep`s for a few seconds) is the most reliable way
-to keep one in PHP code long enough; an idle or short-running
-production server can be very hard to capture without hooking
-the request itself. CLI-style invocations
-(`frankenphp php-cli script.php`) keep the worker in PHP for the
-whole script lifetime and don't have this problem.
+CLI-style invocations (`frankenphp php-cli script.php`) keep the
+worker in PHP for the whole script lifetime and avoid the timing
+issue entirely.
 
 ## Caveats
 

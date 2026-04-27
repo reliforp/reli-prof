@@ -36,6 +36,39 @@ final class PhpSymbolReaderCreator
     }
 
     /**
+     * Build a symbol reader for the target's main executable
+     * (`/proc/{pid}/exe`).
+     *
+     * Used to handle ELF symbol preemption: when libphp is statically
+     * linked into the target's main binary (e.g. FrankenPHP), the global
+     * symbols that exist in both the executable and a separately mapped
+     * `libphp.so` are bound to the executable's copy by the dynamic
+     * linker, leaving the libphp.so copy at zero in BSS. Resolving such
+     * symbols via the executable returns the address actually used at
+     * runtime.
+     *
+     * The reader has no link-map / TLS plumbing (the caller has not
+     * supplied a libpthread reader); it only supports static symbol
+     * lookups. Returns null if `/proc/{pid}/exe` cannot be resolved or
+     * the executable is not present in the process memory map.
+     */
+    public function createForExecutable(int $pid): ?ProcessModuleSymbolReader
+    {
+        $executable_path = readlink("/proc/{$pid}/exe");
+        if ($executable_path === false) {
+            return null;
+        }
+        $full_executable_path = "/proc/{$pid}/root{$executable_path}";
+        $process_memory_map = $this->process_memory_map_creator->getProcessMemoryMap($pid);
+        return $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
+            $pid,
+            $process_memory_map,
+            '^' . preg_quote($executable_path) . '$',
+            $full_executable_path,
+        );
+    }
+
+    /**
      * @throws MemoryReaderException
      * @throws ProcessSymbolReaderException
      * @throws TlsFinderException
