@@ -240,6 +240,122 @@ becomes an "orphan" from the client's point of view.
 
 ---
 
+## H. Worker hold time / queueing
+
+### Current behaviour
+
+`SidecarServer::run` is a single-threaded loop:
+`stream_select → accept → handleConnection (synchronous dump) → next iteration`.
+Concurrent dump requests are strictly serialized via the kernel's
+listen backlog. Verified by sending a 1024 MB dump alongside two
+16 MB requests with 1 s timeouts: the second and third clients sat
+blocked in `fgets()` until either the in-flight dump finished or
+their own client-side timeout expired. Sidecar logs confirmed FIFO
+order; kernel-buffered request bytes were still processed by the
+server even after the clients had given up, producing orphan dumps
+plus `PHP Notice: fwrite(): ... Broken pipe`.
+
+The actual operational pain isn't dropped dumps (those land on disk
+and are recoverable). The pain is that the **PHP-FPM worker is
+held in `fgets()`** while it waits, holding its `pm.max_children`
+slot, heap, file descriptors, and DB connections for the full
+queue-plus-dump duration. With realistic queue depths against
+hundreds-of-MB targets, that easily exceeds the default 30 s
+client timeout — so tail clients pay the full timeout cost in
+worker hold time before getting `null` back.
+
+### Proposal: ack-and-go reply mode
+
+Add an additive protocol field that lets the client opt into
+"acknowledge-only" replies. Server reads the request, sends a
+short ack JSON immediately, closes the connection, and *then*
+runs the dump. The client returns from `requestDump()` in a few
+ms regardless of in-flight work elsewhere.
+
+Request additive field:
+```json
+{"command": "dump", "pid": 1234, "wait": false, ...}
+```
+
+- `wait` defaults to `true` (existing behaviour, BC preserved).
+- `wait: false` ⇒ ack-only reply.
+- Old sidecars ignore `wait` and reply normally — clients on
+  ack-and-go that hit an old sidecar still work, they just block
+  the way they do today.
+- New sidecars receiving requests without `wait` keep the current
+  full-response behaviour.
+- No `protocol_version` bump (additive change only).
+
+Ack response shape:
+```json
+{"protocol_version": 1, "status": "accepted",
+ "queue_position": 2,
+ "predicted_path": "/tmp/dumps/sidecar-1234-20260427-...-label.dump"}
+```
+
+`predicted_path` is fine because the path is deterministic from
+PID + timestamp + label — `SidecarDumpHandler::doDump()` already
+builds it; it just needs to move *before* the work starts.
+
+Client API:
+```php
+$client->requestDump(pid: getmypid(), wait: false);
+$client->snapshot('after-fixtures', wait: false);
+```
+
+`MemoryLimitHandler::register(... wait_for_completion: false)`,
+defaulting to `false`. Shutdown handlers don't care about the
+response and very much do want to release the worker slot.
+
+### Effects
+
+- Worker hold time becomes O(network roundtrip) instead of
+  O(queue depth × dump time).
+- Queue back-pressure becomes explicit (`queue_position` lets
+  clients log "I'm 12th in line" rather than infer from wall-clock).
+- The `Broken pipe` `Notice` (E1) goes away naturally — the server
+  is no longer trying to write to a socket the client has closed.
+- Composes cleanly with A (dump-mode) and B (pre-flight): each
+  request can be `{"wait": false, "mode": "low-memory"}`.
+- Doesn't add server-side concurrency. One dump at a time, still
+  FIFO. Just stops billing the wait to the client's worker slot.
+
+### Caveats
+
+- For CI-snapshot-style use cases that need to *use* the resulting
+  dump path, `wait: true` is still the right choice — `predicted_path`
+  is a hint, not a guarantee (a subsequent failure isn't reported).
+- A queue-depth limit (`status: "rejected"` when full) is a separate
+  concern but rides on the same protocol change.
+- Server crashes after ack ⇒ dump lost. Same as `wait: true` from
+  the *recoverability* angle (a `wait: true` client also can't tell
+  whether a `null` means "never started" or "started and lost"); the
+  difference is purely in observability.
+
+### Subtasks
+
+- [ ] **H1** — Add `wait` field to `SidecarRequest`, plumb into
+      `SidecarServer::handleConnection`. Move
+      `output_path` construction in `SidecarDumpHandler::doDump`
+      ahead of the stop+dump phase so it can be returned in the ack.
+- [ ] **H2** — Add `SidecarClient::requestDump(..., wait: bool = true)`
+      and `SidecarClient::snapshot(..., wait: bool = true)`.
+      Return a `SidecarClientResponse` with `status='accepted'` and
+      `predicted_path` populated when `wait: false`.
+- [ ] **H3** — Add `wait_for_completion: bool = false` to
+      `MemoryLimitHandler::register()`; forward to the inner client.
+      Default-false because the whole point of the OOM path is "don't
+      hold the worker while shutting down".
+- [ ] **H4** — Optional: include `queue_position` in both ack and
+      full responses so synchronous clients can also log queue
+      depth. Cheap to add since the server can count pending
+      `accept()`s on the listening socket.
+- [ ] **H5** — Optional sibling to H4: `--max-queue-depth=N` server
+      flag; once N is reached, ack with `status: 'rejected', reason:
+      'queue full'` instead of accepting. Reuses the H1 plumbing.
+
+---
+
 ## F. Documentation gaps
 
 ### F1. Socket parent directory requirement in Quick Start
@@ -323,12 +439,18 @@ roundtrip with a single `docker compose up`.
 2. **B1** — pre-flight memory check. Standalone, ~10 lines. Order
    relative to A1 doesn't matter.
 3. **F1 + E2** — doc fixes; bundle F2 with them as one PR.
-4. **A2 + A3 + A4** — dump-mode plumbing. Touches the protocol,
+4. **H1 + H2 + H3** — ack-and-go reply mode. Protocol change
+   (additive). Removes the worker-hold-time problem and obsoletes
+   E1 as a side effect; can be sequenced before or after A2-A4
+   since both are additive protocol fields and don't conflict.
+5. **A2 + A3 + A4** — dump-mode plumbing. Touches the protocol,
    so review carefully.
-5. **C1 + C2** — `MemoryLimitHandler` parameter and timeout docs.
-6. **E1** — broken-pipe log cleanup. Small, standalone.
-7. **D1** — `on_error` signature extension. Can wait.
-8. **G1 + G2** — E2E test and demo. After the above stabilise.
+6. **C1 + C2** — `MemoryLimitHandler` parameter and timeout docs.
+7. **E1** — broken-pipe log cleanup. Small, standalone. Skip if H
+   has already landed (the symptom is gone).
+8. **H4 + H5** — queue depth reporting / rejection. Optional.
+9. **D1** — `on_error` signature extension. Can wait.
+10. **G1 + G2** — E2E test and demo. After the above stabilise.
 
 ---
 
