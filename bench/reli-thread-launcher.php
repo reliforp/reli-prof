@@ -56,7 +56,8 @@ $extensionDir = __DIR__ . '/../vendor/sj-i/ffi-zts/bin/extensions/ffi-zts';
 $embed = Parallel::boot()
     ->withIniEntry('zend.max_allowed_stack_size', '-1')
     ->withIniEntry('fiber.stack_size', '8M')
-    ->withIniEntry('ffi.enable', 'true');
+    ->withIniEntry('ffi.enable', 'true')
+    ->withIniEntry('memory_limit', '512M');
 
 foreach (['filter', 'iconv'] as $extName) {
     $path = "{$extensionDir}/{$extName}.so";
