@@ -226,22 +226,26 @@ mode timing issue the same way worker mode does.
 
 ### `inspector:daemon` against regular-mode FrankenPHP
 
-`inspector:daemon` works against regular-mode FrankenPHP, but each
-sample either lands inside a request (real PHP frames) or between
-requests (no frames). reli writes the empty intervals to the rbt as
-zero-frame samples so the temporal axis stays accurate — with sustained
-load you'll see ~98% real frames and a small idle tail; under bursty
-or quiet traffic the idle ratio rises accordingly. Worker mode never
-goes idle in this sense and produces no zero-frame samples.
+`inspector:daemon` works against regular-mode FrankenPHP, but only
+the moments when a worker is actually executing PHP produce samples.
+Between requests there are no PHP frames to record and reli emits
+nothing for those ticks — rbt and template output contain only real
+frames. Idle intervals therefore appear as gaps in the sample stream,
+not as zero-frame samples; if you need to attribute that gap to
+"worker was idle" vs "reli was reattaching", enable
+`--rbt-timestamps=delta` and cross-reference the timestamps with your
+access logs / APM. Worker mode keeps the worker on the PHP call
+stack continuously and so produces a dense, gap-free sample stream
+without any of this.
 
-If a particular worker stays idle for longer than ~2 s of wall time,
-the reader releases it back to the dispatcher pool so other workers
-get a slot. The dispatcher reassigns it on its next searcher cycle,
-so in steady state every PHP TID is being read by some reader, just
-not necessarily the same one across long idle gaps. This only matters
-when `-T` is smaller than the number of PHP threads; with the default
-`-T 8` and typical FrankenPHP `num_threads` ≤ 8 every TID has its own
-permanent reader.
+To avoid losing samples to attach/detach churn around request
+boundaries, the reader rides through up to ~200 idle ticks (≈ 2 s
+at the default 10 ms `-s`; scales with `-s`) before releasing the
+worker back to the dispatcher pool. After that it detaches and the
+dispatcher reassigns it on its next searcher cycle. This only
+matters when `-T` is smaller than the number of PHP threads; with
+the default `-T 8` and typical FrankenPHP `num_threads` ≤ 8 every
+TID has its own permanent reader.
 
 ## Caveats
 

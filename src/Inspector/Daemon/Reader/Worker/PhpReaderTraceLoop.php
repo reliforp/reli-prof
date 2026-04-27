@@ -129,8 +129,19 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
                         // outer AsyncLoop terminates cleanly. Returning
                         // without yielding would deadlock the retry
                         // middleware, which has no normal-completion exit.
-                        throw new IdleBudgetExceededException();
+                        throw new IdleBudgetExceededException(
+                            sprintf(
+                                'TID %d stayed idle for %d ticks',
+                                $target_process_descriptor->pid,
+                                $this->idle_tick_budget,
+                            )
+                        );
                     }
+                    // Empty CallTrace as a "ride through brief idle"
+                    // marker — PhpReaderEntryPoint drops it before any
+                    // writer sees it. We can't simply skip the yield:
+                    // a chain that returns without yielding deadlocks
+                    // RetryOnExceptionMiddlewareAsync's while loop.
                     yield new TraceMessage(new CallTrace(), null, null);
                     return;
                 }
