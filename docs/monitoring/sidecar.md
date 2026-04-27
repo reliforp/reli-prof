@@ -287,10 +287,11 @@ After=network.target
 Type=simple
 User=reli
 Group=reli
-# %t = $RUNTIME_DIRECTORY (= /run/reli for system services).
-# %S = $STATE_DIRECTORY  (= /var/lib/reli).
-# Both are created by systemd with the User/Group above and the
-# specified mode, so the sidecar's 0700 parent-dir check passes
+# %t = runtime directory root (/run for system services).
+# %S = state directory root   (/var/lib by default).
+# RuntimeDirectory=reli creates /run/reli, and StateDirectory=reli
+# creates /var/lib/reli, both with the User/Group above and the
+# specified modes, so the sidecar's 0700 parent-dir check passes
 # without any pre-create dance.
 RuntimeDirectory=reli
 RuntimeDirectoryMode=0700
