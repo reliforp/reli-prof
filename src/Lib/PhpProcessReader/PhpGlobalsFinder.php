@@ -178,6 +178,20 @@ class PhpGlobalsFinder
             if ($tsrm_ls_cache_address === 0) {
                 return null;
             }
+            // The slot may be populated for a thread that never ran PHP
+            // (e.g. an idle FrankenPHP regular-mode worker): TSRM allocates
+            // the per-thread cache structure at thread startup, but the
+            // executor_globals it points to remains zero/empty. Validate
+            // here so callers get a clean null and the friendly TSRM error
+            // path fires, rather than silently returning a pointer that
+            // makes the trace loop sample empty stacks forever.
+            if (!$this->tsrm_ls_cache_finder->validateCandidate(
+                $process_specifier,
+                $target_php_settings,
+                $tsrm_ls_cache_address,
+            )) {
+                return null;
+            }
             return $tsrm_ls_cache_address;
         } catch (\Throwable) {
             return null;
