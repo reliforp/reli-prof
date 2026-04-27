@@ -34,7 +34,7 @@ $ watch -n0.2 'reli rbt:analyze --last --last-depth=10 --top=10 --sections="tail
   <img src="docs/images/rbt-analyze-watch-demo.gif" alt="watch rbt:analyze — live hot-frames" width="100%">
 </p>
 
-**What you're looking at.** reli is a *sampling* profiler — every ~10 ms it takes a snapshot of the target's PHP call stack. The top pane is the most recent snapshot (what the target is running *right now*). The self / total tables below rank frames by how many accumulated snapshots they've appeared in: more appearances = more wall time spent there. *Self* is time directly in the frame; *Total* is time in the frame **plus** anything it called.
+**What you're looking at.** reli is a *sampling* profiler — every ~10 ms it takes a snapshot of the target's PHP call stack. The top pane is what the target is running *right now*. The self / total tables below rank frames by how many accumulated snapshots they've appeared in: more appearances = more wall time spent there. *Self* is time directly in the frame; *Total* is time in the frame **plus** anything it called.
 
 **Compact enough to leave running.** At default 10 ms sampling, an hour of trace is rarely more than a few MB of `.rbt` — capture now, analyse later.
 
