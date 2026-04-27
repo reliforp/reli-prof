@@ -262,11 +262,18 @@ class PhpGlobalsFinder
         // the executable first so we resolve to whatever the running
         // PHP code itself reads through the GOT, falling back to the
         // libphp.so reader for the common cli / mod_php / fpm cases
-        // where module_registry only exists in one place.
-        $exe_reader = $this->php_symbol_reader_creator->createForExecutable(
-            $process_specifier->pid,
-        );
-        $exe_address = $exe_reader?->resolveAddress('module_registry');
+        // where module_registry only exists in one place. Any failure
+        // parsing the executable (e.g. a fully static binary stripped
+        // of its section header table) just falls through to the
+        // libphp.so path.
+        try {
+            $exe_reader = $this->php_symbol_reader_creator->createForExecutable(
+                $process_specifier->pid,
+            );
+            $exe_address = $exe_reader?->resolveAddress('module_registry');
+        } catch (\Throwable) {
+            $exe_address = null;
+        }
         if ($exe_address !== null) {
             // Don't cache against the libphp.so fingerprint -- the address
             // is relative to a different module's base, and reusing it
