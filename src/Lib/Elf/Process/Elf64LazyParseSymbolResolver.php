@@ -34,6 +34,8 @@ final class Elf64LazyParseSymbolResolver implements Elf64SymbolResolver
         private int $pid,
         private ProcessModuleMemoryMap $module_memory_map,
         private SymbolResolverCreatorInterface $symbol_resolver_creator,
+        private ?PerBinarySymbolCacheRetriever $shared_binary_cache = null,
+        private ?BinaryFingerprint $fingerprint = null,
     ) {
     }
 
@@ -83,6 +85,20 @@ final class Elf64LazyParseSymbolResolver implements Elf64SymbolResolver
         if (!($this->symbol_resolver_creator instanceof Elf64SymbolResolverCreator)) {
             return null;
         }
+        // Cold attach often constructs several Elf64LazyParseSymbolResolver
+        // instances against the same libphp.so (PhpGlobalsFinder,
+        // resolveTlsBlock, TsrmGlobalsResolver each create their own symbol
+        // reader); without sharing, each instance re-reads the 19 MB binary
+        // off disk. We share the raw bytes (a plain refcounted PHP string)
+        // rather than the parsed Elf64SymbolResolver — see
+        // PerBinarySymbolCacheRetriever for why the deep-object-graph
+        // variant tripped ARM64 zend_mm.
+        if ($this->shared_binary_cache !== null && $this->fingerprint !== null) {
+            $cached = $this->shared_binary_cache->getBinaryBytes($this->fingerprint);
+            if ($cached !== null) {
+                return new StringByteReader($cached);
+            }
+        }
         $reader = $this->symbol_resolver_creator->getFileReader();
         try {
             $raw = $reader->readAll($this->path);
@@ -91,6 +107,9 @@ final class Elf64LazyParseSymbolResolver implements Elf64SymbolResolver
         }
         if ($raw === '') {
             return null;
+        }
+        if ($this->shared_binary_cache !== null && $this->fingerprint !== null) {
+            $this->shared_binary_cache->setBinaryBytes($this->fingerprint, $raw);
         }
         return new StringByteReader($raw);
     }
