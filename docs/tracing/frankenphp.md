@@ -224,6 +224,25 @@ CLI-style invocations (`frankenphp php-cli script.php`) keep the
 worker in PHP for the whole script lifetime and avoid the regular-
 mode timing issue the same way worker mode does.
 
+### `inspector:daemon` against regular-mode FrankenPHP
+
+`inspector:daemon` works against regular-mode FrankenPHP, but each
+sample either lands inside a request (real PHP frames) or between
+requests (no frames). reli writes the empty intervals to the rbt as
+zero-frame samples so the temporal axis stays accurate — with sustained
+load you'll see ~98% real frames and a small idle tail; under bursty
+or quiet traffic the idle ratio rises accordingly. Worker mode never
+goes idle in this sense and produces no zero-frame samples.
+
+If a particular worker stays idle for longer than ~2 s of wall time,
+the reader releases it back to the dispatcher pool so other workers
+get a slot. The dispatcher reassigns it on its next searcher cycle,
+so in steady state every PHP TID is being read by some reader, just
+not necessarily the same one across long idle gaps. This only matters
+when `-T` is smaller than the number of PHP threads; with the default
+`-T 8` and typical FrankenPHP `num_threads` ≤ 8 every TID has its own
+permanent reader.
+
 ## Caveats
 
 - **Thread name as identifier is an internal FrankenPHP convention,
