@@ -18,6 +18,7 @@ use Reli\Lib\ByteStream\CDataByteReader;
 use Reli\Lib\ByteStream\IntegerByteSequence\IntegerByteSequenceReader;
 use Reli\Lib\ByteStream\StringByteReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
+use Reli\Lib\Elf\Parser\ElfParserException;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Elf\Process\BinaryFingerprint;
 use Reli\Lib\Elf\Process\BinaryFingerprintCreator;
@@ -52,7 +53,21 @@ final class PhpTsrmLsCacheFinder
     ) {
     }
 
-    /** @return array{int, int, ProcessModuleMemoryMap}|null */
+    /**
+     * Returns the TLS block address + size + the binary's module map when the
+     * ELF has a PT_TLS program header. Returns null only when the ELF is
+     * confirmed to have no PT_TLS (NTS build) or when the TLS block address
+     * for the target thread cannot be resolved -- both of which are
+     * binary-/thread-level facts the caller may persist as negatives.
+     *
+     * Read or parse failures throw ElfParserException so the caller can
+     * distinguish "this is NTS" from "we couldn't tell"; conflating the two
+     * here would let a transient I/O failure poison the cache as a permanent
+     * NTS verdict.
+     *
+     * @return array{int, int, ProcessModuleMemoryMap}|null
+     * @throws ElfParserException
+     */
     public function resolveTlsBlock(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
@@ -80,19 +95,39 @@ final class PhpTsrmLsCacheFinder
             $php_module_name,
         );
 
-        // We only need the ELF header and the program header table here,
-        // both of which sit at the very start of the file -- typically
-        // within the first KB. Pulling the whole 19 MB libphp.so off disk
-        // (and through FFI::string) just to find PT_TLS is what made
-        // resolveTlsBlock the second-largest cold-attach cost after the
-        // symbol resolver. Read 64 KB and call it; that comfortably covers
-        // the program header table for any sane ELF binary.
-        $header_bytes = $this->file_reader->readSlice($php_path, 0, 64 * 1024);
-        if ($header_bytes === '') {
-            return null;
+        // PT_TLS lives in the program header table, which itself lives at
+        // e_phoff and is e_phentsize * e_phnum bytes long -- usually just a
+        // few hundred bytes right after the ELF header. Read the 64-byte
+        // ELF header first so we can size the program-header read exactly,
+        // instead of guessing a magic upper bound and pulling the entire
+        // libphp.so (~19 MB) just to inspect a kilobyte of metadata.
+        $header_size = 64;
+        $header_bytes = $this->file_reader->readSlice($php_path, 0, $header_size);
+        if (strlen($header_bytes) < $header_size) {
+            throw new ElfParserException(
+                sprintf('cannot read ELF header from %s', $php_path),
+            );
         }
         $byte_reader = new StringByteReader($header_bytes);
         $php_elf_header = $this->elf64_parser->parseElfHeader($byte_reader);
+
+        $ph_end = $php_elf_header->e_phoff->toInt()
+            + $php_elf_header->e_phentsize * $php_elf_header->e_phnum;
+        if ($ph_end > $header_size) {
+            $extended = $this->file_reader->readSlice($php_path, 0, $ph_end);
+            if (strlen($extended) < $ph_end) {
+                throw new ElfParserException(
+                    sprintf(
+                        'short read while loading program headers from %s: got %d bytes, need %d',
+                        $php_path,
+                        strlen($extended),
+                        $ph_end,
+                    ),
+                );
+            }
+            $byte_reader = new StringByteReader($extended);
+        }
+
         $program_headers = $this->elf64_parser->parseProgramHeader($byte_reader, $php_elf_header);
         $tls_entries = $program_headers->findTls();
         if ($tls_entries === []) {
@@ -107,10 +142,17 @@ final class PhpTsrmLsCacheFinder
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings
     ): TsrmLsCacheBruteForceResult {
-        $tls_block = $this->resolveTlsBlock(
-            $process_specifier,
-            $target_php_settings,
-        );
+        try {
+            $tls_block = $this->resolveTlsBlock(
+                $process_specifier,
+                $target_php_settings,
+            );
+        } catch (ElfParserException) {
+            // Could not read or parse the ELF prefix -- the binary may be
+            // ZTS or NTS, we just don't know. Caller must treat this as
+            // "do not persist a negative cache entry".
+            return new TsrmLsCacheBruteForceResult(null, null);
+        }
         if (is_null($tls_block)) {
             // No PT_TLS in the ELF — this is a binary-level fact (NTS build).
             return new TsrmLsCacheBruteForceResult(null, false);

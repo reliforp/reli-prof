@@ -127,16 +127,20 @@ class PhpGlobalsFinder
             $this->binary_analysis_cache->set($fingerprint, 'tsrm_ls_cache', [
                 'has_tsrm_ls_cache' => true,
             ]);
-        } elseif (!$brute_force->has_tls_segment) {
+        } elseif ($brute_force->has_tls_segment === false) {
             // No PT_TLS in the ELF — confirmed NTS build, persist the negative.
             $this->binary_analysis_cache->set($fingerprint, 'tsrm_ls_cache', [
                 'has_tsrm_ls_cache' => false,
             ]);
         }
-        // else: PT_TLS exists but the chosen thread's slot is still zero
-        // (e.g. an idle FrankenPHP worker that hasn't served a request yet).
-        // That is per-thread state, not a binary-level fact, so do not poison
-        // the cache for the rest of the binary's threads.
+        // Two non-cacheable cases collapse here:
+        //   has_tls_segment === true: PT_TLS exists but the chosen thread's
+        //     slot is still zero (e.g. an idle FrankenPHP worker that hasn't
+        //     served a request yet). Per-thread state, not a binary-level fact.
+        //   has_tls_segment === null: we couldn't read or parse the ELF prefix,
+        //     so we don't know whether this is NTS or ZTS. Treating "couldn't
+        //     tell" as "definitely NTS" would lock in a transient I/O failure
+        //     as a permanent verdict.
         $this->tsrm_ls_cache_cache[$process_specifier->pid] = $brute_force->address;
         return $brute_force->address;
     }
