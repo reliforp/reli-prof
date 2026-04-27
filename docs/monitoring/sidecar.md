@@ -103,13 +103,27 @@ it keeps the application's dependency graph free of FFI / PCNTL.
   contents are regenerated from `src/Sidecar/Client/` in
   `reliforp/reli-prof` by the Rector-based downgrade pipeline.
 
-- **Composer, full reli-prof** —
-  `composer require reliforp/reli-prof` pulls the client classes in
-  alongside the rest of the package. The client side has no FFI /
-  PCNTL requirement, but the full package's autoload tree is much
-  larger; prefer the standalone client unless you also intend to
-  invoke `reli` CLI commands from the same project (e.g. analysis
-  tooling living in the same composer install).
+- **Composer, full reli-prof** — strongly discouraged for
+  application-only deploys. `reliforp/reli-prof`'s `composer.json`
+  declares `php: ^8.5`, `ext-ffi`, `ext-pcntl` as hard requirements
+  (they are needed by the `reli` CLI itself, not by the client
+  classes), and a typical PHP-FPM application image has none of
+  them. `composer require reliforp/reli-prof` therefore fails the
+  platform check, and bypassing it means asserting at install
+  time that the runtime constraints are someone else's problem:
+
+  ```bash
+  composer require reliforp/reli-prof \
+      --ignore-platform-req=php \
+      --ignore-platform-req=ext-ffi \
+      --ignore-platform-req=ext-pcntl
+  ```
+
+  Even when this works, you still ship the entire reli analysis
+  toolchain into the application image. Use this option only when
+  the project ALSO runs `reli` CLI commands (analysis tooling, CI
+  step, dev-only container). For application code, prefer the
+  standalone client package above.
 
 - **Vendoring the three files** — for applications that cannot or
   will not take a Composer dependency, copy
