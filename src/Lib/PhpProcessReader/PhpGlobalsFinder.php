@@ -115,6 +115,22 @@ class PhpGlobalsFinder
                 $this->tsrm_ls_cache_cache[$process_specifier->pid] = null;
                 return null;
             }
+            // Same per-thread garbage hazard as the cached-offset path:
+            // an idle ZTS thread may have a non-null but unusable slot
+            // value (TSRM allocated the cache structure at thread startup
+            // but the executor_globals it points to is still zero). Without
+            // this validate, the trace loop samples empty stacks forever
+            // instead of failing fast with the friendly TSRM error.
+            assert($target_php_settings->isDecided());
+            $is_valid = $this->tsrm_ls_cache_finder->validateCandidate(
+                $process_specifier,
+                $target_php_settings,
+                $tsrm_ls_cache_address,
+            );
+            if (!$is_valid) {
+                $this->tsrm_ls_cache_cache[$process_specifier->pid] = null;
+                return null;
+            }
             $this->tsrm_ls_cache_cache[$process_specifier->pid] = $tsrm_ls_cache_address;
             return $tsrm_ls_cache_address;
         }
