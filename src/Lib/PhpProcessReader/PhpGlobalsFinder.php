@@ -185,11 +185,13 @@ class PhpGlobalsFinder
             // here so callers get a clean null and the friendly TSRM error
             // path fires, rather than silently returning a pointer that
             // makes the trace loop sample empty stacks forever.
-            if (!$this->tsrm_ls_cache_finder->validateCandidate(
+            assert($target_php_settings->isDecided());
+            $is_valid = $this->tsrm_ls_cache_finder->validateCandidate(
                 $process_specifier,
                 $target_php_settings,
                 $tsrm_ls_cache_address,
-            )) {
+            );
+            if (!$is_valid) {
                 return null;
             }
             return $tsrm_ls_cache_address;
