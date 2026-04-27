@@ -104,7 +104,8 @@ $ reli inspector:memory:compare before.rmem after.rmem
 ```
 
 Full reference (output formats, thresholds, JSON mode): [docs/memory/memory-report.md](docs/memory/memory-report.md)<br>
-Capture options (`--exclude-heap`, portable dumps, core-file analysis): [docs/memory/memory-dump.md](docs/memory/memory-dump.md), [docs/memory/coredump.md](docs/memory/coredump.md)
+Capture options (`--exclude-heap`, portable dumps): [docs/memory/memory-dump.md](docs/memory/memory-dump.md)<br>
+Core-file analysis (crashed / post-mortem): [docs/memory/coredump.md](docs/memory/coredump.md)
 
 ## Troubleshooting
 
