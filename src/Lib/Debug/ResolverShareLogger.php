@@ -56,6 +56,20 @@ final class ResolverShareLogger
     }
 
     /**
+     * Bypass the bytes-share cache when set. Combined with
+     * forceParsedResolverShare(), this re-creates #674's broken state
+     * exactly: every miss re-reads the 19 MB binary off disk, parses it,
+     * then keeps only the parsed Elf64SymbolResolver alive in the cache
+     * (the 19 MB string is dropped once parsing completes). Hypothesis:
+     * the repeated 19 MB alloc/free pattern combined with the long-lived
+     * deep object graph is what stresses zend_mm on ARM64.
+     */
+    public static function disableBytesShare(): bool
+    {
+        return (string)getenv('RELI_DEBUG_DISABLE_BYTES_SHARE') === '1';
+    }
+
+    /**
      * @param array<string, mixed> $fields
      */
     public static function log(string $tag, array $fields = []): void

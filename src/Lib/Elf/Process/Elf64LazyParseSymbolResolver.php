@@ -133,7 +133,8 @@ final class Elf64LazyParseSymbolResolver implements Elf64SymbolResolver
         // rather than the parsed Elf64SymbolResolver — see
         // PerBinarySymbolCacheRetriever for why the deep-object-graph
         // variant tripped ARM64 zend_mm.
-        if ($this->shared_binary_cache !== null && $this->fingerprint !== null) {
+        $bytes_share_active = !ResolverShareLogger::disableBytesShare();
+        if ($bytes_share_active && $this->shared_binary_cache !== null && $this->fingerprint !== null) {
             $cached = $this->shared_binary_cache->getBinaryBytes($this->fingerprint);
             if ($cached !== null) {
                 return new StringByteReader($cached);
@@ -148,7 +149,7 @@ final class Elf64LazyParseSymbolResolver implements Elf64SymbolResolver
         if ($raw === '') {
             return null;
         }
-        if ($this->shared_binary_cache !== null && $this->fingerprint !== null) {
+        if ($bytes_share_active && $this->shared_binary_cache !== null && $this->fingerprint !== null) {
             $this->shared_binary_cache->setBinaryBytes($this->fingerprint, $raw);
         }
         return new StringByteReader($raw);

@@ -17,6 +17,13 @@ on:
       - 'docs/**'
       - 'LICENSE'
 
+# Debug branch only: cancel in-progress runs on the same ref so iterating
+# pushes don't accumulate queued ARM jobs. Stable branches keep the
+# default behaviour (every run completes).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ contains(github.ref, 'debug-arm64-memory-corruption-JoXfw') || contains(github.head_ref, 'debug-arm64-memory-corruption-JoXfw') }}
+
 jobs:
 
   phpunit-unit:
@@ -560,6 +567,7 @@ jobs:
             force_parsed: "0"
             use_zend_alloc: ""
             valgrind: "0"
+            disable_bytes_share: "0"
           - name: "PHP 8.4 parsed-share-on"
             targets: "v84"
             php_minor: "8.4"
@@ -567,6 +575,7 @@ jobs:
             force_parsed: "1"
             use_zend_alloc: ""
             valgrind: "0"
+            disable_bytes_share: "0"
           - name: "PHP 8.4 parsed-share-on-noalloc"
             targets: "v84"
             php_minor: "8.4"
@@ -574,6 +583,7 @@ jobs:
             force_parsed: "1"
             use_zend_alloc: "0"
             valgrind: "0"
+            disable_bytes_share: "0"
           - name: "PHP 8.4 parsed-share-on-valgrind"
             targets: "v84"
             php_minor: "8.4"
@@ -581,6 +591,22 @@ jobs:
             force_parsed: "1"
             use_zend_alloc: "0"
             valgrind: "1"
+            disable_bytes_share: "0"
+          # parsed-share-on-no-bytes : matches PR #674's broken state more
+          # exactly. parsed-resolver-share enabled AND the bytes-share that
+          # PR #676 added is bypassed, so every cache miss re-reads the
+          # 19 MB binary from disk, parses it, and drops the string. We
+          # think this combination — repeated 19 MB alloc/free against a
+          # heap that already holds the deep parsed object graph — is
+          # what tripped zend_mm on ARM64 in the first place.
+          - name: "PHP 8.4 parsed-share-on-no-bytes"
+            targets: "v84"
+            php_minor: "8.4"
+            tag: "parsed-share-on-no-bytes"
+            force_parsed: "1"
+            use_zend_alloc: ""
+            valgrind: "0"
+            disable_bytes_share: "1"
     steps:
       - uses: actions/checkout@v6
 
@@ -643,6 +669,7 @@ jobs:
           RELI_TEST_PHP_TARGETS: ${{ matrix.targets }}
           RELI_DEBUG_RESOLVER_SHARE: "1"
           RELI_DEBUG_FORCE_PARSED_RESOLVER_SHARE: ${{ matrix.force_parsed }}
+          RELI_DEBUG_DISABLE_BYTES_SHARE: ${{ matrix.disable_bytes_share }}
           USE_ZEND_ALLOC: ${{ matrix.use_zend_alloc }}
         run: |
           mkdir -p build/logs
