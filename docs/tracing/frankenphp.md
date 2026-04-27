@@ -13,7 +13,11 @@ reli can profile FrankenPHP, but three things differ from a vanilla
 3. Only the PHP worker threads carry valid executor globals; the
    Go-runtime TIDs have no PHP state.
 
-The three CLI flags below match those realities.
+The three CLI flags below match those realities. Trace and
+daemon commands work the same way against both regular
+(per-request) and [worker-mode](https://frankenphp.dev/docs/worker/)
+FrankenPHP setups; the memory commands diverge between the two
+shapes — see [Memory and watch commands](#memory-and-watch-commands).
 
 ## Required flags
 
@@ -76,15 +80,40 @@ A few realities on FrankenPHP that the snippet above is built around:
   well under a second on a normal dev box; sandboxed or
   IO-constrained environments may take a few seconds. Either way,
   don't time the very first run out aggressively.
-- **Some hex-named workers fail brute-forcing.** A worker that has
-  not yet served a request leaves `_tsrm_ls_cache` zeroed, so the
-  search returns nothing and the call dies with `global symbol
-  not found executor_globals`. Pick a different worker (or push
-  some traffic through and retry) — once any one worker succeeds,
-  the cached offset works for every other thread of the same
-  process. `inspector:daemon` and `inspector:trace` retry
-  internally; `inspector:memory:dump` and friends do not, so cold
-  failures are most visible there.
+- **Some hex-named workers fail brute-forcing on first attach.**
+  Before the per-binary TLS-offset cache exists, reli locates
+  `_tsrm_ls_cache` by scanning the target's TLS block for a
+  recognisable pattern. On a worker that has not yet served a
+  request that scan can come up empty, and the call dies with:
+
+  ```
+  executor_globals not found via TSRM on TID <n>. The binary is
+  ZTS (PT_TLS present) but this thread's _tsrm_ls_cache slot is
+  uninitialized -- typical of an idle FrankenPHP worker.
+  ```
+
+  Recovery: pick another worker, or push traffic through to warm
+  one. A single sequential request usually only warms one worker
+  (Caddy picks the first idle one and routes follow-on requests
+  there too), so the TID you happened to grab from `ps` may stay
+  cold. Concurrent load that saturates all workers — e.g. fire
+  `num_threads`+ slow requests in parallel before attaching —
+  warms every worker at once. Once **any one worker** succeeds
+  and writes the offset to the per-binary cache, subsequent
+  attaches against the same FrankenPHP process skip the
+  brute-force scan, read the cached offset directly, and resolve
+  TSRM in microseconds — including against workers that have
+  still never served a request, provided their slot was
+  populated at thread startup (which is the case in current
+  FrankenPHP builds).
+
+  TSRM resolving is not the same as having something to look at:
+  `inspector:memory:dump` against a TSRM-resolved cold worker in
+  regular mode still fails downstream with "failed to find ZendMM
+  main chunk" because the request scope hasn't been set up — see
+  the [Memory and watch commands](#memory-and-watch-commands)
+  section. Worker mode keeps the request scope alive throughout
+  the worker's lifetime and so doesn't have this second hurdle.
 
 `--target-thread-regex` is not honoured by `inspector:trace`: the
 single-process mode samples exactly the TID you pass in, so choose
@@ -126,14 +155,74 @@ sudo php ./reli inspector:memory:dump -p "$(
     -o ./frankenphp.relimem
 ```
 
-Unlike `inspector:trace`, `inspector:memory:dump` does **not**
-retry TLS resolution. If the chosen worker happens to be one that
-never handled a request, the dump fails with `global symbol not
-found executor_globals`. Recovery: rerun against a different TID,
-or push a request through the server and retry. Running a brief
-`inspector:trace` / `inspector:daemon` first populates the
-TLS-offset cache and lets every subsequent worker TID succeed
-immediately.
+If the chosen worker has not yet served a request and the
+per-binary TLS-offset cache is also still empty, the dump fails
+with the `executor_globals not found via TSRM on TID <n>` error
+described in the [single-worker section](#attach-to-a-single-worker).
+Both `inspector:memory:dump` and `inspector:trace` fail at the
+same point in this case — the `--max-retries` knob on
+`inspector:trace` retries failed memory reads inside the sampling
+loop, not the cold-attach TSRM resolution itself. Recovery: rerun
+against a different TID, or saturate the workers with concurrent
+traffic and retry. Running a brief `inspector:trace` /
+`inspector:daemon` first populates the TLS-offset cache and lets
+every subsequent attach against the same FrankenPHP process
+resolve TSRM via the cache regardless of whether the chosen TID
+itself has served a request.
+
+### Memory commands and FrankenPHP modes
+
+FrankenPHP runs in two modes and the memory commands behave very
+differently in each.
+
+[**Worker mode**](https://frankenphp.dev/docs/worker/) — `frankenphp { worker /app/worker.php }` —
+loads the application script once per PHP thread and serves
+requests in a `frankenphp_handle_request()` loop. That loop stays
+on the PHP call stack between requests, so
+`executor_globals.current_execute_data` is never zero and the
+worker's request heap is mapped for the worker's whole lifetime.
+For reli that means:
+
+- `inspector:memory:dump` succeeds against an idle worker-mode
+  worker the same way it succeeds against one mid-request, with
+  the same dump size — there is no per-request scope to wait for.
+- `inspector:trace` against an idle worker-mode worker shows a
+  short 2-frame `frankenphp_handle_request` / `<main>` stack;
+  the same TID mid-request shows the full handler stack on top.
+
+This is reli's happy path on FrankenPHP — being able to introspect
+a worker that has been serving traffic for a long time, without
+having to coordinate with request timing or restart it, is what
+the memory tooling is for. Symfony Runtime, Laravel Octane on
+FrankenPHP, and similar high-perf runtimes all use worker mode by
+default; if you're already running one of them you already have
+the easy case.
+
+**Regular (per-request) mode** — `php_server` without a `worker`
+directive — behaves like every other SAPI: ZendMM's main chunk
+only exists while a request is in flight, and between requests
+the worker tears it down. In this mode `inspector:memory:dump`,
+`inspector:memory`, and `inspector:watch -p <pid>` need the
+worker to be **mid-request at the moment of attach**, with all
+the timing considerations that implies (saturating workers with
+a long-running page, racing the request boundary, etc.). For a
+one-shot snapshot in regular mode, drive workers with a
+long-running PHP page (e.g. one that does the work you want to
+capture and then `usleep`s for a few seconds). For automated
+capture, prefer the condition-driven workflows that fire while a
+request is active by construction:
+
+- [`inspector:watch`](capturing-traces.md) with `--memory-usage`,
+  `--watch-function`, `--cpu-usage` etc. plus `--action=memory-dump`
+  polls the target and only triggers when the condition holds, so
+  it naturally lands inside a request.
+- [`inspector:sidecar`](../monitoring/sidecar.md) takes the dump on
+  request from the application (e.g. from a `memory_limit` shutdown
+  handler), guaranteeing the call stack and heap are still set up.
+
+CLI-style invocations (`frankenphp php-cli script.php`) keep the
+worker in PHP for the whole script lifetime and avoid the regular-
+mode timing issue the same way worker mode does.
 
 ## Caveats
 

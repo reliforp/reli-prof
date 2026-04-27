@@ -145,6 +145,51 @@ non-obvious things bite single-shot `inspector:trace -p` users:
   before treating that as a binary-level fact, so the negative result
   is not persisted and the next attach against a warm worker succeeds
   without intervention.
+- **Sequential traffic warms one worker, not all of them.** When
+  reproducing a "cold worker" failure interactively, fire `num_threads`+
+  parallel slow requests rather than a single curl — Caddy reuses
+  the first idle worker for serial requests, so the TID you grab from
+  `ps` may stay cold no matter how many requests you throw at it.
+- **Worker mode is the primary FrankenPHP shape, and `memory:dump`
+  works on it any time.** A worker loaded with
+  `frankenphp { worker /app/worker.php }` stays parked in the
+  `frankenphp_handle_request()` loop on the PHP call stack while it
+  waits for the next request, so `executor_globals.current_execute_data`
+  is never zero and the worker's request heap is mapped for the
+  worker's whole lifetime. `inspector:trace` shows a 2-frame
+  `frankenphp_handle_request` / `<main>` stack on idle workers and
+  full handler stacks mid-request; `memory:dump` succeeds on both,
+  and the dump size is identical (the heap is the worker's, not
+  per-request). Symfony Runtime, Laravel Octane on FrankenPHP, and
+  similar runtimes ship in worker mode by default — assume worker
+  mode unless explicitly told otherwise.
+- **Regular (per-request) mode is the exception, and
+  `memory:dump` is timing-bound there.** Without the `worker`
+  directive FrankenPHP behaves like every other SAPI: between
+  requests the worker tears the request scope down,
+  `current_execute_data` is 0, and `memory:dump` fails with
+  "failed to find ZendMM main chunk". Reproduce with a long
+  `usleep`-tail script and saturate the workers; CLI mode
+  (`frankenphp php-cli script.php`) sidesteps it because the
+  worker stays in PHP for the whole script. In production-like
+  regular-mode setups, prefer `inspector:watch --action=memory-dump`
+  (fires only when its condition holds, naturally inside a request)
+  or `inspector:sidecar` (invoked from PHP itself). This is not a
+  FrankenPHP quirk but a property of ZendMM, which is request-scoped
+  in every SAPI other than the worker-mode-style "long-lived script"
+  shape.
+- **`module_registry` is preempted by the embedding executable.**
+  `frankenphp` statically links libphp, so the dynamic linker binds the
+  shared symbols to the executable's copy and leaves libphp.so's BSS at
+  zero. `findModuleRegistry` therefore probes `/proc/{pid}/exe` first
+  and falls back to the libphp.so reader only when the executable does
+  not define it; do not "tidy up" by deleting that fallback ordering.
+  The `*_offset` (TSRM) symbols are also preempted but `TsrmGlobalsResolver`
+  already handles that with the `_offset == 0 → _id` fallback at
+  `TsrmGlobalsResolver.php:111`. `PhpVersionDetector` must NOT cache the
+  host-PHP fallback (`'v' . PHP_MAJOR_VERSION . PHP_MINOR_VERSION`) when
+  detection fails, because doing so silently mis-resolves chunk and
+  struct layouts on every subsequent run against the same binary.
 - **Tests in `tests/Lib/PhpProcessReader/CallTraceReader/FrankenPhpCallTraceReaderTest`
   share one `BinaryAnalysisCache` across thread iterations.** That's the
   regression test for the cache-poisoning fix; if you put a fresh cache

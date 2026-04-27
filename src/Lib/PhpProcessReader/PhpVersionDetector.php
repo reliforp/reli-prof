@@ -115,13 +115,19 @@ class PhpVersionDetector
         }
 
         if (is_null($version)) {
+            // Detection failed. Fall back to the host PHP version so the
+            // caller still gets a TargetPhpSettings it can act on, but do
+            // NOT cache this fallback: the host PHP version has nothing
+            // to do with the target, and persisting it would poison every
+            // subsequent run on the same binary (e.g. resolving a PHP 8.3
+            // FrankenPHP target as v84 because reli itself runs on 8.4,
+            // which then mis-reads ZendMmChunk layouts and breaks
+            // memory:dump). The user can override with --php-version.
             /** @var value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $version */
             $version = 'v' . PHP_MAJOR_VERSION . PHP_MINOR_VERSION;
             /** @psalm-suppress ReservedWord */
             Assert::true(ZendTypeReader::isSupported($version));
-        }
-
-        if ($fingerprint !== null) {
+        } elseif ($fingerprint !== null) {
             $this->binary_analysis_cache->set($fingerprint, 'php_version', ['version' => $version]);
         }
 
