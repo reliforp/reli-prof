@@ -10,13 +10,13 @@
 [![Coverage Status](https://coveralls.io/repos/github/reliforp/reli-prof/badge.svg?branch=0.12.x)](https://coveralls.io/github/reliforp/reli-prof?branch=0.12.x)
 ![Psalm coverage](https://shepherd.dev/github/reliforp/reli-prof/coverage.svg?)
 
-Reli is a sampling profiler (or a VM state inspector) written in PHP. It can read information about a running PHP script from outside of the process. It's a standalone CLI tool, so target programs don't need any modifications.
+Reli is a sampling profiler (or a VM state inspector) written in PHP. It can read information about a running PHP script from outside the process. It's a standalone CLI tool, so target programs don't need any modifications.
 
 Use it for call-trace sampling (where time is spent), memory-graph analysis (where memory is used), runtime variable inspection, and condition-triggered captures. For first-use, see [docs/getting-started.md](docs/getting-started.md); for the task map, see the [documentation index](docs/README.md).
 
 ## Showcase
 
-A taste of what reli looks like in use. For the full walkthroughs, follow each showcase's link.
+A taste of what reli looks like in use.
 
 ### Sampling with a live hot-frames feed — `inspector:trace` + `watch rbt:analyze`
 
@@ -76,7 +76,7 @@ $ reli rmem:explore snapshot.rmem --http-bridge 8080
   <img src="docs/images/rmem-explore-viz-demo.gif" alt="rmem:explore ↔ browser follow mode" width="100%">
 </p>
 
-**What you're looking at.** reli walks the target's PHP heap into a graph — every value (objects, arrays, strings, call frames…) is a node, every reference is an edge. `rmem:viz` renders that graph as a standalone HTML page; `rmem:live` (or `rmem:explore --http-bridge`) serves it over HTTP with a shared cursor that the terminal TUI, browser views, and an MCP client all follow at once. Useful for chasing memory leaks, finding which classes eat the most memory, and visualising reference cycles.
+**What you're looking at.** reli walks the target's PHP heap into a graph — every value (objects, arrays, strings, call frames…) is a node, every reference is an edge. `rmem:viz` renders that graph as a standalone HTML page; `rmem:explore --http-bridge` (or the standalone `rmem:live`) serves it over HTTP with a shared cursor that the terminal TUI, browser views, and an MCP client all follow at once. Useful for chasing memory leaks, finding which classes eat the most memory, and visualising reference cycles.
 
 Full tour (views, palettes, focus bus, mouse, MCP): [docs/memory/rmem-explore-and-serve.md](docs/memory/rmem-explore-and-serve.md).
 
