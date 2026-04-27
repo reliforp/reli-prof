@@ -54,7 +54,7 @@ $ reli rbt:explore trace.rbt
 </p>
 
 Full tour (keymap, filters, `--with-opcode`, mouse, live tail): [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-analyze-and-explore.md)<br>
-`.rbt` format spec and `converter:*` outputs (flamegraph, speedscope, pprof, callgrind, folded, phpspy): [docs/tracing/binary-trace-format.md](docs/tracing/binary-trace-format.md)<br>
+`.rbt` format spec and converters (speedscope, pprof, callgrind, etc): [docs/tracing/binary-trace-format.md](docs/tracing/binary-trace-format.md)<br>
 Advanced capture (opcodes / native frames / JIT): [docs/tracing/advanced-capture.md](docs/tracing/advanced-capture.md)
 
 ### Memory graph visualization — `rmem:viz` / `rmem:explore`
