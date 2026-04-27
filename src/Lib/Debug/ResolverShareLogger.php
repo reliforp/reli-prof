@@ -123,7 +123,8 @@ final class ResolverShareLogger
     {
         $t = microtime(true);
         $whole = (int)$t;
-        $micros = (int)(($t - $whole) * 1_000_000.0);
+        $frac = $t - (float)$whole;
+        $micros = (int)($frac * 1_000_000.0);
         return date('H:i:s', $whole) . sprintf('.%06d', $micros);
     }
 
@@ -133,6 +134,7 @@ final class ResolverShareLogger
     private static function formatFields(array $fields): string
     {
         $parts = [];
+        /** @psalm-suppress MixedAssignment */
         foreach ($fields as $k => $v) {
             $parts[] = $k . '=' . self::renderValue($v);
         }
