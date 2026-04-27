@@ -75,23 +75,69 @@ The client library requires **no FFI** and has **no heavy dependencies**. It's d
 
 ### Installing the client code in your application
 
-The classes under `Reli\Sidecar\Client\` (`MemoryLimitHandler`, `SidecarClient`, `SidecarClientResponse`) must be available in the target application's autoloader. There are two practical options today:
+The classes under `Reli\Sidecar\Client\` (`MemoryLimitHandler`,
+`SidecarClient`, `SidecarClientResponse`) must be available in the
+target application's autoloader. There are three practical options
+today; the recommended one is the standalone client package because
+it keeps the application's dependency graph free of FFI / PCNTL.
 
-- **Composer dependency** — add `reliforp/reli-prof` as a dependency
-  in the application (`composer require reliforp/reli-prof`). The
-  client classes are pulled in along with the rest of the package.
-  The client side has no FFI / PCNTL requirement, so this works on
-  any modern PHP runtime that hosts your application.
-- **Vendoring the three files** — for applications that don't want
-  the full dependency, copy `src/Sidecar/Client/MemoryLimitHandler.php`,
+- **Composer, standalone client (recommended)** —
+  [`reliforp/reli-prof-sidecar-client`](https://packagist.org/packages/reliforp/reli-prof-sidecar-client)
+  on Packagist is a generated, FFI-free mirror of the
+  `Reli\Sidecar\Client\` namespace, downgraded to target PHP 7.0+
+  so it runs anywhere your application does:
+
+  ```bash
+  composer require reliforp/reli-prof-sidecar-client
+  ```
+
+  Until the first tagged release, the package is published as
+  `dev-main` only. Pin it explicitly and allow dev stability:
+
+  ```bash
+  composer require reliforp/reli-prof-sidecar-client:dev-main
+  ```
+
+  with `"minimum-stability": "dev"` and `"prefer-stable": true` in
+  `composer.json`. **Do not open PRs against the mirror repo** — its
+  contents are regenerated from `src/Sidecar/Client/` in
+  `reliforp/reli-prof` by the Rector-based downgrade pipeline.
+
+- **Composer, full reli-prof** — strongly discouraged for
+  application-only deploys. `reliforp/reli-prof`'s `composer.json`
+  declares `php: ^8.5`, `ext-ffi`, `ext-pcntl` as hard requirements
+  (they are needed by the `reli` CLI itself, not by the client
+  classes), and a typical PHP-FPM application image has none of
+  them. `composer require reliforp/reli-prof` therefore fails the
+  platform check, and bypassing it means asserting at install
+  time that the runtime constraints are someone else's problem:
+
+  ```bash
+  composer require reliforp/reli-prof \
+      --ignore-platform-req=php \
+      --ignore-platform-req=ext-ffi \
+      --ignore-platform-req=ext-pcntl
+  ```
+
+  Even when this works, you still ship the entire reli analysis
+  toolchain into the application image. Use this option only when
+  the project ALSO runs `reli` CLI commands (analysis tooling, CI
+  step, dev-only container). For application code, prefer the
+  standalone client package above.
+
+- **Vendoring the three files** — for applications that cannot or
+  will not take a Composer dependency, copy
+  `src/Sidecar/Client/MemoryLimitHandler.php`,
   `src/Sidecar/Client/SidecarClient.php`, and
-  `src/Sidecar/Client/SidecarClientResponse.php` into your project
-  and wire them into your autoloader (PSR-4 under the
+  `src/Sidecar/Client/SidecarClientResponse.php` (plus
+  `SocketPathResolver.php` for the default-path resolution) into
+  your project and wire them into your autoloader (PSR-4 under the
   `Reli\Sidecar\Client\` namespace, or any namespace as long as you
   update the `use` statements).
 
-Either way, only the `Reli\Sidecar\Client\` namespace is needed
-application-side; the rest of reli runs in the sidecar process.
+Whichever option you pick, only the `Reli\Sidecar\Client\` namespace
+is needed application-side; the rest of reli runs in the sidecar
+process.
 
 ### Emergency Memory Reserve
 

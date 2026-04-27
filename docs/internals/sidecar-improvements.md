@@ -444,19 +444,20 @@ default `$XDG_RUNTIME_DIR/reli/sidecar.sock`.
 
 ### F2. Packagist install path
 
-The current docs offer two installation routes — `composer require
-reliforp/reli-prof` (the full package) or vendoring the three client
-files manually. There is in fact a third path: the
-`reliforp/reli-prof-sidecar-client` standalone package on Packagist
-(currently `dev-main` only, no tag yet). It should be the recommended
-route:
+[x] **Docs side shipped on this branch.** "Installing the client code
+in your application" in `docs/monitoring/sidecar.md` now lists three
+options and recommends the standalone
+`reliforp/reli-prof-sidecar-client` package over the full
+`reliforp/reli-prof` dependency or hand-vendoring. The example shows
+the `dev-main` pin + `minimum-stability: dev` until a tag exists.
 
-```bash
-composer require reliforp/reli-prof-sidecar-client:dev-main
-```
-
-This requires `minimum-stability: dev` until the package is tagged.
-The tagging policy itself needs sorting (semver, starting at 0.1.0?).
+[ ] **Residual:** tag the
+`reliforp/reli-prof-sidecar-client` mirror and update the docs
+snippet from `:dev-main` to a `^0.x` constraint. This is what gets
+recommended-by-default rather than an explicit `dev-main` pin
++ stability flag. Tagging policy itself still needs sorting
+(semver, presumably starting at `0.12.0` to track the upstream tag,
+or `0.1.0` if we want the mirror's version line to be independent).
 
 ### F3. Operations section
 
@@ -502,7 +503,9 @@ each are different. Useful as a fixture for G1.
 ## Suggested PR ordering
 
 **Shipped on this branch (release-blocker batch for 0.12.0):**
-A1, B1, B2, C1, C2, E1, E2, F1, F3.
+A1, B1, B2, C1, C2, E1, E2, F1, F3, plus the docs portion of F2
+(standalone-client install route documented; mirror tagging is the
+remaining residual).
 
 **Remaining for 0.12.x:**
 
@@ -516,8 +519,11 @@ A1, B1, B2, C1, C2, E1, E2, F1, F3.
    `MemoryLimitHandler` argument). Mostly relevant once someone hits
    the B1 pre-flight wall on a sidecar they cannot reasonably
    resize.
-3. **F2** — once the `reliforp/reli-prof-sidecar-client` mirror is
-   tagged, switch the docs from `dev-main` to the first release tag.
+3. **F2 (residual)** — the docs now recommend
+   `reliforp/reli-prof-sidecar-client` as the primary install route,
+   pinned to `dev-main`. Remaining work is to tag the mirror and
+   replace the `dev-main` pin in the docs snippet with the first
+   release tag.
 4. **H4 + H5** — queue depth reporting / rejection. Optional.
 5. **D1** — `on_error` signature extension. Optional-parameter
    addition, fully BC. Useful but not urgent.
