@@ -2,20 +2,21 @@
   <img src="docs/images/logos/banner_bg_white.png" alt="Reli" width="100%">
 </h1>
 
-![Minimum PHP version: 8.5.0](https://img.shields.io/badge/php-8.5.0%2B-blue.svg)
+![PHP (runner): 8.5.0+](https://img.shields.io/badge/php%20%28runner%29-8.5.0%2B-blue.svg)
+![PHP (target): 7.0+](https://img.shields.io/badge/php%20%28target%29-7.0%2B-8892BF.svg)
 [![Packagist](https://img.shields.io/packagist/v/reliforp/reli-prof.svg)](https://packagist.org/packages/reliforp/reli-prof)
 [![Github Actions](https://github.com/reliforp/reli-prof/workflows/build/badge.svg)](https://github.com/reliforp/reli-prof/actions)
 [![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/reliforp/reli-prof/badges/quality-score.png?b=0.12.x)](https://scrutinizer-ci.com/g/reliforp/reli-prof/?branch=0.12.x)
 [![Coverage Status](https://coveralls.io/repos/github/reliforp/reli-prof/badge.svg?branch=0.12.x)](https://coveralls.io/github/reliforp/reli-prof?branch=0.12.x)
 ![Psalm coverage](https://shepherd.dev/github/reliforp/reli-prof/coverage.svg?)
 
-Reli is a sampling profiler (or a VM state inspector) written in PHP. It can read information about a running PHP script from outside of the process. It's a standalone CLI tool, so target programs don't need any modifications.
+Reli is a sampling profiler (or a VM state inspector) written in PHP. It can read information about a running PHP script from outside the process. It's a standalone CLI tool, so target programs don't need any modifications.
 
 Use it for call-trace sampling (where time is spent), memory-graph analysis (where memory is used), runtime variable inspection, and condition-triggered captures. For first-use, see [docs/getting-started.md](docs/getting-started.md); for the task map, see the [documentation index](docs/README.md).
 
 ## Showcase
 
-A taste of what reli looks like in use. For the full walkthroughs, follow each showcase's link.
+A taste of what reli looks like in use.
 
 ### Sampling with a live hot-frames feed — `inspector:trace` + `watch rbt:analyze`
 
@@ -33,11 +34,11 @@ $ watch -n0.2 'reli rbt:analyze --last --last-depth=10 --top=10 --sections="tail
   <img src="docs/images/rbt-analyze-watch-demo.gif" alt="watch rbt:analyze — live hot-frames" width="100%">
 </p>
 
-**What you're looking at.** reli is a *sampling* profiler — every ~10 ms it takes a snapshot of the target's PHP call stack. The top pane is the most recent snapshot (what the target is running *right now*). The self / total tables below rank frames by how many accumulated snapshots they've appeared in: more appearances = more wall time spent there. *Self* is time directly in the frame; *Total* is time in the frame **plus** anything it called.
+**What you're looking at.** reli is a *sampling* profiler — every ~10 ms it takes a snapshot of the target's PHP call stack. The top pane is what the target is running *right now*. The self / total tables below rank frames by how many accumulated snapshots they've appeared in: more appearances = more wall time spent there. *Self* is time directly in the frame; *Total* is time in the frame **plus** anything it called.
 
-**Compact enough to leave running.** At default 10 ms sampling, an hour of trace is typically only a few MB of `.rbt` — interning and run-length encoding bring it down to a handful of bytes per sample, so `.rbt` files are easy to keep around, ship to a colleague, or analyse later. Capture now, dig in when you have time.
+**Compact enough to leave running.** At default 10 ms sampling, an hour of trace is rarely more than a few MB of `.rbt` — capture now, analyse later.
 
-Analyser reference: [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-analyze-and-explore.md).
+Analyser reference: [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-analyze-and-explore.md)
 
 ### Interactive trace browsing — `rbt:explore`
 
@@ -52,7 +53,9 @@ $ reli rbt:explore trace.rbt
   <img src="docs/images/rbt-explore-demo.gif" alt="rbt:explore demo" width="100%">
 </p>
 
-Full tour (keymap, filters, `--with-opcode`, mouse, live tail): [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-analyze-and-explore.md). `.rbt` format spec and `converter:*` outputs (flamegraph, speedscope, pprof, callgrind, folded, phpspy): [docs/tracing/binary-trace-format.md](docs/tracing/binary-trace-format.md). Advanced capture (opcodes / native frames / JIT): [docs/tracing/advanced-capture.md](docs/tracing/advanced-capture.md).
+Full tour (keymap, filters, `--with-opcode`, mouse, live tail): [docs/tracing/rbt-analyze-and-explore.md](docs/tracing/rbt-analyze-and-explore.md)<br>
+`.rbt` format spec and converters (speedscope, pprof, callgrind, etc): [docs/tracing/binary-trace-format.md](docs/tracing/binary-trace-format.md)<br>
+Advanced capture (opcodes / native frames / JIT): [docs/tracing/advanced-capture.md](docs/tracing/advanced-capture.md)
 
 ### Memory graph visualization — `rmem:viz` / `rmem:explore`
 
@@ -75,9 +78,9 @@ $ reli rmem:explore snapshot.rmem --http-bridge 8080
   <img src="docs/images/rmem-explore-viz-demo.gif" alt="rmem:explore ↔ browser follow mode" width="100%">
 </p>
 
-**What you're looking at.** reli walks the target's PHP heap into a graph — every value (objects, arrays, strings, call frames…) is a node, every reference is an edge. `rmem:viz` renders that graph as a standalone HTML page; `rmem:live` (or `rmem:explore --http-bridge`) serves it over HTTP with a shared cursor that the terminal TUI, browser views, and an MCP client all follow at once. Useful for chasing memory leaks, finding which classes eat the most memory, and visualising reference cycles.
+**What you're looking at.** reli walks the target's PHP heap into a graph — every value (objects, arrays, strings, call frames…) is a node, every reference is an edge. `rmem:viz` renders that graph as a standalone HTML page; `rmem:explore --http-bridge` (or the standalone `rmem:live`) serves it over HTTP with a shared cursor that the terminal TUI, browser views, and an MCP client all follow at once. Useful for chasing memory leaks and finding which classes eat the most memory.
 
-Full tour (views, palettes, focus bus, mouse, MCP): [docs/memory/rmem-explore-and-serve.md](docs/memory/rmem-explore-and-serve.md).
+Full tour (views, palettes, focus bus, mouse, MCP): [docs/memory/rmem-explore-and-serve.md](docs/memory/rmem-explore-and-serve.md)
 
 ### Automated memory findings — `inspector:memory:report`
 
@@ -92,15 +95,17 @@ $ reli inspector:memory:report snapshot.rmem
   <img src="docs/images/memory-report-output.png" alt="inspector:memory:report — findings and tables" width="100%">
 </p>
 
-**What you're looking at.** reli scans the captured heap graph for known waste patterns and prints each one as a finding, with a severity, a hypothesis, and a next-investigation step. The patterns include *dominant* classes (one type eats most of the heap), reference *cycles* (objects keeping each other alive even when no one else references them), *choke points* (one node through which most of the retention flows downstream), and *dedup* candidates (identical values stored over and over). No SQL or `jq` required.
+**What you're looking at.** reli scans the captured heap graph for known waste patterns — dominant classes, reference cycles, choke points, dedup candidates — and prints each finding with a severity, a hypothesis, and a next-investigation step.
 
-Compare two snapshots to track regressions or verify fixes:
+You can also compare two snapshots to track regressions or verify fixes:
 
 ```bash
 $ reli inspector:memory:compare before.rmem after.rmem
 ```
 
-Full reference (output formats, thresholds, JSON mode): [docs/memory/memory-report.md](docs/memory/memory-report.md). Capture options (`--exclude-heap`, portable dumps, core-file analysis): [docs/memory/memory-dump.md](docs/memory/memory-dump.md), [docs/memory/coredump.md](docs/memory/coredump.md).
+Full reference (output formats, thresholds, JSON mode): [docs/memory/memory-report.md](docs/memory/memory-report.md)<br>
+Capture options (`--exclude-heap`, portable dumps): [docs/memory/memory-dump.md](docs/memory/memory-dump.md)<br>
+Core-file analysis (crashed / post-mortem): [docs/memory/coredump.md](docs/memory/coredump.md)
 
 ## Troubleshooting
 
