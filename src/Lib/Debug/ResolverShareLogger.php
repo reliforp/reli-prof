@@ -63,10 +63,11 @@ final class ResolverShareLogger
         if (!self::enabled()) {
             return;
         }
+        $pid = getmypid();
         $line = sprintf(
             "[%s pid=%d mem=%d] %s %s\n",
             self::timestamp(),
-            getmypid(),
+            $pid === false ? -1 : $pid,
             memory_get_usage(true),
             $tag,
             self::formatFields($fields),
@@ -98,15 +99,18 @@ final class ResolverShareLogger
     {
         if (self::$log_path === null) {
             $dir = is_dir('/tmp/reli-test') ? '/tmp/reli-test' : sys_get_temp_dir();
-            self::$log_path = sprintf('%s/resolver-share-%d.log', $dir, getmypid());
+            $pid = getmypid();
+            self::$log_path = sprintf('%s/resolver-share-%d.log', $dir, $pid === false ? -1 : $pid);
         }
         return self::$log_path;
     }
 
     private static function timestamp(): string
     {
-        $t = microtime(true);
-        return date('H:i:s', (int)$t) . sprintf('.%06d', (int)(($t - (int)$t) * 1_000_000));
+        $t = (float)microtime(true);
+        $whole = (int)$t;
+        $micros = (int)(($t - (float)$whole) * 1_000_000.0);
+        return date('H:i:s', $whole) . sprintf('.%06d', $micros);
     }
 
     /**
@@ -116,16 +120,17 @@ final class ResolverShareLogger
     {
         $parts = [];
         foreach ($fields as $k => $v) {
-            if (is_object($v)) {
-                $v = get_class($v);
-            } elseif (is_array($v)) {
-                $v = json_encode($v);
-            } elseif (is_bool($v)) {
-                $v = $v ? 'true' : 'false';
-            } elseif ($v === null) {
-                $v = 'null';
-            }
-            $parts[] = "{$k}={$v}";
+            /** @var string $rendered */
+            $rendered = match (true) {
+                is_object($v) => get_class($v),
+                is_array($v) => (string)json_encode($v),
+                is_bool($v) => $v ? 'true' : 'false',
+                $v === null => 'null',
+                is_int($v), is_float($v) => (string)$v,
+                is_string($v) => $v,
+                default => '?',
+            };
+            $parts[] = "{$k}={$rendered}";
         }
         return implode(' ', $parts);
     }

@@ -672,6 +672,26 @@ jobs:
             docker compose run reli-test-for-ci vendor/bin/phpunit --group target-version --coverage-clover build/logs/clover.xml
           fi
 
+      - name: Dump resolver-share log tail to job output
+        if: always()
+        run: |
+          echo "=== resolver-share log files ==="
+          ls -la /tmp/reli-test/resolver-share-*.log 2>&1 || true
+          echo "=== summary by event tag ==="
+          for f in /tmp/reli-test/resolver-share-*.log; do
+            [ -f "$f" ] || continue
+            echo "--- $f ---"
+            grep -oE '\] [a-z._]+' "$f" | sort | uniq -c | sort -rn || true
+          done
+          echo "=== first 60 + last 60 lines of largest log ==="
+          biggest=$(ls -S /tmp/reli-test/resolver-share-*.log 2>/dev/null | head -1)
+          if [ -n "$biggest" ]; then
+            echo ">>> head $biggest"
+            head -60 "$biggest" || true
+            echo ">>> tail $biggest"
+            tail -60 "$biggest" || true
+          fi
+
       - name: Upload test trace log
         if: always()
         uses: actions/upload-artifact@v7
