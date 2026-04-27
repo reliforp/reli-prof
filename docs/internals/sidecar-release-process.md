@@ -161,16 +161,19 @@ convention.
 
 ## Patch releases (`0.12.1`, `0.12.2`, …)
 
-Same playbook, with one decision up front:
+Same playbook, no exceptions: the mirror gets a tag with the same
+version as the upstream patch, regardless of whether
+`src/Sidecar/Client/` changed.
 
 | `src/Sidecar/Client/` changed in the patch? | Action |
 |---|---|
-| **Yes** (any client-facing change, however small) | Mandatory: regenerate, push to mirror, tag `0.12.x` on the mirror first, then upstream. |
-| **No** | Optional but recommended. Re-running the build script is cheap and gives the mirror a clean snapshot of the current Rector tooling. Skipping is acceptable — `^0.12` users keep getting `0.12.0` until the next mirror tag. |
+| **Yes** (any client-facing change, however small) | Regenerate, push to mirror, tag `0.12.x` on the mirror first, then upstream. |
+| **No** | Still tag the mirror with the same version. Re-run the build script so the mirror tree reflects the current Rector tooling, push as a fresh sync commit, and tag — even when the resulting tree is byte-identical to the previous tag. The tag itself preserves the "reli `0.12.x` pairs with client `0.12.x`" mental model and removes a class of "is there a matching mirror tag for this upstream patch?" support questions. Tags are cheap; ambiguity is not. |
 
-When skipping the mirror tag, note it in the upstream release notes
-("client package unchanged, still pins `^0.12`") so users do not
-look for a `0.12.1` mirror tag that does not exist.
+The single-rule version, kept short for the runbook reader: **every
+upstream tag in the `Reli\Sidecar\Client\` namespace's lifetime gets
+a matching mirror tag. No exceptions, no conditional language in
+release notes.**
 
 ## Recovery
 
