@@ -3,8 +3,55 @@
 > **Status:** Working scratchpad, similar in spirit to `future-ideas.md`.
 > Captures concrete improvement ideas that came out of an end-to-end
 > check of `reli inspector:sidecar` + `reliforp/reli-prof-sidecar-client`
-> (installed via Packagist) on 2026-04-27. Nothing here is implemented
-> yet; intent is to split into per-PR design notes when each item lands.
+> (installed via Packagist) on 2026-04-27. Items marked `[x]` have
+> already shipped on the current branch; the rest are split across the
+> 0.12.0 release polish pass and the 0.12.x roadmap.
+
+## Shipped on this branch (0.12.0 release-blocker batch)
+
+The following landed together as the "0.12.0 launch polish" change:
+
+- [x] **F1** — Quick Start in `docs/monitoring/sidecar.md` rewritten to
+      use the default `$XDG_RUNTIME_DIR/reli/sidecar.sock`, with an
+      explicit `mkdir + chmod 0700` snippet for hosts where
+      `XDG_RUNTIME_DIR` is unset. Server Options table fixed to show
+      the actual default.
+- [x] **B1** — Pre-flight memory check in
+      `SidecarDumpHandler::doDump()`: rejects with a structured
+      `status=error` response when `target heap × 1.15 + 16 MiB`
+      exceeds the sidecar's available `memory_limit` headroom, instead
+      of taking the daemon down via PHP Fatal in
+      `MemoryDumper.php:603`.
+- [x] **E1** — Replaced the unguarded `fwrite()` reply in
+      `SidecarServer::handleConnection` with a centralised
+      `writeResponse()` helper that swallows `EPIPE`, logs a single
+      structured `sidecar client disconnected before reply` info line
+      with `pid`/`label`/`response_path`, and prints a one-line
+      operator hint when an orphaned dump remains on disk. No more
+      raw `PHP Notice: fwrite(): … Broken pipe`.
+- [x] **A1** — `MemoryDumper::dump()` gained a `?\Closure
+      $on_read_complete` parameter; `SidecarDumpHandler::doDump()`
+      passes a closure that detaches `ptrace` immediately after the
+      read phase. Target stop window is now ≈ read-only (verified
+      ≈ 0.65 s for a 256 MB target where the full roundtrip was
+      1.78 s; previously the whole 1.78 s was inside the stop
+      window). Other callers of `MemoryDumper::dump()` are unchanged
+      because the new parameter defaults to `null`.
+- [x] **C1** — `MemoryLimitHandler::register()` accepts
+      `int $timeout_seconds = 30` and forwards it to the inner
+      `SidecarClient`. Default preserves prior behaviour; OOM-path
+      callers no longer have to drop down to `new SidecarClient(...)`
+      to size the timeout against their `memory_limit`.
+- [x] **B2 + E2 + F3 + concurrency model** — New "Operations"
+      section in `docs/monitoring/sidecar.md` covering
+      `--memory-limit` sizing, supervisor expectation
+      (systemd unit + Kubernetes `restartPolicy: Always`),
+      timeout-sizing table, orphan dump recovery, and the FIFO
+      single-worker concurrency model with kernel-backlog queueing.
+
+The sections below are kept verbatim for context; the items marked
+`[x]` reference the shipped change above. Items still marked `[ ]`
+are 0.12.x candidates.
 
 ---
 
@@ -44,10 +91,15 @@ effectively the worst combination of both axes:
 
 ### Subtasks
 
-- [ ] **A1** — Switch `MemoryDumper::dump` to fast-resume by default.
-      Move the `resume()` in `SidecarDumpHandler::doDump`'s `try/finally`
-      so it runs immediately after the read phase, before disk write.
-      Strict win, no API change.
+- [x] **A1** — Switch `MemoryDumper::dump` to fast-resume by default.
+      Shipped: added `?\Closure $on_read_complete` parameter (default
+      null preserves the old behaviour for `inspector:memory:dump` and
+      other one-shot callers); `SidecarDumpHandler::doDump()` passes a
+      closure that flips a `$stopped` flag and calls
+      `process_stopper->resume()` from `on_read_complete`, with a
+      safety-net call in the surrounding `finally`. Verified target
+      stop window dropped from `read+write` (≈ full roundtrip) to
+      `read` only.
 - [ ] **A2** — Add `--dump-mode={fast-resume,low-memory}` to
       `inspector:sidecar`.
 - [ ] **A3** — Add an additive `mode` field to the IPC protocol
@@ -125,11 +177,19 @@ Effect:
 
 ### Subtasks
 
-- [ ] **B1** — Add the pre-flight check at the top of
-      `SidecarDumpHandler::doDump()` (about 10 lines).
-- [ ] **B2** — Add an "Operations" section to the docs covering the
-      "you must run under a supervisor" assumption, with a sample
-      systemd unit and Kubernetes `restartPolicy: Always`.
+- [x] **B1** — Pre-flight check landed in `SidecarDumpHandler` as
+      `preflightMemoryCheck($heap_stats->size)`, called between
+      `heap_stats_reader->read()` and `process_stopper->stop()`. Uses
+      `ini_parse_quantity(ini_get('memory_limit'))`; returns
+      `SidecarResponse::error(...)` with concrete bytes when the heap
+      cannot fit, and logs an info line so operators have a grep
+      target. Verified end-to-end: 512 MB target against a 128 M
+      sidecar now returns
+      `sidecar memory_limit too small for this target: need ~601 MiB,
+      116 MiB available …` instead of crashing the daemon.
+- [x] **B2** — "Operations" section in `docs/monitoring/sidecar.md`
+      now covers the "must run under a supervisor" assumption with a
+      sample systemd unit and a Kubernetes pointer.
 
 Once A's streaming mode lands, B1's constraint is structurally gone,
 but B1 is still worth keeping — a daemon that knows its own limits is
@@ -154,19 +214,12 @@ easier to reason about than one that crashes silently.
 
 ### Proposal
 
-- [ ] **C1** — Add `timeout_seconds` to
-      `MemoryLimitHandler::register(...)`. Forward it to the inner
-      `new SidecarClient($socket_path, $timeout_seconds)`.
-- [ ] **C2** — Add a timeout-sizing table to the docs:
-      ```
-      memory_limit  →  recommended timeout
-      128 M             5  s
-      256 M            10  s
-      512 M            15  s
-      1   G            30  s (default)
-      2   G            60  s
-      ```
-      Spell out: "do not lower the default; raise it as needed."
+- [x] **C1** — `MemoryLimitHandler::register(...)` now accepts
+      `int $timeout_seconds = 30` and forwards it to the inner
+      `SidecarClient`.
+- [x] **C2** — Timeout-sizing table is in the new "Operations"
+      section of `docs/monitoring/sidecar.md`, with the
+      "do not lower the default; raise it as needed" rule called out.
 - [ ] **C3** (optional) — Consider raising the default to 60 s. 30 s
       caps out around ~3 GB, which is a realistic ceiling for modern
       PHP-FPM workers but not a generous one.
@@ -229,14 +282,16 @@ becomes an "orphan" from the client's point of view.
 
 ### Proposal
 
-- [ ] **E1** — Replace the bare `fwrite` near
-      `SidecarServer.php:134` with `@fwrite` + return-value check, and
-      log a structured message such as
-      `Log::info('client disconnected before reply (dump still saved at <path>)')`.
-      Removes the noisy `Notice` and makes orphans observable.
-- [ ] **E2** — Document the "timed-out client → dump still on disk"
-      safety net. Currently the only way to learn about it is to
-      experience it.
+- [x] **E1** — All three `fwrite` reply sites now go through a single
+      `SidecarServer::writeResponse()` helper. It does
+      `@fwrite` + length check, logs a structured
+      `sidecar client disconnected before reply` info line with
+      `pid`/`label`/`response_status`/`response_path`/`response_bytes`,
+      and emits `[sidecar] client disconnected; orphan dump still
+      saved: <path>` to the operator-facing console output when the
+      orphaned dump succeeded.
+- [x] **E2** — The "Operations" section now has an "Orphan dump
+      recovery" subsection describing the safety net.
 
 ---
 
@@ -358,6 +413,11 @@ response and very much do want to release the worker slot.
 
 ## F. Documentation gaps
 
+> **Status update:** F1 and F3 shipped on this branch. F2 (Packagist
+> path) is deliberately deferred — it depends on tagging the
+> `reliforp/reli-prof-sidecar-client` mirror, which we want to do
+> alongside the actual 0.12.0 tag rather than a step ahead of it.
+
 ### F1. Socket parent directory requirement in Quick Start
 
 `docs/monitoring/sidecar.md` Quick Start uses
@@ -435,22 +495,31 @@ roundtrip with a single `docker compose up`.
 
 ## Suggested PR ordering
 
-1. **A1** — fast-resume default. Standalone, no protocol change.
-2. **B1** — pre-flight memory check. Standalone, ~10 lines. Order
-   relative to A1 doesn't matter.
-3. **F1 + E2** — doc fixes; bundle F2 with them as one PR.
-4. **H1 + H2 + H3** — ack-and-go reply mode. Protocol change
-   (additive). Removes the worker-hold-time problem and obsoletes
-   E1 as a side effect; can be sequenced before or after A2-A4
-   since both are additive protocol fields and don't conflict.
-5. **A2 + A3 + A4** — dump-mode plumbing. Touches the protocol,
-   so review carefully.
-6. **C1 + C2** — `MemoryLimitHandler` parameter and timeout docs.
-7. **E1** — broken-pipe log cleanup. Small, standalone. Skip if H
-   has already landed (the symptom is gone).
-8. **H4 + H5** — queue depth reporting / rejection. Optional.
-9. **D1** — `on_error` signature extension. Can wait.
-10. **G1 + G2** — E2E test and demo. After the above stabilise.
+**Shipped on this branch (release-blocker batch for 0.12.0):**
+A1, B1, B2, C1, C2, E1, E2, F1, F3.
+
+**Remaining for 0.12.x:**
+
+1. **H1 + H2 + H3** — ack-and-go reply mode. Protocol change
+   (additive `wait` field). Removes the worker-hold-time problem;
+   E1 is now a structured log line rather than a Notice, so this PR
+   no longer "obsoletes" E1 — it just reduces how often the
+   disconnect path fires.
+2. **A2 + A3 + A4** — dump-mode plumbing
+   (`--dump-mode={fast-resume,low-memory}` + protocol field +
+   `MemoryLimitHandler` argument). Mostly relevant once someone hits
+   the B1 pre-flight wall on a sidecar they cannot reasonably
+   resize.
+3. **F2** — once the `reliforp/reli-prof-sidecar-client` mirror is
+   tagged, switch the docs from `dev-main` to the first release tag.
+4. **H4 + H5** — queue depth reporting / rejection. Optional.
+5. **D1** — `on_error` signature extension. Optional-parameter
+   addition, fully BC. Useful but not urgent.
+6. **G1 + G2** — E2E test infrastructure and bench demo. Best after
+   A2-A4 land so the test fixture covers all dump modes.
+
+C3 (raising the default timeout to 60 s) and D2 (sentinel error
+type) remain open discussion items rather than tracked tasks.
 
 ---
 
