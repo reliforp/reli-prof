@@ -1,85 +1,103 @@
-# sidecar 改善案メモ
+# Sidecar Improvements (Working Notes)
 
-> **Status:** Working scratchpad (Japanese, similar to `future-ideas.md` style).
-> 後で英語化 / セクション分割して個別 PR に切り出す前提の作業メモ。
-
-`reli inspector:sidecar` + `reliforp/reli-prof-sidecar-client` (Packagist 経由)
-の end-to-end 検証中に出てきた改善ネタを忘れる前に列挙したもの。検証日 2026-04-27。
-このメモ単体では実装はしていない。
+> **Status:** Working scratchpad, similar in spirit to `future-ideas.md`.
+> Captures concrete improvement ideas that came out of an end-to-end
+> check of `reli inspector:sidecar` + `reliforp/reli-prof-sidecar-client`
+> (installed via Packagist) on 2026-04-27. Nothing here is implemented
+> yet; intent is to split into per-PR design notes when each item lands.
 
 ---
 
-## A. dump パイプラインのメモリ効率 (本丸)
+## A. Dump pipeline memory efficiency (the main one)
 
-### 現状
+### Current behaviour
 
-`MemoryDumper.php:591-611` で全 region を `process_vm_readv` で読みつつ
-`$regions_data[]` に PHP 文字列として積み、その後 `MemoryDumpWriter::write()`
-で disk に流す。target 停止は `SidecarDumpHandler::doDump()` の `try/finally`
-で `memory_dumper->dump()` 全体を覆っている。
+`MemoryDumper.php:591-611` reads every region with `process_vm_readv`
+into PHP strings appended to `$regions_data[]`, and only after that
+loop completes does `MemoryDumpWriter::write()` flush the regions to
+disk. The target stop window in `SidecarDumpHandler::doDump()` covers
+the whole `memory_dumper->dump()` call, including the disk write.
 
-実測 (1 GB の target):
-- sidecar baseline RSS: ~88 MB
-- dump 中 peak RSS:    ~1109 MB (= target heap + baseline)
-- target 停止時間:      read + write 合計 (~9s)
+Measured against a 1 GB target heap:
 
-つまり「sidecar RSS は target heap 相当」「target 停止は read+write 全部」の
-両方を払っている。どちらの軸でも改善余地あり。
+- Sidecar baseline RSS: ~88 MB
+- Peak sidecar RSS during dump: ~1109 MB (≈ target heap + baseline)
+- Target stop window: read + write combined (~9 s)
 
-### 提案
+So the sidecar is paying both costs at once — RSS scales with target
+heap size, and the target is stopped throughout the disk write phase.
+There is room to improve on either axis.
 
-3 モードに整理可能 (現状は実質「悪いとこ取り」):
+### Proposal
 
-| モード | sidecar peak RSS | target 停止時間 |
+Three modes are distinguishable. The current implementation is
+effectively the worst combination of both axes:
+
+| Mode | Sidecar peak RSS | Target stop window |
 |---|---|---|
-| 現状: full buffer + late resume | target 相当 | read + write |
-| **A: fast-resume** (buffer all → resume → write) | target 相当 | read のみ |
-| **B: streaming** (region 毎 read→write→free) | 数 MB | read + write |
+| Current: full buffer + late resume | ≈ target heap | read + write |
+| **A: fast-resume** (buffer all → resume → write) | ≈ target heap | read only |
+| **B: streaming** (per-region read → write → free) | a few MB | read + write |
 
-`MemoryDumpWriter::writeStreaming()` (line 74-128) は既に実装済み。
-`SidecarDumpHandler` から呼ばれていないだけ。
+`MemoryDumpWriter::writeStreaming()` (lines 74-128) already exists.
+`SidecarDumpHandler` simply does not call it.
 
-### サブタスク
+### Subtasks
 
-- [ ] **A1**: `MemoryDumper::dump` を fast-resume にデフォルト切替
-      (`SidecarDumpHandler` の `try/finally` の `resume()` を read 完了直後に移動)
-      → 無条件改善、API 変更なし
-- [ ] **A2**: `--dump-mode={fast-resume,low-memory}` を `inspector:sidecar` に追加
-- [ ] **A3**: protocol に `mode` field 追加 (additive、protocol_version 据え置き)
-      → `SidecarRequest::$mode`
-      → `SidecarClient::requestDump(..., mode: 'low-memory')`
-      → 古い sidecar に投げても無視される、新しい sidecar が古い client から
-         field 無しで受けたら server default (= --dump-mode) を使う
-- [ ] **A4**: `MemoryLimitHandler::register(... dump_mode: 'low-memory')` を生やす
-      → OOM 経路で sidecar 連鎖死を予防 (target heap == sidecar memory_limit な状況)
+- [ ] **A1** — Switch `MemoryDumper::dump` to fast-resume by default.
+      Move the `resume()` in `SidecarDumpHandler::doDump`'s `try/finally`
+      so it runs immediately after the read phase, before disk write.
+      Strict win, no API change.
+- [ ] **A2** — Add `--dump-mode={fast-resume,low-memory}` to
+      `inspector:sidecar`.
+- [ ] **A3** — Add an additive `mode` field to the IPC protocol
+      (no `protocol_version` bump):
+      - `SidecarRequest::$mode`
+      - `SidecarClient::requestDump(..., mode: 'low-memory')`
+      - Older sidecars ignore the unknown field; newer sidecars receiving
+        a request without `mode` fall back to the server default
+        (`--dump-mode`).
+- [ ] **A4** — Add `MemoryLimitHandler::register(... dump_mode: 'low-memory')`
+      so the OOM-handler path can opt into streaming and avoid taking
+      the sidecar down with itself when `target_heap ≈ sidecar memory_limit`.
 
-優先度: A1 > A2 > A3 > A4。A1 単独で先に PR 切るのが安全。
+Priority: A1 > A2 > A3 > A4. A1 alone makes a clean, standalone PR.
 
 ---
 
-## B. sidecar の自己防衛 (落ちない sidecar)
+## B. Sidecar self-defence (don't die on oversized requests)
 
-### 現状
+### Current behaviour
 
-target heap > sidecar `--memory-limit` の状態で dump 要求すると、
-`MemoryDumper.php:603` の `\FFI::string($data, $entry['size'])` で
-`Allowed memory size exhausted` の PHP Fatal を喰い、**sidecar プロセス全体が死亡**。
+If `target heap > sidecar --memory-limit`, the dump request kills the
+sidecar. The fatal lands at `MemoryDumper.php:603` on
+`\FFI::string($data, $entry['size'])` with
+`Allowed memory size exhausted`. The whole sidecar process exits.
 
-- target は ptrace 経由なので kernel が auto-detach、フリーズはしない
-- socket file は stale で残るが、次の sidecar 起動時に `SidecarServer.php:161` で unlink される
-- partial dump も無し (writer に渡る前に死ぬ)
-- client は `null` 戻り、後続リクエストも ECONNREFUSED (即 null)
-- supervisor (systemd / k8s) 再起動を期待する設計
+- The target is safe — `ProcessStopper` uses `ptrace(PTRACE_ATTACH)`,
+  and the kernel auto-detaches when the tracer dies, so the target
+  resumes.
+- The socket file is left stale, but the next sidecar start unlinks
+  it (`SidecarServer.php:161`).
+- No partial dump is written — the sidecar dies before the writer is
+  invoked.
+- The client gets `null`. Subsequent requests get instant ECONNREFUSED
+  until a supervisor restarts the sidecar.
+- The design implicitly assumes a supervisor (systemd, Kubernetes) is
+  in place to bring the sidecar back up.
 
-死亡した瞬間の dump は永久ロスト = OOM ハンドラ経路で「まさに欲しかった」
-スナップショットを取り損ねる。supervisor 再起動はバックストップとしては有効だが、
-それで救えない種類の損失がある。
+The dump that was in flight when the sidecar died is lost forever.
+For the OOM-handler use case that is exactly the snapshot the user
+wanted. Supervisor restarts handle service recovery, but they cannot
+recover the lost dump request.
 
-### 提案
+### Proposal
 
-`SidecarDumpHandler::doDump()` の `process_stopper->stop()` 直前で
-`heap_stats_reader->read()` 済みなので、dump に必要なメモリを事前計算して
-収まらなければエラー応答で早期 return する。sidecar は生きたまま。
+`SidecarDumpHandler::doDump()` reads `heap_stats_reader->read()`
+**before** calling `process_stopper->stop()`. At that point we know
+the rough size we are about to allocate, so we can pre-flight against
+our own `memory_limit` and bail out with a structured error response,
+keeping the sidecar alive.
 
 ```php
 $memory_limit = self::parseIniBytes(ini_get('memory_limit'));
@@ -97,116 +115,139 @@ if ($memory_limit > 0) {
 }
 ```
 
-効果:
-- sidecar 生存
-- 同居している他 client への dump サービスは継続
-- client は status=error + 具体的な message を受け取る (現状: null だけ)
-- crash loop が起きない
+Effect:
 
-### サブタスク
+- Sidecar stays up.
+- Other clients keep getting served.
+- The requesting client receives `status=error` with a specific
+  `message` instead of just `null`.
+- No crash loop.
 
-- [ ] **B1**: pre-flight memory check を `SidecarDumpHandler::doDump()` 冒頭に追加
-      (~10 行)
-- [ ] **B2**: docs に「supervisor 必須」の運用前提と systemd unit / k8s
-      restartPolicy 例を載せる
+### Subtasks
 
-A の streaming モードが入れば B1 の制約は構造的に消えるが、それまでの間も、
-入った後も「自分の限界を知っているデーモン」としてあった方が動作が分かりやすい。
+- [ ] **B1** — Add the pre-flight check at the top of
+      `SidecarDumpHandler::doDump()` (about 10 lines).
+- [ ] **B2** — Add an "Operations" section to the docs covering the
+      "you must run under a supervisor" assumption, with a sample
+      systemd unit and Kubernetes `restartPolicy: Always`.
 
----
-
-## C. timeout 関連
-
-### 現状
-
-- `SidecarClient::__construct(timeout_seconds: 30)` がデフォルト
-- `stream_set_timeout` は **応答 JSON 受信まで** 効く = sidecar が dump 完了を
-  終えるまで client は block
-- 実測 dump スループット ~110 MB/s (process_vm_readv + disk write)
-  → 30 秒 default は ~3 GB ヒープ相当を捌ける、合理的な値
-- ただし `MemoryLimitHandler::register()` から timeout を渡す手段が無い
-  (内部で `new SidecarClient($socket_path)` するだけ)
-
-### 提案
-
-- [ ] **C1**: `MemoryLimitHandler::register(... timeout_seconds: int = 30)` を追加
-      (内部で `new SidecarClient($socket_path, $timeout_seconds)`)
-- [ ] **C2**: docs に timeout 指針表を追加
-      ```
-      memory_limit  → 推奨 timeout
-      128 M           5  s
-      256 M          10  s
-      512 M          15  s
-      1   G          30  s (default)
-      2   G          60  s
-      ```
-      "デフォルトを下げるな、必要に応じて伸ばせ" と明記。
-- [ ] **C3** (optional): default timeout を 60s に上げる検討。30s は ~3 GB が
-      上限になり、最近の PHP-FPM ワーカーだと割と簡単に超える。
+Once A's streaming mode lands, B1's constraint is structurally gone,
+but B1 is still worth keeping — a daemon that knows its own limits is
+easier to reason about than one that crashes silently.
 
 ---
 
-## D. client API の細かい改善
+## C. Timeout handling
 
-### 現状
+### Current behaviour
+
+- Default constructor: `SidecarClient::__construct(timeout_seconds: 30)`.
+- `stream_set_timeout` covers the **response read**, so the client
+  blocks until the sidecar finishes the dump and writes its JSON
+  reply.
+- Measured dump throughput is roughly 110 MB/s (process_vm_readv +
+  disk write). The 30 s default therefore covers ~3 GB heaps, which
+  is a sensible default.
+- However, `MemoryLimitHandler::register()` does not expose a way to
+  set the timeout — it builds `new SidecarClient($socket_path)`
+  internally with the default.
+
+### Proposal
+
+- [ ] **C1** — Add `timeout_seconds` to
+      `MemoryLimitHandler::register(...)`. Forward it to the inner
+      `new SidecarClient($socket_path, $timeout_seconds)`.
+- [ ] **C2** — Add a timeout-sizing table to the docs:
+      ```
+      memory_limit  →  recommended timeout
+      128 M             5  s
+      256 M            10  s
+      512 M            15  s
+      1   G            30  s (default)
+      2   G            60  s
+      ```
+      Spell out: "do not lower the default; raise it as needed."
+- [ ] **C3** (optional) — Consider raising the default to 60 s. 30 s
+      caps out around ~3 GB, which is a realistic ceiling for modern
+      PHP-FPM workers but not a generous one.
+
+---
+
+## D. Client API ergonomics
+
+### Current behaviour
 
 `SidecarClient::send()`:
+
 ```php
-$sock = @stream_socket_client(... $errno, $errstr, ...);  // @ で warning 抑制
-if ($sock === false) return null;                         // errno/errstr 捨ててる
+$sock = @stream_socket_client(... $errno, $errstr, ...);  // @-suppressed
+if ($sock === false) return null;                         // errno/errstr discarded
 ...
 if ($response === false || $response === '') return null; // timeout / EOF
-return SidecarClientResponse::fromJson(trim($response));   // 不正 JSON も null
+return SidecarClientResponse::fromJson(trim($response));   // bad JSON also null
 ```
 
-「接続失敗」「timeout」「不正 JSON」が全部 `null` で区別できない。
-`MemoryLimitHandler` の `on_error` 文言は固定文字列 `'failed to connect to reli sidecar'`。
+"Connection refused", "read timeout", and "malformed JSON" are all
+indistinguishable to the caller — every failure is `null`.
+`MemoryLimitHandler` reports a fixed string,
+`'failed to connect to reli sidecar'`.
 
-### 提案
+### Proposal
 
-- [ ] **D1**: `on_error` callback の signature を拡張して errno/errstr/原因を渡す
-      (例: `function(string $msg, ?int $errno, ?string $detail)`)
-      → BC のため optional parameters で
-- [ ] **D2** (optional): エラー種別を表す sentinel 値を導入 (例: 専用例外 or
-      `SidecarClientResponse::error(string $reason)` の null 以外の表現)
-      → ただし shutdown handler のメモリ予算とトレードオフあり
+- [ ] **D1** — Extend the `on_error` signature to forward `errno`,
+      `errstr`, and a cause classification. Use optional parameters
+      so existing callers stay compatible:
+      ```
+      on_error(string $message, ?int $errno = null, ?string $detail = null)
+      ```
+- [ ] **D2** (optional) — Introduce a sentinel for error categories,
+      either a dedicated exception type or a non-null
+      `SidecarClientResponse::error(string $reason)` form. Has to be
+      weighed against the shutdown-handler memory budget (the whole
+      reason `MemoryLimitHandler` pre-allocates a reserve).
 
-優先度低め。D1 だけでも運用ログの切り分けには十分役立つ。
+Lower priority. D1 alone is enough to make ops logs separable.
 
 ---
 
-## E. SidecarServer の broken pipe ノイズ
+## E. Broken-pipe noise on client timeout
 
-### 現状
+### Current behaviour
 
-client が timeout で socket 閉じた後、sidecar は dump を完走して JSON を
-書き戻そうとするが、socket は閉じているので `fwrite()` が EPIPE を返す。
-PHP は警告として
+When a client hits its read timeout and closes the socket while the
+sidecar is still working, the sidecar finishes the dump (it writes
+to `--output-dir`, not to the socket), then tries to write the JSON
+reply. The reply `fwrite()` hits EPIPE, and PHP emits:
+
 ```
 PHP Notice: fwrite(): Send of 761 bytes failed with errno=32 Broken pipe
             in src/Inspector/Sidecar/SidecarServer.php on line 134
 ```
-を吐く。dump 自体は disk に完全な状態で保存されている (= orphan dump として
-回収可能)。
 
-### 提案
+The dump file itself is fully written and analyzable — it just
+becomes an "orphan" from the client's point of view.
 
-- [ ] **E1**: `SidecarServer.php:134` 付近の `fwrite` を `@fwrite` + 戻り値チェック
-      に置き換え、`Log::info('client disconnected before reply (dump still saved at <path>)')`
-      のような専用ログを出す。Notice ノイズを消しつつ orphan の発生を可視化。
-- [ ] **E2**: docs に「timeout 切れても dump は `--output-dir` に保存される、
-      `on_error` 後に `ls` で見つけられる」と明記。これは知らないと気付けない
-      安全網。
+### Proposal
+
+- [ ] **E1** — Replace the bare `fwrite` near
+      `SidecarServer.php:134` with `@fwrite` + return-value check, and
+      log a structured message such as
+      `Log::info('client disconnected before reply (dump still saved at <path>)')`.
+      Removes the noisy `Notice` and makes orphans observable.
+- [ ] **E2** — Document the "timed-out client → dump still on disk"
+      safety net. Currently the only way to learn about it is to
+      experience it.
 
 ---
 
-## F. ドキュメント
+## F. Documentation gaps
 
-### F1. Quick Start のソケット親ディレクトリ要件
+### F1. Socket parent directory requirement in Quick Start
 
-`docs/monitoring/sidecar.md` の Quick Start は `--socket=/tmp/reli-sidecar.sock`
-を例示しているが、`SocketPathResolver::assertParentSafe()` は親 dir mode 0700 を
-要求するため、`/tmp` (大抵 0777) では起動失敗する。
+`docs/monitoring/sidecar.md` Quick Start uses
+`--socket=/tmp/reli-sidecar.sock`, but
+`SocketPathResolver::assertParentSafe()` requires the parent directory
+to be mode 0700. `/tmp` is typically 0777, so the example crashes:
 
 ```
 [RuntimeException]
@@ -214,75 +255,94 @@ Sidecar socket parent directory /tmp has mode 0777, expected 0700.
 Run: chmod 0700 '/tmp'
 ```
 
-→ Quick Start を `mkdir -p /tmp/reli-run && chmod 0700 /tmp/reli-run`
-   + `--socket=/tmp/reli-run/sidecar.sock` の形に修正、または default の
-   `$XDG_RUNTIME_DIR/reli/sidecar.sock` を勧める例にする。
+Fix: rewrite the example as
+`mkdir -p /tmp/reli-run && chmod 0700 /tmp/reli-run` followed by
+`--socket=/tmp/reli-run/sidecar.sock`, or steer users toward the
+default `$XDG_RUNTIME_DIR/reli/sidecar.sock`.
 
-### F2. Packagist 経由インストールの明示
+### F2. Packagist install path
 
-現在 docs は「composer require reliforp/reli-prof」 or 「3 ファイル vendoring」
-の 2 択しか書いていないが、実際には `reliforp/reli-prof-sidecar-client` が
-独立パッケージとして Packagist にいる (現状 `dev-main` のみ、tag 無し)。
-これを推奨経路として書くべき:
+The current docs offer two installation routes — `composer require
+reliforp/reli-prof` (the full package) or vendoring the three client
+files manually. There is in fact a third path: the
+`reliforp/reli-prof-sidecar-client` standalone package on Packagist
+(currently `dev-main` only, no tag yet). It should be the recommended
+route:
 
 ```bash
 composer require reliforp/reli-prof-sidecar-client:dev-main
 ```
 
-`minimum-stability: dev` 必須。tag 付け方針も整理したい (semver: 0.1.0 から?)。
+This requires `minimum-stability: dev` until the package is tagged.
+The tagging policy itself needs sorting (semver, starting at 0.1.0?).
 
-### F3. 運用前提の 1 セクション
+### F3. Operations section
 
-- `--memory-limit` のサイジング (= max(全 target memory_limit) + 100 MB 程度)
-- supervisor (systemd unit example, k8s restartPolicy: Always)
-- timeout 指針表 (C2 と統合)
-- orphan dump の存在と回収方法 (E2)
-- streaming モードを使う場合の sizing (将来)
+A single "Operations" section in `sidecar.md` to consolidate:
+
+- Sizing `--memory-limit` (≥ max target `memory_limit` + ~100 MB).
+- Supervisor expectation, with a systemd unit and a Kubernetes
+  `restartPolicy: Always` example.
+- Timeout sizing table (folds C2 in).
+- Orphan dump recovery (folds E2 in).
+- Sizing under streaming mode, once that lands.
 
 ---
 
-## G. テスト / CI
+## G. Tests / CI
 
 ### G1. End-to-end smoke test
 
-`tests/e2e/sidecar-client/` に:
-1. `composer.json` (path repo で `../../reli-prof-sidecar-client` を参照、
-   または Packagist の dev-main を pin)
-2. `bootstrap.php` + `bench.php` 相当の fixture
-3. PHPUnit 1 ケース: `dockerd` 起動 → sidecar background 起動 → fixture 実行
-   → dump 出力を assert
+Add `tests/e2e/sidecar-client/` containing:
 
-これがあると downgrade 後の API ミス (PHP 7.0 で named arg 使ってる等) や
-protocol_version の食い違いを PR 単位で拾える。
+1. `composer.json` — either a path repository pointing to
+   `../../reli-prof-sidecar-client`, or pinning Packagist's `dev-main`.
+2. A bootstrap + benchmark fixture (the moral equivalent of the
+   `bench.php` we used during this check).
+3. A PHPUnit case that boots `dockerd`, starts the sidecar in the
+   background, runs the fixture, and asserts on the produced dump
+   files.
 
-### G2. bench/sidecar-roundtrip.php
+This catches downgrade slip-ups (e.g. named arguments leaking into
+PHP 7.0-targeted client code) and protocol-version drift on a
+per-PR basis.
 
-repo に最小デモを同梱。今回 `/home/user/demo-app/{bench,oom,timing,rss_watch}.php`
-で書き散らしたものを整理して `bench/` 配下に置く。`docker compose up` 一発で
-誰でも再現可能な状態にする。
+### G2. `bench/sidecar-roundtrip.php`
 
----
-
-## まとめ: 推奨 PR 順序
-
-1. **A1** (fast-resume default) — 無条件改善、独立 PR。
-2. **B1** (pre-flight memory check) — 独立、~10 行。`A1` の前後どちらでもよい。
-3. **F1, E2 ドキュメント修正** — F2 と合わせて 1 PR。
-4. **A2 + A3 + A4** (dump-mode 切替) — protocol 変更含むので慎重に。
-5. **C1, C2** — `MemoryLimitHandler` 引数追加と docs。
-6. **E1** (broken pipe ログ整理) — 独立、小。
-7. **D1** (on_error 拡張) — 後回し可。
-8. **G1, G2** (E2E テストとデモ) — 上が落ち着いてから。
+A minimal demo committed to the repo. The scratch scripts created
+during this check
+(`/home/user/demo-app/{bench,oom,timing,rss_watch}.php`) can be
+cleaned up and dropped under `bench/` so anyone can reproduce the
+roundtrip with a single `docker compose up`.
 
 ---
 
-## 検証時のメモ (将来の参考用)
+## Suggested PR ordering
 
-- ホスト PHP 8.4 / reli は ^8.5 require → composer install --ignore-platform-req=php
-  で動かせる (今回もそうした)。
-- Packagist の `dev-main` はちゃんと最新コミット (423ee89) まで追従していた。
-  GitHub→Packagist webhook 設定済み。
-- `/tmp/reli-dumps/` は `--disk-usage-limit=1G` で自動 rotate される。
-  検証で 1.4 GB 残してしまった時は手で `rm -rf` して掃除した。
-- demo-app の検証用スクリプトは `/home/user/demo-app/` に残置。整理して
-  G2 のベースに使える。
+1. **A1** — fast-resume default. Standalone, no protocol change.
+2. **B1** — pre-flight memory check. Standalone, ~10 lines. Order
+   relative to A1 doesn't matter.
+3. **F1 + E2** — doc fixes; bundle F2 with them as one PR.
+4. **A2 + A3 + A4** — dump-mode plumbing. Touches the protocol,
+   so review carefully.
+5. **C1 + C2** — `MemoryLimitHandler` parameter and timeout docs.
+6. **E1** — broken-pipe log cleanup. Small, standalone.
+7. **D1** — `on_error` signature extension. Can wait.
+8. **G1 + G2** — E2E test and demo. After the above stabilise.
+
+---
+
+## Verification notes (kept for future reference)
+
+- Host PHP is 8.4; reli requires `^8.5`. Used
+  `composer install --ignore-platform-req=php` to install the dev
+  dependencies.
+- Packagist's `dev-main` tracks the actual head of main on the
+  generated `reliforp/reli-prof-sidecar-client` repository
+  (commit `423ee89` at time of writing). The GitHub → Packagist
+  webhook is in place.
+- `/tmp/reli-dumps/` is auto-rotated by `--disk-usage-limit=1G`.
+  When the verification left ~1.4 GB of dumps behind, manual
+  `rm -rf` was needed.
+- Verification scripts live at `/home/user/demo-app/`. They can be
+  cleaned up and re-used as the basis for G2.
