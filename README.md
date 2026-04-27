@@ -95,7 +95,7 @@ $ reli inspector:memory:report snapshot.rmem
 
 **What you're looking at.** reli scans the captured heap graph for known waste patterns — dominant classes, reference cycles, choke points, dedup candidates — and prints each finding with a severity, a hypothesis, and a next-investigation step.
 
-Compare two snapshots to track regressions or verify fixes:
+You can also compare two snapshots to track regressions or verify fixes:
 
 ```bash
 $ reli inspector:memory:compare before.rmem after.rmem
