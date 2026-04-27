@@ -546,20 +546,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Debug branch: A/B-test the parsed-resolver-share root cause in
-          # one CI run. All entries hit the same v84 target so they share
-          # the docker image cache.
+          # Round 2 of the bisect. Round 1 (5 variants) came back all green,
+          # including parsed-share-on-no-bytes which is the closest possible
+          # match to PR #674's red state. Strongest remaining hypothesis is
+          # that the file-logging in ResolverShareLogger is what masks the
+          # bug — every cache event opens / appends / fsyncs the per-pid log
+          # file, which must dominate the parse-and-attach loop's timing.
+          # Round 2 minimises the matrix to ~9 minutes of ARM time, focused
+          # on validating that hypothesis:
           #
-          # bytes-share : control. matches the merged #676 behaviour. green.
-          # parsed-share-on : RELI_DEBUG_FORCE_PARSED_RESOLVER_SHARE=1 reintroduces
-          #     the broken path. Expected to reproduce zend_mm_heap corrupted.
-          # parsed-share-on-noalloc : same + USE_ZEND_ALLOC=0 forces PHP to
-          #     use system malloc, which bypasses zend_mm bookkeeping.
-          #     If GREEN here, the corruption is purely a zend_mm
-          #     bookkeeping issue triggered by the deep object graph.
-          #     If still RED, it's a real heap write somewhere.
-          # parsed-share-on-valgrind : same + valgrind catches the actual
-          #     bad write. Slow (~10x) but gives a usable backtrace.
+          # bytes-share         : control. should stay green either way.
+          # parsed-share-no-bytes-quiet : parsed-share + no bytes-share +
+          #     RELI_DEBUG_RESOLVER_SHARE NOT SET (no log writes). If this
+          #     reproduces zend_mm_heap corrupted, logging-induced timing
+          #     was masking the bug. Next probe will read the dump via
+          #     core dump / dmesg only, without per-event file I/O.
           - name: "PHP 8.4 bytes-share"
             targets: "v84"
             php_minor: "8.4"
@@ -568,45 +569,28 @@ jobs:
             use_zend_alloc: ""
             valgrind: "0"
             disable_bytes_share: "0"
-          - name: "PHP 8.4 parsed-share-on"
+            log_share: "1"
+          - name: "PHP 8.4 parsed-share-no-bytes-quiet"
             targets: "v84"
             php_minor: "8.4"
-            tag: "parsed-share-on"
-            force_parsed: "1"
-            use_zend_alloc: ""
-            valgrind: "0"
-            disable_bytes_share: "0"
-          - name: "PHP 8.4 parsed-share-on-noalloc"
-            targets: "v84"
-            php_minor: "8.4"
-            tag: "parsed-share-on-noalloc"
-            force_parsed: "1"
-            use_zend_alloc: "0"
-            valgrind: "0"
-            disable_bytes_share: "0"
-          - name: "PHP 8.4 parsed-share-on-valgrind"
-            targets: "v84"
-            php_minor: "8.4"
-            tag: "parsed-share-on-valgrind"
-            force_parsed: "1"
-            use_zend_alloc: "0"
-            valgrind: "1"
-            disable_bytes_share: "0"
-          # parsed-share-on-no-bytes : matches PR #674's broken state more
-          # exactly. parsed-resolver-share enabled AND the bytes-share that
-          # PR #676 added is bypassed, so every cache miss re-reads the
-          # 19 MB binary from disk, parses it, and drops the string. We
-          # think this combination — repeated 19 MB alloc/free against a
-          # heap that already holds the deep parsed object graph — is
-          # what tripped zend_mm on ARM64 in the first place.
-          - name: "PHP 8.4 parsed-share-on-no-bytes"
-            targets: "v84"
-            php_minor: "8.4"
-            tag: "parsed-share-on-no-bytes"
+            tag: "parsed-share-no-bytes-quiet"
             force_parsed: "1"
             use_zend_alloc: ""
             valgrind: "0"
             disable_bytes_share: "1"
+            log_share: "0"
+          # Sanity check: same flags except logging on, to confirm the only
+          # delta from "quiet" is the log file I/O. If "loud" stays green
+          # but "quiet" goes red, that pins logging as the masker.
+          - name: "PHP 8.4 parsed-share-no-bytes-loud"
+            targets: "v84"
+            php_minor: "8.4"
+            tag: "parsed-share-no-bytes-loud"
+            force_parsed: "1"
+            use_zend_alloc: ""
+            valgrind: "0"
+            disable_bytes_share: "1"
+            log_share: "1"
     steps:
       - uses: actions/checkout@v6
 
@@ -667,7 +651,7 @@ jobs:
       - name: Run target version tests
         env:
           RELI_TEST_PHP_TARGETS: ${{ matrix.targets }}
-          RELI_DEBUG_RESOLVER_SHARE: "1"
+          RELI_DEBUG_RESOLVER_SHARE: ${{ matrix.log_share }}
           RELI_DEBUG_FORCE_PARSED_RESOLVER_SHARE: ${{ matrix.force_parsed }}
           RELI_DEBUG_DISABLE_BYTES_SHARE: ${{ matrix.disable_bytes_share }}
           USE_ZEND_ALLOC: ${{ matrix.use_zend_alloc }}
