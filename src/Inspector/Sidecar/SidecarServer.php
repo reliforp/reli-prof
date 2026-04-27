@@ -96,6 +96,7 @@ final class SidecarServer
      */
     private function handleConnection($client, OutputInterface $output): void
     {
+        $request = null;
         try {
             stream_set_timeout($client, 5);
             $line = fgets($client, 8192);
@@ -106,13 +107,13 @@ final class SidecarServer
             $request = SidecarRequest::fromJson(trim($line));
             if ($request === null) {
                 $response = SidecarResponse::error('invalid request');
-                fwrite($client, $response->toJson() . "\n");
+                self::writeResponse($client, $response, $output);
                 return;
             }
 
             if ($request->command !== 'dump') {
                 $response = SidecarResponse::error("unknown command: {$request->command}");
-                fwrite($client, $response->toJson() . "\n");
+                self::writeResponse($client, $response, $output, $request);
                 return;
             }
 
@@ -131,7 +132,7 @@ final class SidecarServer
 
             $response = $this->dump_handler->handle($request);
 
-            fwrite($client, $response->toJson() . "\n");
+            self::writeResponse($client, $response, $output, $request);
 
             if ($response->status === 'ok') {
                 $output->writeln(sprintf(
@@ -150,9 +151,66 @@ final class SidecarServer
                 'error' => $e->getMessage(),
             ]);
             $response = SidecarResponse::error($e->getMessage());
-            @fwrite($client, $response->toJson() . "\n");
+            self::writeResponse($client, $response, $output, $request);
         } finally {
             fclose($client);
+        }
+    }
+
+    /**
+     * Write the response back to the client, looping over short
+     * `fwrite()` returns and swallowing the broken-pipe case that
+     * happens whenever the client gave up before the dump completed
+     * (most commonly due to its own `stream_set_timeout` firing while
+     * we were still doing `process_vm_readv` + disk write).
+     *
+     * The dump file itself is already on disk at this point — see
+     * {@see SidecarDumpHandler}. We log a single structured info line so
+     * orphaned dumps stay observable, instead of letting PHP emit a raw
+     * `Notice: fwrite(): … Broken pipe` for every disconnected client.
+     *
+     * @param resource $client
+     */
+    private static function writeResponse(
+        $client,
+        SidecarResponse $response,
+        OutputInterface $output,
+        ?SidecarRequest $request = null,
+    ): void {
+        $payload = $response->toJson() . "\n";
+        $total = strlen($payload);
+        $offset = 0;
+        // Loop over short writes. PHP's stream layer may return fewer
+        // bytes than requested even on blocking sockets (e.g. when the
+        // kernel send buffer fills); a single `fwrite` is not enough to
+        // claim "delivered". Stop when the kernel rejects the write
+        // (false / 0) — that is the broken-pipe case we want to log.
+        while ($offset < $total) {
+            $chunk = @fwrite($client, substr($payload, $offset));
+            if ($chunk === false || $chunk === 0) {
+                break;
+            }
+            $offset += $chunk;
+        }
+        if ($offset === $total) {
+            return;
+        }
+
+        Log::info('sidecar client disconnected before reply', [
+            'pid' => $request?->pid,
+            'label' => $request?->label,
+            'response_status' => $response->status,
+            'response_path' => $response->path,
+            'response_bytes' => $response->bytes,
+            'bytes_written' => $offset,
+            'bytes_total' => $total,
+        ]);
+
+        if ($response->status === 'ok' && $response->path !== null) {
+            $output->writeln(sprintf(
+                '<comment>[sidecar] client disconnected; orphan dump still saved: %s</comment>',
+                $response->path,
+            ));
         }
     }
 

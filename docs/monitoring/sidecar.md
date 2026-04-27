@@ -6,12 +6,13 @@ Unlike `inspector:watch` (polling-based monitoring), the sidecar responds to **e
 
 ## Quick Start
 
-**Start the sidecar:**
+**Start the sidecar** (uses the per-user systemd runtime dir, which is
+already mode 0700 on most distros — no setup needed):
 
 ```bash
-reli inspector:sidecar \
-  --socket=/tmp/reli-sidecar.sock \
-  --output-dir=/tmp/reli-dumps
+mkdir -p /tmp/reli-dumps
+reli inspector:sidecar --output-dir=/tmp/reli-dumps
+# → [sidecar] Listening on /run/user/<uid>/reli/sidecar.sock
 ```
 
 **In your PHP application (one line in bootstrap):**
@@ -20,7 +21,27 @@ reli inspector:sidecar \
 \Reli\Sidecar\Client\MemoryLimitHandler::register();
 ```
 
-When your application hits `memory_limit`, the handler automatically requests a dump from the sidecar. The dump file and a `.meta.json` with the call trace and memory stats are written to `--output-dir`.
+When your application hits `memory_limit`, the handler automatically
+requests a dump from the sidecar. The dump file and a `.meta.json` with
+the call trace and memory stats are written to `--output-dir`.
+
+> [!NOTE]
+> The sidecar refuses to bind to a socket whose parent directory is not
+> mode 0700, owned by the current uid, and not a symlink — without that
+> guard a co-tenant could pre-create the socket path on a shared host
+> like `/tmp` and intercept dump requests, since the IPC has no
+> on-the-wire authentication. The default
+> `$XDG_RUNTIME_DIR/reli/sidecar.sock` (typically
+> `/run/user/<uid>/reli/sidecar.sock`) satisfies this. If you must
+> override `--socket` on a host without `XDG_RUNTIME_DIR`, prepare a
+> dedicated parent directory first, e.g.
+>
+> ```bash
+> mkdir -p /var/run/reli && chmod 0700 /var/run/reli
+> reli inspector:sidecar \
+>   --socket=/var/run/reli/sidecar.sock \
+>   --output-dir=/tmp/reli-dumps
+> ```
 
 ## Requirements
 
@@ -97,7 +118,7 @@ With custom callbacks:
 use Reli\Sidecar\Client\SidecarClientResponse;
 
 \Reli\Sidecar\Client\MemoryLimitHandler::register(
-    socket_path: '/tmp/reli-sidecar.sock',
+    socket_path: '/var/run/reli/sidecar.sock',
     on_response: function (SidecarClientResponse $r) {
         error_log("reli dump: {$r->path} ({$r->bytes} bytes)");
         foreach ($r->trace as $frame) {
@@ -112,7 +133,7 @@ use Reli\Sidecar\Client\SidecarClientResponse;
 ```php
 use Reli\Sidecar\Client\SidecarClient;
 
-$client = new SidecarClient('/tmp/reli-sidecar.sock');
+$client = new SidecarClient('/var/run/reli/sidecar.sock');
 $response = $client->requestDump(
     pid: getmypid(),
     error_file: __FILE__,
@@ -144,11 +165,46 @@ The socket path is resolved in this order:
 
 1. Constructor argument (`$socket_path`)
 2. `RELI_SIDECAR_SOCKET` environment variable
-3. Default: `/var/run/reli-sidecar.sock`
+3. Default: `$XDG_RUNTIME_DIR/reli/sidecar.sock` (typically
+   `/run/user/<uid>/reli/sidecar.sock` on systemd hosts). The
+   resolver throws if `XDG_RUNTIME_DIR` is unset — there is no
+   `/tmp` fallback because the path's parent directory must be
+   `0700` and owned by the current uid for the sidecar to bind
+   safely (see [§ Security model](#security-model)).
 
 ```bash
-export RELI_SIDECAR_SOCKET=/tmp/reli-sidecar.sock
+export RELI_SIDECAR_SOCKET=/var/run/reli/sidecar.sock
 ```
+
+### Security model
+
+The sidecar IPC has no on-the-wire authentication: anyone who can
+`connect()` to the socket can request a dump of any PID in the same
+PID namespace. Access control is therefore done entirely through
+filesystem permissions on the socket and its parent directory.
+
+`SocketPathResolver::assertParentSafe()` enforces that the parent
+directory:
+
+- is **owned by the current uid**,
+- has mode **`0700`**, and
+- is **not a symlink**.
+
+If any of these fail the sidecar refuses to bind. This is the only
+thing that prevents a local attacker on a shared host from racing the
+sidecar to pre-create a socket at the same path and impersonate it.
+
+A consequence is that **the sidecar and every client must run under
+the same uid**, because a 0700 parent directory cannot be traversed
+by other uids regardless of the socket file's own mode. The socket
+itself is `chmod 0660` for forward-compatibility with a future
+"shared group" mode, but with the current resolver that bit is
+effectively unused.
+
+For Docker / Kubernetes, the practical implication is to run the
+sidecar container with the same `runAsUser` / `USER` as the
+application container, or to mount the socket directory with
+matching ownership; see [§ Docker / Kubernetes Setup](#docker--kubernetes-setup).
 
 ### Default Metadata
 
@@ -169,7 +225,7 @@ Usage:
 
 Options:
   -s, --socket=SOCKET              Unix domain socket path
-                                   [default: /var/run/reli-sidecar.sock]
+                                   [default: $XDG_RUNTIME_DIR/reli/sidecar.sock]
   -o, --output-dir=OUTPUT-DIR      Directory for dump output files [default: .]
       --disk-usage-limit=LIMIT     Max total disk usage for dumps (e.g., 1G, 512M)
                                    [default: 1G]
@@ -180,6 +236,178 @@ Options:
       --no-cache                   Disable the binary analysis cache
 ```
 
+## Operations
+
+The sidecar is a single PHP process: one server, one socket, no internal
+parallelism. The notes below cover the things you need to size and
+operate it sensibly under that model.
+
+### Sizing `--memory-limit`
+
+The dumper buffers every region the target exposes — the ZendMM heap,
+opcache SHM, the VM stack and compiler arena, and (with
+`--include-binary`) read-only binary segments — as PHP strings before
+flushing the dump file, so the sidecar's peak resident memory during
+a dump is roughly `everything the dump file ends up containing` plus
+an `~80 MB` baseline. As a starting point, size `--memory-limit` (and
+the matching cgroup / pod limit) at least to:
+
+```
+--memory-limit  ≥  max(target memory_limit across all clients)
+                + opcache SHM (if opcache is enabled in targets)
+                + 100 MB headroom
+```
+
+The sidecar pre-flights every request against this limit using the
+target's heap size and refuses with a structured error like
+`sidecar memory_limit too small for the target heap alone: need ~512
+MiB, …` — the daemon stays up, only that one request fails. The
+pre-flight only inspects the **heap**, so the dump can still OOM the
+sidecar later if the non-heap regions push the working set over
+`--memory-limit`; treat the check as a fast-fail for the obvious
+case, not a guarantee. Size the limit conservatively (see the formula
+above), and watch sidecar RSS in production until you have a real
+upper bound for your workload.
+
+### Run under a supervisor
+
+The sidecar can still die from things outside its pre-flight check
+(unexpected crashes, OOM kills from the cgroup, kernel signals, etc.).
+Always run it under a supervisor that restarts it. A systemd unit
+that creates its own runtime / state directories with the right
+permissions:
+
+```ini
+# /etc/systemd/system/reli-sidecar.service
+[Unit]
+Description=reli-prof sidecar
+After=network.target
+
+[Service]
+Type=simple
+User=reli
+Group=reli
+# %t = runtime directory root (/run for system services).
+# %S = state directory root   (/var/lib by default).
+# RuntimeDirectory=reli creates /run/reli, and StateDirectory=reli
+# creates /var/lib/reli, both with the User/Group above and the
+# specified modes, so the sidecar's 0700 parent-dir check passes
+# without any pre-create dance.
+RuntimeDirectory=reli
+RuntimeDirectoryMode=0700
+StateDirectory=reli
+StateDirectoryMode=0700
+ExecStart=/usr/local/bin/reli inspector:sidecar \
+  --socket=%t/reli/sidecar.sock \
+  --output-dir=%S/reli \
+  --memory-limit=2G
+Restart=always
+RestartSec=2s
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+[Install]
+WantedBy=multi-user.target
+```
+
+The application processes need to run as the same uid (see
+[§ Security model](#security-model)) and read `RELI_SIDECAR_SOCKET`
+from the environment, e.g.
+
+```ini
+# in the app unit
+[Service]
+User=reli
+Environment=RELI_SIDECAR_SOCKET=/run/reli/sidecar.sock
+```
+
+Create the `reli` system user once at install time
+(`useradd --system --no-create-home --shell /usr/sbin/nologin reli`),
+or replace `User=reli` / `Group=reli` with `DynamicUser=yes` if no
+non-systemd processes on the host need to share the uid.
+
+In Kubernetes, the sidecar container's spec needs `restartPolicy: Always`
+(the pod default) plus enough `resources.limits.memory` to cover the
+`--memory-limit` value above; see [§ Docker / Kubernetes Setup](#docker--kubernetes-setup)
+for the rest of the deployment shape.
+
+### Client timeout sizing
+
+`SidecarClient` blocks on the response read for the full dump duration
+because the protocol delivers a single JSON reply at the end. Measured
+dump throughput is roughly 100 MB/s (`process_vm_readv` + disk write),
+so size `timeout_seconds` against the target's `memory_limit`:
+
+| Target `memory_limit` | Dump time at ~100 MB/s | Recommended `timeout_seconds` |
+|---|---|---|
+| 128 M | ~1.3 s | 5  |
+| 256 M | ~2.5 s | 10 |
+| 512 M | ~5  s  | 15 |
+| 1 G   | ~10 s  | 30 (default) |
+| 2 G   | ~20 s  | 60 |
+
+Do **not** lower the default to make the shutdown handler "feel
+faster". Raise it if your `memory_limit` exceeds the value the default
+covers. `MemoryLimitHandler::register(...)` accepts `timeout_seconds`
+directly:
+
+```php
+\Reli\Sidecar\Client\MemoryLimitHandler::register(
+    timeout_seconds: 60, // memory_limit ~ 2G
+);
+```
+
+### Concurrency model and queue behaviour
+
+Requests are served strictly first-in / first-out by a single worker.
+While one dump is in flight, additional client connections sit in the
+kernel's listen backlog (`SOMAXCONN`, typically 4096 on Linux) and
+**block in `fgets()` on the client side until the daemon gets to
+them**. The protocol does not expose queue depth, so a client cannot
+distinguish "queued for 8 seconds" from "actively being dumped for 8
+seconds".
+
+Practical implications:
+
+- If a burst of N clients arrives at once, the last client waits
+  roughly N × *previous-dump duration* for its response. Size
+  `timeout_seconds` accordingly when you expect bursts (e.g. many
+  PHP-FPM workers OOM-ing at once).
+- If a queued client times out and closes its socket, the request
+  it already wrote to the kernel buffer is **still served** when
+  its turn arrives; the sidecar produces the dump and writes the
+  file to `--output-dir`. The client never sees the response, but
+  the dump itself is recoverable — see § Orphan dump recovery.
+- If the queued client's *target process* dies before the sidecar
+  reaches its request (common when the trigger was an OOM
+  shutdown and the supervisor took longer than expected), the
+  sidecar replies with `process <pid> not found`. No work
+  performed.
+
+### Orphan dump recovery
+
+A client can give up — typically because its `timeout_seconds`
+expired, or the OOM-handler PHP process exited — while the sidecar is
+still running its dump. When that happens the dump file is **already
+fully written** to `--output-dir`; the only thing missing is the JSON
+reply that would have told the client where it landed.
+
+So:
+
+- Successful dumps land at `--output-dir/sidecar-<pid>-<datetime>[-<label>].dump`
+  with their `.meta.json` sibling regardless of whether the client
+  was still listening.
+- After a client `on_error` ("`failed to connect to reli sidecar`",
+  null result, etc.), an operator can usually find the dump by
+  matching `<pid>` in the output directory.
+- The sidecar logs a single `sidecar client disconnected before reply`
+  line per orphan, with the response path, so grep-based audits work
+  without ploughing through PHP `Notice` output.
+
+This is a useful safety net for OOM diagnosis: even if the client's
+shutdown handler ran out of time, the snapshot you actually wanted is
+still on disk.
+
 ## Session Tags
 
 Tags set at server startup are automatically included in every snapshot's `.meta.json`. Use them to identify what software and version is being profiled:
@@ -189,8 +417,7 @@ reli inspector:sidecar \
   --tag product=my-app \
   --tag version=2.4.0 \
   --tag commit=$(git rev-parse --short HEAD) \
-  --socket=/tmp/reli.sock \
-  --output-dir=/tmp/dumps
+  --output-dir=/tmp/reli-dumps
 ```
 
 Tags from three sources are merged (later wins on key conflict):
@@ -260,23 +487,57 @@ This information can be passed to `inspector:memory:analyze` with `--memory-limi
 > [!CAUTION]
 > The sidecar must share the PID namespace with the target processes. Without this, `process_vm_readv` cannot read the target's memory.
 
+> [!IMPORTANT]
+> The sidecar and the application **must run as the same uid**. The
+> sidecar refuses to bind unless the socket's parent directory is mode
+> `0700` and owned by the current uid (see [§ Security model](#security-model)),
+> and a `0700` directory cannot be traversed from a different uid even
+> if the volume is shared. Either set both containers to the same
+> `runAsUser` / `USER`, or run a single uid for the whole pod. Running
+> the sidecar as root and the app as a non-root user (or vice versa)
+> will not work.
+
 ### docker compose
 
 ```yaml
 services:
+  # One-shot helper: prepare /var/run/reli with the right ownership +
+  # mode 0700 *before* either app or sidecar starts. Without it the
+  # sidecar refuses to bind (parent dir must be 0700 + owned by uid 1000)
+  # and the app cannot traverse into the volume.
+  reli-sock-init:
+    image: busybox:1
+    command: >
+      sh -c "mkdir -p /var/run/reli && chmod 0700 /var/run/reli
+             && chown 1000:1000 /var/run/reli"
+    user: "0:0"  # root so the chown works
+    volumes:
+      - reli-sock:/var/run/reli
+
   app:
     image: my-php-app
+    user: "1000:1000"
+    depends_on:
+      reli-sock-init:
+        condition: service_completed_successfully
+    environment:
+      RELI_SIDECAR_SOCKET: /var/run/reli/sidecar.sock
     volumes:
       - reli-sock:/var/run/reli
       - reli-dumps:/tmp/reli-dumps
 
   reli-sidecar:
     image: reliforp/reli-prof
+    user: "1000:1000"  # must match `app` so the 0700 parent dir works
     command: >
       inspector:sidecar
         --socket=/var/run/reli/sidecar.sock
         --output-dir=/tmp/reli-dumps
+        --memory-limit=2G
         --tag product=my-app
+    depends_on:
+      reli-sock-init:
+        condition: service_completed_successfully
     pid: "service:app"
     cap_add:
       - SYS_PTRACE
@@ -291,20 +552,31 @@ volumes:
   reli-dumps:
 ```
 
-Set the socket path in the application container:
-
-```yaml
-services:
-  app:
-    environment:
-      RELI_SIDECAR_SOCKET: /var/run/reli/sidecar.sock
-```
+If your application image already pins `USER 1000` in the Dockerfile,
+drop the `user:` line on `app`; the `reli-sidecar` line still has to
+match. To run everything as root instead, drop both `user:` lines and
+the `reli-sock-init` `chown` step — it just needs to be consistent
+across all three.
 
 ### Kubernetes (sidecar container)
 
 ```yaml
 spec:
   shareProcessNamespace: true
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  initContainers:
+    # Ensure the shared socket dir is 0700 before the sidecar tries to
+    # bind. fsGroup gives 1000 write access to the emptyDir, but the
+    # sidecar's parent-dir checks require mode 0700 specifically.
+    - name: reli-sock-init
+      image: busybox:1
+      command: ["sh", "-c", "chmod 0700 /var/run/reli"]
+      volumeMounts:
+        - name: reli-sock
+          mountPath: /var/run/reli
   containers:
     - name: app
       image: my-php-app
@@ -320,6 +592,7 @@ spec:
         - inspector:sidecar
         - --socket=/var/run/reli/sidecar.sock
         - --output-dir=/tmp/reli-dumps
+        - --memory-limit=2G
       securityContext:
         capabilities:
           add: ["SYS_PTRACE"]
@@ -334,6 +607,11 @@ spec:
     - name: reli-dumps
       emptyDir: {}
 ```
+
+The pod-level `securityContext.runAsUser` ensures both containers
+share uid `1000`; `fsGroup` makes the `emptyDir` volumes writable by
+that uid. The init container narrows the socket directory to mode
+`0700`, which is what the sidecar's parent-dir check requires.
 
 ## CI Workflow: Cross-Release Memory Comparison
 
@@ -372,11 +650,17 @@ jobs:
           path: baseline/
         continue-on-error: true
 
+      # Prepare a 0700 parent dir for the sidecar socket. GitHub Actions
+      # runners do not set XDG_RUNTIME_DIR, so we have to pick the path
+      # explicitly and lock down its parent.
+      - name: Prepare runtime dir
+        run: mkdir -p /tmp/reli-run && chmod 0700 /tmp/reli-run
+
       # Start sidecar
       - name: Start sidecar
         run: |
           reli inspector:sidecar \
-            --socket=/tmp/reli.sock \
+            --socket=/tmp/reli-run/sidecar.sock \
             --output-dir=/tmp/dumps \
             --tag version=${{ github.head_ref }} \
             --tag commit=${{ github.sha }} &
@@ -384,7 +668,7 @@ jobs:
       # Run benchmark
       - name: Run benchmark
         env:
-          RELI_SIDECAR_SOCKET: /tmp/reli.sock
+          RELI_SIDECAR_SOCKET: /tmp/reli-run/sidecar.sock
         run: php bench/memory_trend.php
 
       # Analyze dumps. Either .rmem or SQLite is fine — both are
