@@ -150,18 +150,30 @@ non-obvious things bite single-shot `inspector:trace -p` users:
   parallel slow requests rather than a single curl — Caddy reuses
   the first idle worker for serial requests, so the TID you grab from
   `ps` may stay cold no matter how many requests you throw at it.
-- **`inspector:memory:dump` only works while the worker is mid-request.**
-  The chunk finder reads `eg.current_execute_data` and walks 2 MB-aligned
-  addresses to locate the request heap; between requests
-  `current_execute_data` is 0 and the dump fails with "failed to find
-  ZendMM main chunk". Reproduce with a long `usleep`-tail script and
-  saturate the workers; CLI mode (`frankenphp php-cli script.php`)
-  sidesteps it because the worker stays in PHP for the whole script.
-  In production, prefer `inspector:watch --action=memory-dump` (which
-  fires only when its condition holds, naturally inside a request) or
-  `inspector:sidecar` (which is invoked from PHP itself). This is not a
-  FrankenPHP quirk but a property of ZendMM, which is request-scoped in
-  every SAPI.
+- **`inspector:memory:dump` in regular (per-request) mode only works
+  while the worker is mid-request.** The chunk finder reads
+  `eg.current_execute_data` and walks 2 MB-aligned addresses to locate
+  the request heap; between requests `current_execute_data` is 0 and
+  the dump fails with "failed to find ZendMM main chunk". Reproduce
+  with a long `usleep`-tail script and saturate the workers; CLI mode
+  (`frankenphp php-cli script.php`) sidesteps it because the worker
+  stays in PHP for the whole script. In production, prefer
+  `inspector:watch --action=memory-dump` (which fires only when its
+  condition holds, naturally inside a request) or `inspector:sidecar`
+  (which is invoked from PHP itself). This is not a FrankenPHP quirk
+  but a property of ZendMM, which is request-scoped in every SAPI.
+- **FrankenPHP worker mode keeps the request heap alive between
+  requests, so `inspector:memory:dump` works at any time.** A worker
+  loaded with `frankenphp { worker /app/worker.php }` stays parked in
+  the `frankenphp_handle_request()` loop on the PHP call stack while
+  it waits for the next request, so `current_execute_data` is never
+  zero. `inspector:trace` shows a 2-frame
+  `frankenphp_handle_request` / `<main>` stack on idle workers and
+  full handler stacks mid-request, and `memory:dump` succeeds on
+  both — same dump size in both states (heap is the worker's, not
+  the per-request scope). When verifying the docs against worker
+  mode, expect the regular-mode "must be mid-request" caveat to NOT
+  apply.
 - **`module_registry` is preempted by the embedding executable.**
   `frankenphp` statically links libphp, so the dynamic linker binds the
   shared symbols to the executable's copy and leaves libphp.so's BSS at

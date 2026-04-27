@@ -151,17 +151,18 @@ TLS-offset cache and lets every subsequent **warm** worker TID
 succeed instantly (a thread that has still never served a
 request stays unresolvable until it does).
 
-The other reality memory commands have to live with is that
-ZendMM's main chunk only exists while a request is in flight —
-between requests the worker tears it down. `inspector:memory:dump`,
-`inspector:memory`, and `inspector:watch -p <pid>` therefore need
-the worker to be **mid-request at the moment of attach**, just
-like in any other SAPI. For a one-shot snapshot under HTTP-daemon
-mode that means saturating workers with a long-running PHP page
-(e.g. one that does the work you want to capture and then
-`usleep`s for a few seconds). For automated capture, prefer the
-condition-driven workflows that fire while a request is active by
-construction:
+The other reality memory commands have to live with applies to
+**regular (per-request) mode only**: ZendMM's main chunk exists
+only while a request is in flight, and between requests the
+worker tears it down. `inspector:memory:dump`, `inspector:memory`,
+and `inspector:watch -p <pid>` therefore need the worker to be
+**mid-request at the moment of attach**, just like in any other
+SAPI. For a one-shot snapshot under regular HTTP-daemon mode
+that means saturating workers with a long-running PHP page (e.g.
+one that does the work you want to capture and then `usleep`s
+for a few seconds). For automated capture, prefer the
+condition-driven workflows that fire while a request is active
+by construction:
 
 - [`inspector:watch`](capturing-traces.md) with `--memory-usage`,
   `--watch-function`, `--cpu-usage` etc. plus `--action=memory-dump`
@@ -171,9 +172,22 @@ construction:
   request from the application (e.g. from a `memory_limit` shutdown
   handler), guaranteeing the call stack and heap are still set up.
 
+[FrankenPHP **worker mode**](https://frankenphp.dev/docs/worker/)
+sidesteps the mid-request requirement entirely. Worker mode keeps
+the worker script (`frankenphp_handle_request()` loop) on the call
+stack between requests, so `executor_globals.current_execute_data`
+is never zero and the request heap stays mapped for the worker's
+whole lifetime. `inspector:memory:dump` therefore succeeds against
+an idle worker-mode worker the same way it succeeds against one
+mid-request — `inspector:trace` shows the 2-frame
+`frankenphp_handle_request` / `<main>` idle stack between
+requests and the full handler stack while one is in flight.
+This is the recommended setup if you want to capture memory
+state on demand without coordinating with traffic.
+
 CLI-style invocations (`frankenphp php-cli script.php`) keep the
 worker in PHP for the whole script lifetime and avoid the timing
-issue entirely.
+issue the same way.
 
 ## Caveats
 
