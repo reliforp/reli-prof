@@ -13,7 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Elf\Process;
 
+use Reli\Lib\Debug\ResolverShareLogger;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolCache;
+use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
 
 final class PerBinarySymbolCacheRetriever
 {
@@ -61,5 +63,53 @@ final class PerBinarySymbolCacheRetriever
         string $bytes,
     ): void {
         $this->binary_bytes_cache[(string)$binary_fingerprint] = $bytes;
+    }
+
+    /**
+     * Cache of parsed Elf64SymbolResolver instances per binary fingerprint.
+     *
+     * THIS IS THE BROKEN PATH. Populated only when
+     * RELI_DEBUG_FORCE_PARSED_RESOLVER_SHARE=1 is set in the environment;
+     * otherwise the array stays empty and the resolver is re-parsed each
+     * time from the cached bytes. Holding parsed Elf64SymbolResolver
+     * instances alive across attaches is what tripped ARM64 zend_mm in
+     * #669 / #674; this debug knob exists so we can re-trigger the
+     * failure under USE_ZEND_ALLOC=0 / valgrind / etc. to localise the
+     * actual write that corrupts the heap.
+     *
+     * @var array<string, Elf64SymbolResolver>
+     */
+    private array $resolver_cache = [];
+
+    public function getResolver(BinaryFingerprint $binary_fingerprint): ?Elf64SymbolResolver
+    {
+        if (!ResolverShareLogger::forceParsedResolverShare()) {
+            return null;
+        }
+        $cached = $this->resolver_cache[(string)$binary_fingerprint] ?? null;
+        ResolverShareLogger::log('parsed_share.get', [
+            'fp' => substr((string)$binary_fingerprint, 0, 80),
+            'hit' => $cached !== null,
+            'class' => $cached,
+            'cache_size' => count($this->resolver_cache),
+        ]);
+        return $cached;
+    }
+
+    public function setResolver(
+        BinaryFingerprint $binary_fingerprint,
+        Elf64SymbolResolver $resolver,
+    ): void {
+        if (!ResolverShareLogger::forceParsedResolverShare()) {
+            return;
+        }
+        ResolverShareLogger::snapshot('parsed_share.set.before');
+        $this->resolver_cache[(string)$binary_fingerprint] = $resolver;
+        ResolverShareLogger::log('parsed_share.set.after', [
+            'fp' => substr((string)$binary_fingerprint, 0, 80),
+            'class' => $resolver,
+            'base_address' => sprintf('0x%x', $resolver->getBaseAddress()->toInt()),
+            'cache_size_after' => count($this->resolver_cache),
+        ]);
     }
 }

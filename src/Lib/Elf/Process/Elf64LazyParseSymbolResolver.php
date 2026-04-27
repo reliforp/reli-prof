@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\Elf\Process;
 
 use Reli\Lib\ByteStream\StringByteReader;
+use Reli\Lib\Debug\ResolverShareLogger;
 use Reli\Lib\Elf\Parser\ElfParserException;
 use Reli\Lib\Elf\Structure\Elf64\Elf64SymbolTableEntry;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
@@ -40,6 +41,45 @@ final class Elf64LazyParseSymbolResolver implements Elf64SymbolResolver
     }
 
     private function loadResolver(): Elf64SymbolResolver
+    {
+        ResolverShareLogger::log('lazy.loadResolver.enter', [
+            'target_pid' => $this->pid,
+            'path' => $this->path,
+        ]);
+        // Debug-only: re-enable the broken parsed-resolver-share path that
+        // #676 removed in favour of bytes-only sharing. Behind an env flag
+        // so the matrix can A/B-test bytes-share (green) vs parsed-share
+        // (red on ARM64) within a single CI run.
+        if (
+            ResolverShareLogger::forceParsedResolverShare()
+            && $this->shared_binary_cache !== null
+            && $this->fingerprint !== null
+        ) {
+            $shared = $this->shared_binary_cache->getResolver($this->fingerprint);
+            if ($shared !== null) {
+                ResolverShareLogger::log('lazy.loadResolver.parsed_share_hit', [
+                    'target_pid' => $this->pid,
+                    'class' => $shared,
+                ]);
+                return $shared;
+            }
+        }
+        $resolver = $this->loadResolverUncached();
+        if (
+            ResolverShareLogger::forceParsedResolverShare()
+            && $this->shared_binary_cache !== null
+            && $this->fingerprint !== null
+        ) {
+            $this->shared_binary_cache->setResolver($this->fingerprint, $resolver);
+        }
+        ResolverShareLogger::log('lazy.loadResolver.fresh', [
+            'target_pid' => $this->pid,
+            'class' => $resolver,
+        ]);
+        return $resolver;
+    }
+
+    private function loadResolverUncached(): Elf64SymbolResolver
     {
         // Both the linear-scan and the dynamic-symbol resolver want the
         // libphp.so contents as a string. Reading the binary once and

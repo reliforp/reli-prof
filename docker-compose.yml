@@ -63,6 +63,9 @@ services:
       core: -1
     environment:
       - RELI_TEST_PHP_TARGETS=${RELI_TEST_PHP_TARGETS:-}
+      - RELI_DEBUG_RESOLVER_SHARE=${RELI_DEBUG_RESOLVER_SHARE:-}
+      - RELI_DEBUG_FORCE_PARSED_RESOLVER_SHARE=${RELI_DEBUG_FORCE_PARSED_RESOLVER_SHARE:-}
+      - USE_ZEND_ALLOC=${USE_ZEND_ALLOC:-}
     volumes:
       - .:/app
       - /var/run/docker.sock:/var/run/docker.sock

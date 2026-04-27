@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - '[0-9]+.[0-9]+.x'
+      - 'claude/debug-arm64-memory-corruption-JoXfw'
     paths-ignore:
       - '**.md'
       - 'docs/**'
@@ -20,6 +21,7 @@ jobs:
 
   phpunit-unit:
     name: phpunit (unit)
+    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -73,6 +75,7 @@ jobs:
 
   build-dev-image:
     name: Build dev image
+    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -122,6 +125,7 @@ jobs:
 
   build-test-mysql-images:
     name: Build PHP ${{ matrix.php_version }}+pdo_mysql
+    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -174,6 +178,7 @@ jobs:
 
   phpunit-target-version:
     name: phpunit (${{ matrix.name }})
+    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
     needs: [build-dev-image, build-test-mysql-images]
     runs-on: ubuntu-latest
     permissions:
@@ -345,6 +350,7 @@ jobs:
 
   phpunit-frankenphp:
     name: phpunit (FrankenPHP)
+    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
     needs: build-dev-image
     runs-on: ubuntu-latest
     permissions:
@@ -426,6 +432,7 @@ jobs:
 
   phpunit-unit-arm64:
     name: phpunit (unit, ARM64)
+    if: ${{ !contains(github.ref, 'claude/debug-arm64-memory-corruption-JoXfw') }}
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
@@ -476,7 +483,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php_version: ["7.4", "8.2", "8.4"]
+        # Debug branch: only the version we test (v84). The other side
+        # images aren't needed since the target-version matrix is trimmed.
+        php_version: ["8.4"]
     env:
       IMAGE: ghcr.io/${{ github.repository }}/test-php-mysql
     steps:
@@ -530,18 +539,48 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: "PHP 7.4"
-            targets: "v74"
-            php_minor: "7.4"
-          - name: "PHP 8.2"
-            targets: "v82"
-            php_minor: "8.2"
-          - name: "PHP 8.4"
+          # Debug branch: A/B-test the parsed-resolver-share root cause in
+          # one CI run. All entries hit the same v84 target so they share
+          # the docker image cache.
+          #
+          # bytes-share : control. matches the merged #676 behaviour. green.
+          # parsed-share-on : RELI_DEBUG_FORCE_PARSED_RESOLVER_SHARE=1 reintroduces
+          #     the broken path. Expected to reproduce zend_mm_heap corrupted.
+          # parsed-share-on-noalloc : same + USE_ZEND_ALLOC=0 forces PHP to
+          #     use system malloc, which bypasses zend_mm bookkeeping.
+          #     If GREEN here, the corruption is purely a zend_mm
+          #     bookkeeping issue triggered by the deep object graph.
+          #     If still RED, it's a real heap write somewhere.
+          # parsed-share-on-valgrind : same + valgrind catches the actual
+          #     bad write. Slow (~10x) but gives a usable backtrace.
+          - name: "PHP 8.4 bytes-share"
             targets: "v84"
             php_minor: "8.4"
-          - name: "PHP 8.4 ZTS"
-            targets: "v84_zts"
+            tag: "bytes-share"
+            force_parsed: "0"
+            use_zend_alloc: ""
+            valgrind: "0"
+          - name: "PHP 8.4 parsed-share-on"
+            targets: "v84"
             php_minor: "8.4"
+            tag: "parsed-share-on"
+            force_parsed: "1"
+            use_zend_alloc: ""
+            valgrind: "0"
+          - name: "PHP 8.4 parsed-share-on-noalloc"
+            targets: "v84"
+            php_minor: "8.4"
+            tag: "parsed-share-on-noalloc"
+            force_parsed: "1"
+            use_zend_alloc: "0"
+            valgrind: "0"
+          - name: "PHP 8.4 parsed-share-on-valgrind"
+            targets: "v84"
+            php_minor: "8.4"
+            tag: "parsed-share-on-valgrind"
+            force_parsed: "1"
+            use_zend_alloc: "0"
+            valgrind: "1"
     steps:
       - uses: actions/checkout@v6
 
@@ -588,19 +627,73 @@ jobs:
           sudo sysctl -w kernel.core_pattern='/tmp/reli-test/core.%e.%p.%t'
           sudo systemctl stop apport.service 2>/dev/null || true
 
+      - name: Install valgrind in dev image (debug branch only)
+        if: matrix.valgrind == '1'
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/app -w /app reli-dev bash -c "apt-get update && apt-get install -y valgrind && valgrind --version" || true
+          # Bake an updated image so docker compose run picks it up.
+          CID=$(docker run -d -v ${{ github.workspace }}:/app -w /app reli-dev sleep 30)
+          docker exec "$CID" bash -c "apt-get update && apt-get install -y --no-install-recommends valgrind"
+          docker commit "$CID" reli-dev
+          docker rm -f "$CID"
+          docker run --rm reli-dev valgrind --version
+
       - name: Run target version tests
         env:
           RELI_TEST_PHP_TARGETS: ${{ matrix.targets }}
+          RELI_DEBUG_RESOLVER_SHARE: "1"
+          RELI_DEBUG_FORCE_PARSED_RESOLVER_SHARE: ${{ matrix.force_parsed }}
+          USE_ZEND_ALLOC: ${{ matrix.use_zend_alloc }}
         run: |
           mkdir -p build/logs
-          docker compose run reli-test-for-ci vendor/bin/phpunit --group target-version --coverage-clover build/logs/clover.xml
+          if [ "${{ matrix.valgrind }}" = "1" ]; then
+            # valgrind catches the actual write that corrupts the heap.
+            # USE_ZEND_ALLOC=0 is required so PHP uses system malloc, which
+            # valgrind can track; otherwise zend_mm's bump allocator hides
+            # everything behind one big mmap region.
+            #
+            # --error-exitcode=0 keeps phpunit's own exit code authoritative
+            # so we still see the test report, while the valgrind log goes
+            # to the artifact for analysis.
+            docker compose run reli-test-for-ci bash -c "
+              valgrind \
+                --error-exitcode=0 \
+                --log-file=/tmp/reli-test/valgrind-${{ matrix.tag }}-%p.log \
+                --num-callers=40 \
+                --tool=memcheck \
+                --leak-check=no \
+                --track-origins=yes \
+                vendor/bin/phpunit \
+                  --group target-version \
+                  --filter 'MemoryDumpCommandTest|MemoryCompareCommandIntegrationTest' \
+                  --coverage-clover build/logs/clover.xml
+            " || true
+          else
+            docker compose run reli-test-for-ci vendor/bin/phpunit --group target-version --coverage-clover build/logs/clover.xml
+          fi
 
-      - name: Upload test trace log on failure
-        if: failure()
+      - name: Upload test trace log
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: reli-test-trace-${{ matrix.targets }}-arm64
+          name: reli-test-trace-${{ matrix.targets }}-${{ matrix.tag }}-arm64
           path: /tmp/reli-test/reli-test-trace.log
+          if-no-files-found: ignore
+
+      - name: Upload resolver-share debug log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reli-resolver-share-${{ matrix.targets }}-${{ matrix.tag }}-arm64
+          path: /tmp/reli-test/resolver-share*.log
+          if-no-files-found: ignore
+
+      - name: Upload valgrind log
+        if: always() && matrix.valgrind == '1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: reli-valgrind-${{ matrix.targets }}-${{ matrix.tag }}-arm64
+          path: /tmp/reli-test/valgrind-*.log
           if-no-files-found: ignore
 
       - name: Collect crash diagnostics on failure
@@ -616,7 +709,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: reli-crash-${{ matrix.targets }}-arm64
+          name: reli-crash-${{ matrix.targets }}-${{ matrix.tag }}-arm64
           path: /tmp/reli-crash/
           if-no-files-found: ignore
 
@@ -624,15 +717,16 @@ jobs:
         run: sed -i 's|/app/|${{ github.workspace }}/|g' build/logs/clover.xml
 
       - name: Send to coveralls
+        if: matrix.tag == 'bytes-share'
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: build/logs/clover.xml
-          flag-name: ${{ matrix.targets }}-arm64
+          flag-name: ${{ matrix.targets }}-${{ matrix.tag }}-arm64
           parallel: true
 
       - name: Save target Docker image for cache
-        if: steps.target-cache.outputs.cache-hit != 'true'
+        if: steps.target-cache.outputs.cache-hit != 'true' && matrix.tag == 'bytes-share'
         run: |
           TARGET_IMAGE=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep '^php:' | head -1)
           if [ -n "$TARGET_IMAGE" ]; then
