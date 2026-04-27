@@ -19,10 +19,10 @@ require __DIR__ . '/../../vendor/autoload.php';
 use Amp\Parallel\Context;
 use Amp\Parallel\Context\ThreadContext;
 
-assert(PHP_ZTS === 1, 'inner.php must run inside the ZTS embed');
+assert(PHP_ZTS, 'inner.php must run inside the ZTS embed');
 assert(extension_loaded('parallel'), 'ext-parallel must be loaded inside the embed');
 
-fwrite(STDOUT, sprintf("PHP_ZTS=%d\n", PHP_ZTS));
+fwrite(STDOUT, sprintf("PHP_ZTS=%s\n", var_export(PHP_ZTS, true)));
 fwrite(STDOUT, sprintf("ThreadContext::isSupported()=%s\n", var_export(ThreadContext::isSupported(), true)));
 fwrite(STDOUT, sprintf("factory=%s\n", get_class(Context\contextFactory())));
 
