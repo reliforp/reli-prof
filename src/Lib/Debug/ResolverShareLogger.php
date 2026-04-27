@@ -107,9 +107,9 @@ final class ResolverShareLogger
 
     private static function timestamp(): string
     {
-        $t = (float)microtime(true);
+        $t = microtime(true);
         $whole = (int)$t;
-        $micros = (int)(($t - (float)$whole) * 1_000_000.0);
+        $micros = (int)(($t - $whole) * 1_000_000.0);
         return date('H:i:s', $whole) . sprintf('.%06d', $micros);
     }
 
@@ -120,18 +120,35 @@ final class ResolverShareLogger
     {
         $parts = [];
         foreach ($fields as $k => $v) {
-            /** @var string $rendered */
-            $rendered = match (true) {
-                is_object($v) => get_class($v),
-                is_array($v) => (string)json_encode($v),
-                is_bool($v) => $v ? 'true' : 'false',
-                $v === null => 'null',
-                is_int($v), is_float($v) => (string)$v,
-                is_string($v) => $v,
-                default => '?',
-            };
-            $parts[] = "{$k}={$rendered}";
+            $parts[] = $k . '=' . self::renderValue($v);
         }
         return implode(' ', $parts);
+    }
+
+    /**
+     * @param mixed $v
+     */
+    private static function renderValue(mixed $v): string
+    {
+        if ($v === null) {
+            return 'null';
+        }
+        if (is_bool($v)) {
+            return $v ? 'true' : 'false';
+        }
+        if (is_int($v) || is_float($v)) {
+            return (string)$v;
+        }
+        if (is_string($v)) {
+            return $v;
+        }
+        if (is_object($v)) {
+            return get_class($v);
+        }
+        if (is_array($v)) {
+            $encoded = json_encode($v);
+            return $encoded === false ? '?' : $encoded;
+        }
+        return '?';
     }
 }
