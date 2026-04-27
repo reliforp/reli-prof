@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Lib\Elf\Process;
 
-use Reli\Lib\Elf\SymbolResolver\Elf64SymbolResolver;
 use Reli\Lib\Elf\SymbolResolver\Elf64SymbolCache;
 
 final class PerBinarySymbolCacheRetriever
@@ -22,14 +21,27 @@ final class PerBinarySymbolCacheRetriever
     private array $cache = [];
 
     /**
-     * Holds the parsed inner resolver per binary fingerprint so that a
-     * cold attach which constructs several Elf64LazyParseSymbolResolver
-     * instances against the same libphp.so reuses one parse instead of
-     * re-reading 19 MB off disk per instance.
+     * Cache of raw binary bytes (as PHP strings) per binary fingerprint.
+     * Cold attach often calls Elf64LazyParseSymbolResolver multiple times
+     * for the same libphp.so (PhpGlobalsFinder, resolveTlsBlock,
+     * TsrmGlobalsResolver each create their own symbol reader); each
+     * instance would otherwise re-read the entire binary off disk.
      *
-     * @var array<string, Elf64SymbolResolver>
+     * Earlier iterations of this branch tried caching the parsed
+     * Elf64SymbolResolver itself, but that triggered ARM64
+     * "zend_mm_heap corrupted" failures during MemoryDumpCommandTest
+     * (bisect: PRs #669, #674, #675). The exact PHP / GC interaction is
+     * still TBD — possibly the deep object graph (Elf64SymbolTable with
+     * tens of thousands of Elf64SymbolTableEntry instances, each holding
+     * UInt64 instances) accumulating across long-lived cache entries
+     * stresses zend_mm in a way x86_64 tolerates and aarch64 does not.
+     * Sharing a plain PHP string (a single zval, refcounted, no nested
+     * objects) avoids that path entirely while still preventing the
+     * disk re-read.
+     *
+     * @var array<string, string>
      */
-    private array $resolver_cache = [];
+    private array $binary_bytes_cache = [];
 
     public function get(BinaryFingerprint $binary_fingerprint): Elf64SymbolCache
     {
@@ -39,15 +51,15 @@ final class PerBinarySymbolCacheRetriever
         return $this->cache[(string)$binary_fingerprint];
     }
 
-    public function getResolver(BinaryFingerprint $binary_fingerprint): ?Elf64SymbolResolver
+    public function getBinaryBytes(BinaryFingerprint $binary_fingerprint): ?string
     {
-        return $this->resolver_cache[(string)$binary_fingerprint] ?? null;
+        return $this->binary_bytes_cache[(string)$binary_fingerprint] ?? null;
     }
 
-    public function setResolver(
+    public function setBinaryBytes(
         BinaryFingerprint $binary_fingerprint,
-        Elf64SymbolResolver $resolver,
+        string $bytes,
     ): void {
-        $this->resolver_cache[(string)$binary_fingerprint] = $resolver;
+        $this->binary_bytes_cache[(string)$binary_fingerprint] = $bytes;
     }
 }
