@@ -101,11 +101,12 @@ A few realities on FrankenPHP that the snippet above is built around:
   warms every worker at once. Once **any one worker** succeeds
   and writes the offset to the per-binary cache, subsequent
   attaches against the same FrankenPHP process skip the
-  brute-force scan, read the cached offset directly, and resolve
-  TSRM in microseconds — including against workers that have
-  still never served a request, provided their slot was
-  populated at thread startup (which is the case in current
-  FrankenPHP builds).
+  brute-force scan and read the cached offset directly, but the
+  attach still only succeeds against workers whose
+  `_tsrm_ls_cache` slot has actually been populated. A
+  never-served-a-request worker may still fail with the
+  uninitialised-slot error even with a warm cache; recovery is
+  the same — push traffic through that worker first.
 
   TSRM resolving is not the same as having something to look at:
   `inspector:memory:dump` against a TSRM-resolved cold worker in
