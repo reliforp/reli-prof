@@ -53,6 +53,7 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
         if ($use_binary_direct && $output_settings->rbt_compress) {
             $this->compress = true;
         }
+        $has_timestamps = $output_settings !== null && $output_settings->hasRbtTimestamps();
 
         // Derive sampling period from loop settings (ns → µs)
         $sampling_period_us = (int)(
@@ -69,39 +70,16 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
             Log::debug('attach_message', [$attach_message]);
             $pid = $attach_message->process_descriptor->pid;
 
-            // Open the output file lazily on the first attach. Workers
-            // spawned in excess of the active target count never reach
-            // this point, so they don't leave behind a zero-byte
-            // worker_<pid>.rbt artifact in the output directory.
-            if (
-                $use_binary_direct
-                && $this->binary_stream === null
-                && $binary_output_dir !== null
-            ) {
-                $this->openBinaryStream($binary_output_dir);
-            }
-
-            // Start a new self-contained segment for this attach.
-            // A fresh BinaryTraceWriter resets frame/stack intern state.
-            $has_timestamps = $output_settings !== null && $output_settings->hasRbtTimestamps();
-            if ($use_binary_direct && $this->binary_stream !== null) {
-                if ($this->compress) {
-                    $buf = fopen('php://temp', 'r+');
-                    assert($buf !== false);
-                    $this->segment_buffer = $buf;
-                    $write_target = $this->segment_buffer;
-                } else {
-                    $write_target = $this->binary_stream;
-                }
-                $this->binary_writer = new BinaryTraceWriter(
-                    $write_target,
-                    $sampling_period_us,
-                    has_timestamps: $has_timestamps,
-                );
-                $this->binary_writer->writeHeader();
-                $this->binary_writer->writeMetadata('pid', (string)$pid);
-                $this->last_hrtime_ns = null;
-            }
+            // Writer construction, header/metadata emission, and (for
+            // the worker's first segment) the underlying file open are
+            // all deferred to the first non-empty trace. An attach that
+            // observes only the trace loop's idle ride-through markers
+            // (empty CallTrace) for its whole lifetime therefore writes
+            // no segment, leaving no header+metadata-only artifact in
+            // the output directory. The previous attach's intern state
+            // does not carry over either: a fresh BinaryTraceWriter is
+            // built on the first sample of this attach.
+            $this->last_hrtime_ns = null;
 
             try {
                 $loop_runner = $this->trace_loop->run(
@@ -122,10 +100,21 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
                         // timestamped (--rbt-timestamps=delta) rbt output.
                         continue;
                     }
-                    if ($use_binary_direct && $this->binary_writer !== null) {
-                        // Per-worker rbt mode: annotations never leave the
-                        // worker — they go straight into our own .rbt file.
-                        $this->writeBinaryTrace($message->trace, $message->annotations);
+                    if ($use_binary_direct) {
+                        if ($this->binary_writer === null) {
+                            $this->openBinarySegment(
+                                $pid,
+                                $sampling_period_us,
+                                $has_timestamps,
+                                $binary_output_dir,
+                            );
+                        }
+                        if ($this->binary_writer !== null) {
+                            // Per-worker rbt mode: annotations never leave
+                            // the worker — they go straight into our own
+                            // .rbt file.
+                            $this->writeBinaryTrace($message->trace, $message->annotations);
+                        }
                     } else {
                         // Bundled / template modes: forward annotations to
                         // the controller via IPC for it to write out.
@@ -142,7 +131,11 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
                 ]);
             }
 
-            // Close the segment cleanly on detach
+            // Close the segment cleanly on detach. binary_writer is
+            // non-null only when at least one real sample reached us
+            // for this attach; an attach that produced no samples
+            // leaves no segment behind (and, if this was the worker's
+            // first attach, also no file).
             if ($this->binary_writer !== null) {
                 $this->binary_writer->writeCheckpoint();
                 $this->binary_writer->writeSegmentEnd();
@@ -158,6 +151,43 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
         }
 
         $this->closeBinaryStream();
+    }
+
+    /**
+     * Lazily open the per-worker output file (if not already open) and
+     * construct a fresh BinaryTraceWriter for the current attach,
+     * emitting the rbt header and the per-segment `pid` metadata. Called
+     * from inside the trace loop on the first non-empty TraceMessage of
+     * each attach, so a worker that only ever observes empty markers
+     * never reaches this path.
+     */
+    private function openBinarySegment(
+        int $pid,
+        int $sampling_period_us,
+        bool $has_timestamps,
+        ?string $binary_output_dir,
+    ): void {
+        if ($this->binary_stream === null && $binary_output_dir !== null) {
+            $this->openBinaryStream($binary_output_dir);
+        }
+        if ($this->binary_stream === null) {
+            return;
+        }
+        if ($this->compress) {
+            $buf = fopen('php://temp', 'r+');
+            assert($buf !== false);
+            $this->segment_buffer = $buf;
+            $write_target = $this->segment_buffer;
+        } else {
+            $write_target = $this->binary_stream;
+        }
+        $this->binary_writer = new BinaryTraceWriter(
+            $write_target,
+            $sampling_period_us,
+            has_timestamps: $has_timestamps,
+        );
+        $this->binary_writer->writeHeader();
+        $this->binary_writer->writeMetadata('pid', (string)$pid);
     }
 
     private function openBinaryStream(string $output_dir): void
