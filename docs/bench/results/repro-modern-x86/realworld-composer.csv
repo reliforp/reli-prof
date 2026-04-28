@@ -1,0 +1,16 @@
+config,bench,run,wall_seconds
+baseline-il,composer-install,1,1.2281000614166
+phpspy-200hz-il,composer-install,1,1.3078999519348
+reli-200hz-il,composer-install,1,1.206699848175
+baseline-il,composer-install,2,1.2332000732422
+phpspy-200hz-il,composer-install,2,1.2594001293182
+reli-200hz-il,composer-install,2,1.4019999504089
+baseline-il,composer-install,3,1.16890001297
+phpspy-200hz-il,composer-install,3,1.2477998733521
+reli-200hz-il,composer-install,3,1.3110001087189
+baseline-il,composer-install,4,1.2233002185822
+phpspy-200hz-il,composer-install,4,1.2416999340057
+reli-200hz-il,composer-install,4,1.3087999820709
+baseline-il,composer-install,5,1.2163999080658
+phpspy-200hz-il,composer-install,5,1.2642998695374
+reli-200hz-il,composer-install,5,1.3586001396179

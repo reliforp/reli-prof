@@ -1,0 +1,16 @@
+config,bench,run,wall_seconds
+baseline-il,laravel-route-8000,1,3.466
+phpspy-200hz-il,laravel-route-8000,1,3.441
+reli-200hz-il,laravel-route-8000,1,3.567
+baseline-il,laravel-route-8000,2,3.979
+phpspy-200hz-il,laravel-route-8000,2,4.235
+reli-200hz-il,laravel-route-8000,2,3.662
+baseline-il,laravel-route-8000,3,3.460
+phpspy-200hz-il,laravel-route-8000,3,3.487
+reli-200hz-il,laravel-route-8000,3,3.350
+baseline-il,laravel-route-8000,4,3.421
+phpspy-200hz-il,laravel-route-8000,4,3.963
+reli-200hz-il,laravel-route-8000,4,3.431
+baseline-il,laravel-route-8000,5,3.391
+phpspy-200hz-il,laravel-route-8000,5,3.507
+reli-200hz-il,laravel-route-8000,5,3.454
