@@ -65,6 +65,31 @@ final class BinaryTraceOutputTest extends BaseTestCase
         fclose($stream);
     }
 
+    public function testHasSamplesReflectsSamplePresence(): void
+    {
+        $stream = fopen('php://memory', 'r+');
+        assert($stream !== false);
+
+        $writer = new BinaryTraceWriter($stream, 10000);
+        $output = new BinaryTraceOutput($writer);
+
+        $this->assertFalse($output->hasSamples());
+
+        $output->output(
+            new CallTrace(
+                new CallFrame('App', 'run', '/app.php', null),
+            ),
+        );
+
+        $this->assertTrue($output->hasSamples());
+
+        // finish() must not change the answer either way.
+        $output->finish();
+        $this->assertTrue($output->hasSamples());
+
+        fclose($stream);
+    }
+
     public function testFinishWithCompressProducesGzip(): void
     {
         $buffer = fopen('php://temp', 'r+');

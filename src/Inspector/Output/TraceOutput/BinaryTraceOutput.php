@@ -22,6 +22,7 @@ use Reli\Lib\PhpProcessReader\CallTraceReader\MergedCallTrace;
 final class BinaryTraceOutput implements TraceOutput, MergedTraceOutput
 {
     private bool $header_written = false;
+    private bool $sample_written = false;
     private ?int $last_hrtime_ns = null;
 
     /**
@@ -53,14 +54,15 @@ final class BinaryTraceOutput implements TraceOutput, MergedTraceOutput
     /**
      * Whether any sample has been written through this output.
      *
-     * Header is emitted lazily on the first sample, so this also indicates
-     * whether the underlying stream has any bytes written via this output.
-     * Used by callers (e.g. TraceSession) to drop empty trace artifacts
-     * when a session is opened but no sample is ever recorded.
+     * Tracked independently of header_written so the answer stays correct
+     * even if a future change makes the header eager (e.g. emitted at
+     * construction or on an explicit start() call). Used by callers
+     * (e.g. TraceSession) to drop empty trace artifacts when a session
+     * is opened but no sample is ever recorded.
      */
     public function hasSamples(): bool
     {
-        return $this->header_written;
+        return $this->sample_written;
     }
 
     /**
@@ -111,6 +113,7 @@ final class BinaryTraceOutput implements TraceOutput, MergedTraceOutput
         $this->last_hrtime_ns = $now_ns;
 
         $this->writer->writeTrace($parsed, $delta_us, $annotations);
+        $this->sample_written = true;
 
         if ($this->writer->getSamplesSinceCheckpoint() >= $this->checkpoint_interval) {
             $this->writer->writeCheckpoint();
