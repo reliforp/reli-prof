@@ -67,6 +67,10 @@ final class RecoverCommand extends ReliCommand
                 $count++;
             }
         } else {
+            // Always emit a valid (possibly empty) rbt file. Lazily creating
+            // the writer only when the first sample arrives leaves stdout as
+            // zero bytes when nothing is recoverable, and the next
+            // rbt:analyze in the pipeline then bails with "Invalid magic".
             $writer = null;
             foreach ($reader->readWithRecovery($input_stream) as $sample) {
                 if ($writer === null) {
@@ -83,15 +87,25 @@ final class RecoverCommand extends ReliCommand
                 );
                 $count++;
             }
-            if ($writer !== null) {
-                $writer->writeCheckpoint();
-                $writer->writeSegmentEnd();
+            if ($writer === null) {
+                $writer = new BinaryTraceWriter(
+                    STDOUT,
+                    $reader->getSamplingPeriodUs() ?: 10000,
+                    has_timestamps: true,
+                );
+                $writer->writeHeader();
             }
+            $writer->writeCheckpoint();
+            $writer->writeSegmentEnd();
         }
 
-        if ($output instanceof \Symfony\Component\Console\Output\ConsoleOutputInterface) {
-            $output->getErrorOutput()->writeln("Recovered {$count} samples");
-        }
+        // Always go through STDERR explicitly. Routing via Symfony's
+        // ConsoleOutputInterface::getErrorOutput() works in CLI today, but
+        // any caller that wraps the command with a non-ConsoleOutputInterface
+        // would silently drop the message — and a future change could just
+        // as easily mix it into stdout, which would corrupt the binary
+        // trace stream when --format=rbt.
+        fwrite(STDERR, "Recovered {$count} samples\n");
 
         return 0;
     }
