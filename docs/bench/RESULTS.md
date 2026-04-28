@@ -93,22 +93,20 @@ reaches 1271× in our suite; Xdebug profile mode reaches 160-180×.
 > would scale together and the multiplier would stay roughly
 > constant); xhprof's per-call hook is doing some kind of work
 > whose cost ratio against a baseline interpreter op shifts
-> across hosts. We have one concrete piece of evidence on
-> *what* that work is — `strace -c` on this host shows xhprof
-> issuing exactly two `clock_gettime` calls per PHP function
-> entry/exit (e.g. 43798 `clock_gettime` syscalls for fib(20)'s
-> 21891 calls). `clock_gettime` is vDSO-accelerated on a healthy
-> modern x86 (~30 ns) but can fall back to a real syscall path
-> (~1 µs+) in heavily virtualised / mitigation-laden environments,
-> and that multiplies straight through xhprof's call density.
-> Xdebug profile mode shows the same multiplier-shrinkage shape
-> (180× → ~95×). We haven't actually measured the syscall path
-> on the sandbox to confirm this is the dominant cause; cache
-> behaviour against xhprof's per-function hashmap is another
-> candidate we haven't ruled out. So treat the *direction*
-> (multiplier shrinks dramatically on faster / less-virtualised
-> hosts) as established and the *exact mechanism* as
-> still-needing-measurement. The qualitative ranking — sampling
+> across hosts. One plausible mechanism is the cost of xhprof's
+> timing calls: `strace -c` on this host shows xhprof issuing
+> exactly two `clock_gettime` calls per PHP function entry/exit
+> (43798 for fib(20)'s 21891 calls). Timing-call cost can vary
+> substantially with libc / vDSO / kernel-syscall-path
+> configuration, virtualisation overhead, and kernel mitigation
+> settings, and that variation multiplies through xhprof's call
+> density. Cache behaviour against xhprof's per-function hashmap
+> is another candidate we haven't ruled out. We haven't measured
+> the timing-call cost on the original sandbox host, so treat
+> the *direction* (multiplier shrinks dramatically on faster /
+> less-virtualised hosts) as established and the *exact mechanism*
+> as still-needing-measurement. Xdebug profile mode shows the
+> same multiplier-shrinkage shape (180× → ~95×). The qualitative ranking — sampling
 > tools at baseline, full-instrumentation tools two-to-three
 > orders of magnitude heavier — is robust; the absolute
 > multiplier headline is not. Reproduction on a faster host is

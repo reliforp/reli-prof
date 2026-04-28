@@ -14,6 +14,15 @@ datadog-profiling 1.18.0 from the official tarball, xdebug
 3.5.0 / xhprof 2.3.10 / excimer 1.2.5 from Sury). Target PHP:
 PHP 8.4.20 NTS. reli's PHP: PHP 8.5.5 NTS.
 
+This is **not a controlled hardware-only reproduction**: some
+tool versions also differ from the original `RESULTS.md` run
+(Sury / PECL ship newer point releases since then, and
+phpspy / php-spx are tracked from upstream HEAD here). Treat
+divergences below as "environment-dependent" — a mix of host
+hardware, kernel configuration, libc, virtualisation level, and
+tool version. A follow-up that isolates each axis separately
+would tighten the attribution.
+
 ## What reproduces vs what shifts
 
 | Class | Result |
@@ -121,19 +130,19 @@ multiplier would be roughly constant. So the per-call hook is
 sensitive to *something* in the host that isn't proportional to
 PHP interpreter speed.
 
-What we know about *what*: `strace -c` on this host shows xhprof
-in CPU+MEMORY mode issuing exactly two `clock_gettime` syscalls
-per PHP function entry/exit (43798 `clock_gettime` calls for
-fib(20)'s 21891 PHP calls). `clock_gettime` is vDSO-accelerated
-on healthy modern x86 (~30 ns); on virtualised guests, on hosts
-with aggressive Spectre/Meltdown mitigations, or older kernels
-that don't ship the same vDSO fast paths, it can fall back to a
-real syscall path costing ~1 µs+. Two of those per PHP call,
-multiplied through fib's call density, lines up roughly with the
-observed gap, but we haven't measured `clock_gettime` cost on
-the original sandbox host so this is plausible-mechanism rather
-than confirmed-mechanism. Cache behaviour against xhprof's
-per-function hashmap is another candidate we haven't ruled out.
+One plausible mechanism is the cost of xhprof's timing calls:
+`strace -c` on this host shows xhprof in CPU+MEMORY mode
+issuing exactly two `clock_gettime` calls per PHP function
+entry/exit (43798 `clock_gettime` calls for fib(20)'s 21891 PHP
+calls). Timing-call cost can vary substantially with libc /
+vDSO / kernel-syscall-path configuration, virtualisation
+overhead, and kernel mitigation settings, and two of those per
+PHP call multiplied through fib's call density lines up with the
+order-of-magnitude shift we see. We haven't measured the
+timing-call cost on the original sandbox host, so this stays a
+plausible mechanism rather than a confirmed cause. Cache
+behaviour against xhprof's per-function hashmap is another
+candidate we haven't ruled out.
 
 The qualitative ranking — sampling tools at baseline,
 full-instrumentation tools two-to-three orders of magnitude
@@ -183,24 +192,34 @@ phpspy              3.85       3.89       4.91       5.03
 reli (Δ)           +3.79      +3.81      +3.57      +3.92
 ```
 
-Live observation on this host (depth=100 / 1 kHz, target running
-at 100 % of one core in either case):
+Live `ps -o pcpu` observation on this host (depth=100 / 1 kHz,
+target running at ~100 % of one core in either case):
 
 ```
 phpspy   ~12 % CPU on its own process
 reli     ~29 % CPU on its own process
 ```
 
-phpspy is **the cheaper sampler per sample at depths ≤ 100 on
-modern x86**, opposite of the sandbox ranking. Why: phpspy's
-per-sample cost is dominated by `N × process_vm_readv` syscall
-latency (linear in stack depth N), and modern x86 dropped per-
-syscall latency far more than the host got faster overall.
-reli's per-sample cost is dominated by PHP-side stack-walk
-execution, which scales with PHP interpreter / JIT speed —
-which improved less dramatically across hosts. On the sandbox
-phpspy was syscall-saturated (~1 core); here phpspy at depth=100
-spends ~0.17 ms/sample, reli spends ~0.31 ms/sample.
+This is a live observation rather than a row in
+[`repro-modern-x86/cpu.csv`](repro-modern-x86/cpu.csv) — the
+phpspy CPU column in `cpu.csv` came back zero on this host
+(see "Issues hit while reproducing" below for why). The CSVs in
+this reproduction therefore don't speak directly to per-sample
+CPU; the live observation is the best we have. Steadier
+measurements would come from `pidstat -p $PHPSPY 1` over the
+target's lifetime.
+
+With that caveat, phpspy looks like **the cheaper sampler per
+sample at depths ≤ 100 on this host**, opposite of the sandbox
+ranking. Plausible reading: phpspy's per-sample cost is
+dominated by `N × process_vm_readv` syscall latency (linear in
+stack depth N), and modern x86 dropped per-syscall latency
+proportionally more than overall host throughput. reli's
+per-sample cost is dominated by PHP-side stack-walk execution,
+which scales with PHP interpreter / JIT speed — improved less
+dramatically across hosts. On the sandbox phpspy was
+syscall-saturated (~1 core); here phpspy at depth=100 spends
+~0.17 ms/sample, reli spends ~0.31 ms/sample.
 
 The crossover where reli's design wins on per-sample cost has
 moved deeper. The shape is unchanged (phpspy syscall-fan-out
