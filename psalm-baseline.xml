@@ -1409,6 +1409,9 @@
   </file>
   <file src="src/Lib/PhpProcessReader/PhpMemoryReader/MemoryLocationsCollector.php">
     <InvalidOperand>
+      <code><![CDATA[$cached_chunks_size / 1024 / 1024]]></code>
+      <code><![CDATA[$captured_bytes / 1024 / 1024]]></code>
+      <code><![CDATA[$huge_total_bytes / 1024 / 1024]]></code>
       <code><![CDATA[$memory_get_usage_real_size * 0.5]]></code>
       <code><![CDATA[$memory_get_usage_real_size / 1024 / 1024]]></code>
       <code><![CDATA[$walked_chunk_bytes / 1024 / 1024]]></code>
