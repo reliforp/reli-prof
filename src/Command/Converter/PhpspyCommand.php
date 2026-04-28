@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Command\Converter;
 
+use Reli\Converter\PhpSpyCompatibleFormatter;
 use Reli\Converter\TraceInputReader;
 use Reli\Command\DockerProfile;
 use Reli\Command\ReliCommand;
@@ -39,16 +40,10 @@ final class PhpspyCommand extends ReliCommand
     public function execute(InputInterface $input, OutputInterface $output): int
     {
         $reader = new TraceInputReader();
+        $formatter = new PhpSpyCompatibleFormatter();
 
         foreach ($reader->read(STDIN) as $trace) {
-            foreach ($trace->call_frames as $depth => $frame) {
-                $output->writeln(
-                    $depth . ' '
-                    . $frame->function_name . ' '
-                    . $frame->file_name . ':' . $frame->lineno
-                );
-            }
-            $output->writeln('');
+            $output->write($formatter->formatTrace($trace));
         }
 
         return 0;

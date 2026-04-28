@@ -100,9 +100,9 @@ IDs, lengths, depths, and timestamp deltas use **protobuf-compatible base-128 va
 - Little-endian byte order (least significant byte first)
 - Values are 64-bit signed integers; non-negatives take 1–9 bytes. Negative
   values follow protobuf's `int64` rules — encoded as their 64-bit
-  two's-complement bit pattern and always take 10 bytes. The only field
-  that legitimately goes negative is `lineno` (`-1` for internal /
-  unknown-line frames); other fields (IDs, lengths, deltas) are unsigned.
+  two's-complement bit pattern and always take 10 bytes. The writer emits
+  `lineno = -1` for internal-call / unknown-line PHP frames; other fields
+  (IDs, lengths, deltas) are unsigned in practice and stay within 1–9 bytes.
 
 | Value Range | Bytes |
 |-------------|-------|

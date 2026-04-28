@@ -17,6 +17,7 @@ use Noodlehaus\Config;
 use PhpCast\Cast;
 use Reli\Command\DockerProfile;
 use Reli\Command\ReliCommand;
+use Reli\Converter\PhpSpyCompatibleFormatter;
 use Reli\Converter\TraceInputReader;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -88,23 +89,19 @@ final class FlameGraphCommand extends ReliCommand
         fclose($stackcollapse_pipes[1]);
 
         $reader = new TraceInputReader();
-        foreach ($reader->read(STDIN) as $trace) {
-            foreach ($trace->call_frames as $depth => $frame) {
-                fwrite(
-                    $stackcollapse_pipes[0],
-                    $depth . ' '
-                    . $frame->function_name . ' '
-                    . $frame->file_name . ':' . $frame->lineno
-                    . "\n"
-                );
-            }
-            fwrite($stackcollapse_pipes[0], "\n");
-        }
+        $formatter = new PhpSpyCompatibleFormatter();
+        $formatter->writeTracesTo($stackcollapse_pipes[0], $reader->read(STDIN));
         fclose($stackcollapse_pipes[0]);
 
-        proc_close($stackcollapse_process);
-        proc_close($flamegraph_process);
+        $stackcollapse_status = proc_close($stackcollapse_process);
+        $flamegraph_status = proc_close($flamegraph_process);
 
+        if ($stackcollapse_status !== 0) {
+            return $stackcollapse_status;
+        }
+        if ($flamegraph_status !== 0) {
+            return $flamegraph_status;
+        }
         return 0;
     }
 }

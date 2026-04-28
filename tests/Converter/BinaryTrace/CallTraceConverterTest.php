@@ -19,7 +19,7 @@ use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
 final class CallTraceConverterTest extends BaseTestCase
 {
-    public function testNullOplineProducesLinenoZero(): void
+    public function testNullOplineProducesNegativeOneLineno(): void
     {
         $call_trace = new CallTrace(
             new CallFrame('MyClass', 'myMethod', '/file.php', null),
@@ -30,18 +30,18 @@ final class CallTraceConverterTest extends BaseTestCase
         $this->assertCount(1, $parsed->call_frames);
         $this->assertSame('MyClass::myMethod', $parsed->call_frames[0]->function_name);
         $this->assertSame('/file.php', $parsed->call_frames[0]->file_name);
-        $this->assertSame(0, $parsed->call_frames[0]->lineno);
+        $this->assertSame(-1, $parsed->call_frames[0]->lineno);
     }
 
-    public function testNullOplineDoesNotTriggerVarintAssert(): void
+    public function testNullOplineRoundTripsNegativeOneThroughBinaryTrace(): void
     {
         $call_trace = new CallTrace(
             new CallFrame('', 'main', '/index.php', null),
         );
 
         $parsed = CallTraceConverter::toParsed($call_trace);
+        $this->assertSame(-1, $parsed->call_frames[0]->lineno);
 
-        // This should not throw: Varint::encode(0) is valid
         $stream = fopen('php://memory', 'r+');
         assert($stream !== false);
 
@@ -57,6 +57,6 @@ final class CallTraceConverterTest extends BaseTestCase
         fclose($stream);
 
         $this->assertCount(1, $results);
-        $this->assertSame(0, $results[0]->trace->call_frames[0]->lineno);
+        $this->assertSame(-1, $results[0]->trace->call_frames[0]->lineno);
     }
 }
