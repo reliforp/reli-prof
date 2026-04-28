@@ -17,6 +17,8 @@ use Noodlehaus\Config;
 use PhpCast\Cast;
 use Reli\Command\DockerProfile;
 use Reli\Command\ReliCommand;
+use Reli\Converter\PhpSpyCompatibleFormatter;
+use Reli\Converter\TraceInputReader;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
@@ -38,7 +40,7 @@ final class FlameGraphCommand extends ReliCommand
     public function configure(): void
     {
         $this->setName('converter:flamegraph')
-            ->setDescription('convert phpspy-compatible trace file to flamegraph')
+            ->setDescription('convert traces to flamegraph SVG (auto-detects rbt or phpspy input)')
         ;
     }
 
@@ -55,7 +57,7 @@ final class FlameGraphCommand extends ReliCommand
                 $stackcollapse,
             ],
             [
-                0 => STDIN,
+                0 => ['pipe', 'r'],
                 1 => ['pipe', 'w'],
                 2 => STDERR,
             ],
@@ -73,16 +75,33 @@ final class FlameGraphCommand extends ReliCommand
                 1 => STDOUT,
                 2 => STDERR,
             ],
-            $stackcollapse_pipes
+            $flamegraph_pipes
         );
         if ($flamegraph_process === false) {
+            fclose($stackcollapse_pipes[0]);
+            fclose($stackcollapse_pipes[1]);
             proc_close($stackcollapse_process);
             throw new \RuntimeException('Failed to open flamegraph process');
         }
 
-        proc_close($stackcollapse_process);
-        proc_close($flamegraph_process);
+        // Close our copy of stackcollapse's stdout so flamegraph sees EOF
+        // once stackcollapse exits (otherwise flamegraph hangs).
+        fclose($stackcollapse_pipes[1]);
 
+        $reader = new TraceInputReader();
+        $formatter = new PhpSpyCompatibleFormatter();
+        $formatter->writeTracesTo($stackcollapse_pipes[0], $reader->read(STDIN));
+        fclose($stackcollapse_pipes[0]);
+
+        $stackcollapse_status = proc_close($stackcollapse_process);
+        $flamegraph_status = proc_close($flamegraph_process);
+
+        if ($stackcollapse_status !== 0) {
+            return $stackcollapse_status;
+        }
+        if ($flamegraph_status !== 0) {
+            return $flamegraph_status;
+        }
         return 0;
     }
 }

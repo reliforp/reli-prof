@@ -28,9 +28,7 @@ final class CallTraceConverter
             $frames[] = new ParsedCallFrame(
                 $call_frame->getFullyQualifiedFunctionName(),
                 $call_frame->file_name,
-                // getLineno() returns -1 when opline is null (line unknown).
-                // Varint encoding requires unsigned values, so clamp to 0.
-                max(0, $call_frame->getLineno()),
+                $call_frame->getLineno(),
                 opcode_name: $opcode !== '' ? $opcode : null,
             );
         }
@@ -57,7 +55,7 @@ final class CallTraceConverter
                 $frames[] = new ParsedCallFrame(
                     $php->getFullyQualifiedFunctionName(),
                     $php->file_name,
-                    max(0, $php->getLineno()),
+                    $php->getLineno(),
                     opcode_name: $opcode !== '' ? $opcode : null,
                 );
             }
