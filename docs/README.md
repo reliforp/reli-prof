@@ -83,7 +83,7 @@ Tip: **`-f binary` (`.rmem`) is the fastest format** and what the analysers belo
 
 | I want to... | Use | More |
 |---|---|---|
-| Just get the EG address (e.g. to feed phpspy manually) | `inspector:eg -p <pid>` | [tracing/capturing-traces.md](tracing/capturing-traces.md) |
+| Just get the EG address (e.g. to feed phpspy manually) | `inspector:eg_address -p <pid>` | [tracing/capturing-traces.md](tracing/capturing-traces.md) |
 | Install phpspy | `phpspy:install` | [tracing/phpspy-hybrid.md](tracing/phpspy-hybrid.md) |
 | Clear or bypass the binary analysis cache | `cache:clear`, `--no-cache` | [internals/binary-analysis-cache.md](internals/binary-analysis-cache.md) |
 

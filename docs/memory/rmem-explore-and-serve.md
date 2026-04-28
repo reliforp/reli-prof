@@ -26,7 +26,7 @@ everywhere — see [§ Three-way focus bus](#three-way-focus-bus).
 Interactive terminal UI for browsing a memory snapshot.
 
 ```bash
-php reli rmem:explore output.rmem
+reli rmem:explore output.rmem
 ```
 
 ### Views
@@ -92,23 +92,23 @@ to manual-drill-only.
 
 ```bash
 # Start focused on a specific node (from report findings)
-php reli rmem:explore output.rmem --node=12345
+reli rmem:explore output.rmem --node=12345
 
 # Start focused on a memory address
-php reli rmem:explore output.rmem --address=0x7f1234567890
+reli rmem:explore output.rmem --address=0x7f1234567890
 
 # Set memory limit
-php reli rmem:explore output.rmem --memory-limit=4G
+reli rmem:explore output.rmem --memory-limit=4G
 
 # Fork a query server for AI assistant access
-php reli rmem:explore output.rmem --serve
+reli rmem:explore output.rmem --serve
 
 # Enable TUI control via the query server
-php reli rmem:explore output.rmem --serve --serve-control
+reli rmem:explore output.rmem --serve --serve-control
 
 # Fork an HTTP/SSE bridge so browsers follow this TUI live.
 # Combine with --serve to expose both the Unix socket and HTTP.
-php reli rmem:explore output.rmem --http-bridge 8080
+reli rmem:explore output.rmem --http-bridge 8080
 # Then press `f` inside the TUI and open http://127.0.0.1:8080/
 
 # Rewrite file paths recorded in the snapshot for local navigation.
@@ -116,7 +116,7 @@ php reli rmem:explore output.rmem --http-bridge 8080
 # remote host and you want the "source:" lines in the detail pane
 # to point at your local checkout. May be repeated; longest prefix
 # wins.
-php reli rmem:explore output.rmem \
+reli rmem:explore output.rmem \
     --path-map /var/www/html=/home/me/project
 ```
 
@@ -184,7 +184,7 @@ finding in explore:
 ```
 
 ```bash
-php reli rmem:explore output.rmem --node=113629
+reli rmem:explore output.rmem --node=113629
 ```
 
 ## rmem:viz
@@ -200,14 +200,14 @@ views backed by d3 and 3d-force-graph, loaded from a CDN at runtime:
 | **3D Force** | Reference graph / cluster layout in WebGL |
 
 ```bash
-php reli rmem:viz output.rmem
+reli rmem:viz output.rmem
 # wrote output.rmem.viz.html
 
 # Inspect a larger subgraph / include reference edges
-php reli rmem:viz output.rmem --top 1000 --depth 2 --all-edges
+reli rmem:viz output.rmem --top 1000 --depth 2 --all-edges
 
 # Send somewhere specific
-php reli rmem:viz output.rmem -o /tmp/viz.html
+reli rmem:viz output.rmem -o /tmp/viz.html
 ```
 
 ### Options
@@ -255,11 +255,11 @@ channel** so browsers stay in sync with each other and with any TUI
 / MCP client that joins the bus.
 
 ```bash
-php reli rmem:live output.rmem
+reli rmem:live output.rmem
 # listening on tcp://127.0.0.1:8080 — open http://127.0.0.1:8080/ in a browser
 
 # Larger subgraph, wider-open network
-php reli rmem:live output.rmem --port 18080 --host 0.0.0.0 --top 2000
+reli rmem:live output.rmem --port 18080 --host 0.0.0.0 --top 2000
 ```
 
 ### Options
@@ -302,21 +302,21 @@ Persistent headless query server. Loads the `.rmem` file once and
 serves queries over a Unix domain socket.
 
 ```bash
-php reli rmem:serve output.rmem
+reli rmem:serve output.rmem
 # serving on /run/user/1000/reli/rmem-serve/a1b2c3d4.sock
 
 # With custom socket path
-php reli rmem:serve output.rmem --socket=/tmp/my-rmem.sock
+reli rmem:serve output.rmem --socket=/tmp/my-rmem.sock
 
 # Auto-shutdown after 30 minutes of inactivity
-php reli rmem:serve output.rmem --timeout=1800
+reli rmem:serve output.rmem --timeout=1800
 ```
 
 ### Querying
 
 ```bash
 # Using rmem:query CLI
-php reli rmem:query --server=sock:/run/user/.../a1b2c3d4.sock
+reli rmem:query --server=sock:/run/user/.../a1b2c3d4.sock
 
 # Using socat
 echo '{"action":"query.roots"}' | socat - UNIX-CONNECT:/run/user/.../a1b2c3d4.sock
@@ -360,16 +360,16 @@ use the tools automatically.
 
 ```bash
 # Headless mode: loads .rmem in-process
-php reli rmem:mcp --rmem=output.rmem
+reli rmem:mcp --rmem=output.rmem
 
 # Connect to existing server
-php reli rmem:mcp --socket=/path/to/sock
+reli rmem:mcp --socket=/path/to/sock
 
 # With TUI control (requires explore --serve --serve-control)
-php reli rmem:mcp --socket=/path/to/sock --control
+reli rmem:mcp --socket=/path/to/sock --control
 
 # With HTTP bridge (so AI navigation lights up every connected browser)
-php reli rmem:mcp --rmem=output.rmem --bridge=http://127.0.0.1:8080
+reli rmem:mcp --rmem=output.rmem --bridge=http://127.0.0.1:8080
 ```
 
 ### Claude Code integration

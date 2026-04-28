@@ -357,7 +357,7 @@ For CLI:
 echo '{"action":"query.children","node_id":123}' | \
   nc -U $XDG_RUNTIME_DIR/reli/rmem-serve/abc123.sock
 
-php reli rmem:query --server=$XDG_RUNTIME_DIR/reli/rmem-serve/abc123.sock \
+reli rmem:query --server=$XDG_RUNTIME_DIR/reli/rmem-serve/abc123.sock \
   --node=123 --children
 ```
 

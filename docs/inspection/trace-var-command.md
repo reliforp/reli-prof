@@ -50,7 +50,7 @@ common runtime and target requirements. No command-specific overrides apply.
 
 `--trace-var` takes **exactly the same expression grammar** as
 `inspector:peek-var --var` — see the full reference in
-[docs/peek-var-command.md](peek-var-command.md#variable-specification). In
+[peek-var-command.md § Variable Specification](peek-var-command.md#variable-specification). In
 short:
 
 | Scope | Syntax | What it reads |
@@ -72,7 +72,7 @@ Nested array keys and object properties use the same path syntax:
 The `memory::` scope exposes `memory_get_usage()` / `memory_get_peak_usage()`
 equivalents. Available names: `memory_get_usage`, `memory_get_peak_usage`,
 `memory_get_usage_real`, `memory_get_peak_usage_real`. See
-[docs/peek-var-command.md](peek-var-command.md#memory-scope) for details.
+[peek-var-command.md § Memory Scope](peek-var-command.md#memory-scope) for details.
 
 For `local::` and `func_static::`, the function name is **required**; use
 `<main>` for the top-level script scope.

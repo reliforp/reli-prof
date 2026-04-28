@@ -557,7 +557,7 @@ cost modest.)
 reli can find VM state from ZTS interpreters: daemon-mode traces
 of threads started via [ext-parallel](https://github.com/krakjoe/parallel)
 are captured automatically, which phpspy alone cannot do.
-`inspector:eg` exposes just the EG address so you can feed it to
+`inspector:eg_address` exposes just the EG address so you can feed it to
 phpspy manually for ZTS targets, and the
 [hybrid phpspy mode](tracing/phpspy-hybrid.md) (`phpspy:trace` /
 `phpspy:daemon`) combines reli's ZTS-aware EG resolution with

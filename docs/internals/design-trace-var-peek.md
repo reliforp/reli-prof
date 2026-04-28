@@ -200,7 +200,7 @@ Payload:
 event after the `SAMPLE` / `COMPACT_SAMPLE`. The annotation values are
 interned through the segment's `STRING_DEF` table, so repeated values
 (e.g. the same SQL query across many samples) cost only one pair of varints
-per sample after the first. See `docs/binary-trace-format.md` §SAMPLE_ANNOTATION
+per sample after the first. See `docs/tracing/binary-trace-format.md` §SAMPLE_ANNOTATION
 for the full spec.
 
 ### Impact on REPEAT_SAMPLE (RLE)
@@ -390,7 +390,7 @@ Two changes:
    (`src/Converter/BinaryTrace/BinaryTraceWriter.php:193`) — accept
    `?array $annotations = null` and emit `SAMPLE_ANNOTATION` right after
    `writePidSample()`. The rbt spec explicitly allows `SAMPLE_ANNOTATION`
-   to follow `PID_SAMPLE` (see `docs/binary-trace-format.md`
+   to follow `PID_SAMPLE` (see `docs/tracing/binary-trace-format.md`
    §SAMPLE_ANNOTATION). `writePidSample()` does not participate in the
    RLE / run-length path, so the annotation logic is a straight append —
    no pending-run state to reason about.
@@ -536,10 +536,10 @@ sample. The worker then proceeds to the next attach cycle.
 - phpspy varpeek format — upstream `phpspy` emits `# key = value` comment
   lines inside each sample block; reli-prof's parser already treats any
   `#`-prefixed token as a comment (`src/Converter/PhpSpyCompatibleParser.php:47`).
-- `docs/binary-trace-format.md` §SAMPLE_ANNOTATION — authoritative definition
+- `docs/tracing/binary-trace-format.md` §SAMPLE_ANNOTATION — authoritative definition
   of event `0x0B`.
-- `docs/peek-var-command.md` — variable expression grammar.
-- `docs/watch-command.md#variable-value-watch-var` — the same grammar in the
+- `docs/inspection/peek-var-command.md` — variable expression grammar.
+- `docs/monitoring/watch-command.md#variable-value-watch-var` — the same grammar in the
   watch context.
 - `docs/internals/php-variable-reading.md` — how `VariableReader` walks Zend
   structures.
