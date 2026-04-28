@@ -190,9 +190,14 @@ final class MemoryLocationsCollector
         $captured_bytes = $walked_chunk_bytes + $cached_chunks_size + $huge_total_bytes;
         if ($memory_get_usage_real_size > 0 && $captured_bytes < $memory_get_usage_real_size * 0.5) {
             $walked_mb = number_format($walked_chunk_bytes / 1024 / 1024, 1);
+            $cached_mb = number_format($cached_chunks_size / 1024 / 1024, 1);
+            $huge_mb = number_format($huge_total_bytes / 1024 / 1024, 1);
+            $captured_mb = number_format($captured_bytes / 1024 / 1024, 1);
             $real_mb = number_format($memory_get_usage_real_size / 1024 / 1024, 1);
-            fwrite(STDERR, "WARNING: ZendMM chunk walk incomplete — found {$walked_mb} MB"
-                . " in {$walked_chunk_count} chunks, but real_size is {$real_mb} MB."
+            fwrite(STDERR, "WARNING: ZendMM chunk walk incomplete — captured {$captured_mb} MB"
+                . " ({$walked_mb} MB in {$walked_chunk_count} chunks"
+                . " + {$cached_mb} MB cached + {$huge_mb} MB huge),"
+                . " but real_size is {$real_mb} MB."
                 . " Some chunks may be outside the dump region.\n");
         }
 
