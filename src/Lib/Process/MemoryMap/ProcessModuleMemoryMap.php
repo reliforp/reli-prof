@@ -28,6 +28,7 @@ final class ProcessModuleMemoryMap implements ProcessModuleMemoryMapInterface
     #[\Override]
     public function getBaseAddress(): int
     {
+        $this->assertNotEmpty(__FUNCTION__);
         if (!isset($this->base_address)) {
             $base_address = PHP_INT_MAX;
             foreach ($this->memory_areas as $memory_area) {
@@ -41,6 +42,7 @@ final class ProcessModuleMemoryMap implements ProcessModuleMemoryMapInterface
     #[\Override]
     public function getMemoryAddressFromOffset(int $offset): int
     {
+        $this->assertNotEmpty(__FUNCTION__);
         $ranges = $this->getSortedOffsetToMemoryAreaMap();
         $file_offset_decided = 0;
         foreach ($ranges as $file_offset => $_memory_begin) {
@@ -79,18 +81,46 @@ final class ProcessModuleMemoryMap implements ProcessModuleMemoryMapInterface
     #[\Override]
     public function getDeviceId(): string
     {
+        $this->assertNotEmpty(__FUNCTION__);
         return $this->memory_areas[0]->device_id;
     }
 
     #[\Override]
     public function getInodeNumber(): int
     {
+        $this->assertNotEmpty(__FUNCTION__);
         return $this->memory_areas[0]->inode_num;
     }
 
     #[\Override]
     public function getModuleName(): string
     {
+        $this->assertNotEmpty(__FUNCTION__);
         return $this->memory_areas[0]->name;
+    }
+
+    /**
+     * Refuse access on a regex-mismatched (empty) map. The original symptom
+     * was "Undefined array key 0" / "Attempt to read property on null"
+     * warnings followed by a TypeError from getDeviceId() when a too-broad
+     * regex picked up a non-PHP candidate. Surfacing as a single catchable
+     * \RuntimeException lets the existing catch (\Throwable) sites in
+     * BinaryFingerprintCreator / ProcessDescriptorRetriever continue
+     * filtering those candidates out without reading their entire
+     * executable file -- accessors are gated rather than the constructor
+     * because the construct-then-fingerprint flow relies on the
+     * catch (\Throwable) downstream to reject the candidate.
+     */
+    private function assertNotEmpty(string $caller): void
+    {
+        if ($this->memory_areas === []) {
+            throw new \RuntimeException(
+                sprintf(
+                    'ProcessModuleMemoryMap::%s called on a map with no memory areas;'
+                    . ' the regex used to filter /proc/{pid}/maps matched nothing',
+                    $caller,
+                ),
+            );
+        }
     }
 }
