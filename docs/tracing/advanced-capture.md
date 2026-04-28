@@ -72,6 +72,15 @@ Native frames are labeled with `[native]:0` and show
 `execute_ex`, reflecting that all PHP execution happens inside the
 VM's opcode dispatcher.
 
+> **Stop-process is required.** Native unwinding needs the target's
+> register state (`ptrace(PTRACE_GETREGS)`), which is only available
+> while the target is `SIGSTOP`-ped. `--with-native-trace` /
+> `--native-trace-anytime` therefore implicitly enable
+> `--stop-process` (`-S`) and reli prints
+> `Implicitly enabling --stop-process (-S).` on startup. There is no
+> non-stop variant; if you cannot afford the per-sample stop, leave
+> the flag off and capture PHP-only frames.
+
 Capture to `.rbt` and analyse interactively:
 
 ```bash
@@ -90,6 +99,15 @@ $ ./reli converter:flamegraph <trace.rbt >flame_native.svg
 - **JIT-compiled function names** resolve via `/tmp/perf-<pid>.map`
   when the target has `opcache.jit_debug=0x10` (see the JIT section
   below).
+
+> Distro-built PHP binaries (e.g. Debian / Ubuntu `php8.X-cli`) only
+> export a small set of symbols in `.dynsym`. The internal call
+> implementations of standard library functions (`zif_usleep`,
+> `zif_strlen`, …) and most engine internals are **not** exported,
+> so they show up as `php8.X::0x<address> [native]:0` rather than
+> the symbolic names in the example above. Install the matching
+> `php8.X-dbgsym` / `-debuginfo` package to get full coverage; the
+> example above was captured against a debug-symbol-equipped PHP.
 
 ### Native traces during interpreter init / shutdown
 
