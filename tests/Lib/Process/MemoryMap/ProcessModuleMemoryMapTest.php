@@ -77,6 +77,45 @@ class ProcessModuleMemoryMapTest extends BaseTestCase
         );
     }
 
+    public function testEmptyMemoryAreasThrowsCatchableException(): void
+    {
+        // When the regex used to filter /proc/{pid}/maps matches no module
+        // (e.g. user passing --php-regex='libphp\.so$' against a CLI binary,
+        // or daemon searcher feeding a non-PHP candidate that a too-broad
+        // --target-regex picked up), every accessor that has to look at a
+        // memory area must throw a single catchable exception rather than
+        // emit "Undefined array key 0" / "Attempt to read property on null"
+        // warnings followed by a TypeError, OR silently fall back to a
+        // PHP_INT_MAX base address. ProcessDescriptorRetriever::
+        // getProcessDescriptor already catch (\Throwable) and skips the
+        // candidate, so this shape preserves the implicit "non-PHP
+        // candidate" filter while dropping the noisy warning chain.
+        $map = new ProcessModuleMemoryMap([]);
+        $accessors = [
+            'getDeviceId' => [],
+            'getInodeNumber' => [],
+            'getModuleName' => [],
+            'getBaseAddress' => [],
+            'getMemoryAddressFromOffset' => [0],
+        ];
+        foreach ($accessors as $method => $args) {
+            try {
+                $map->$method(...$args);
+                $this->fail("$method must throw on an empty map");
+            } catch (\RuntimeException $e) {
+                $this->assertStringContainsString('no memory areas', $e->getMessage());
+            }
+        }
+    }
+
+    public function testIsInRangeIsSafeOnEmptyMap(): void
+    {
+        // isInRange is a pure scan, so it can answer without looking at any
+        // particular area. Empty map means "no address is in range".
+        $map = new ProcessModuleMemoryMap([]);
+        $this->assertFalse($map->isInRange(0x10000000));
+    }
+
     public function testIsInRange()
     {
         $process_module_memory_map = new ProcessModuleMemoryMap(
