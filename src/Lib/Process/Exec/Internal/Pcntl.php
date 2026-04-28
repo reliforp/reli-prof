@@ -39,4 +39,9 @@ final class Pcntl
     {
         return \pcntl_wstopsig($status);
     }
+
+    public function kill(int $process_id, int $signal): bool
+    {
+        return \posix_kill($process_id, $signal);
+    }
 }

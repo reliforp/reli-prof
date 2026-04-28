@@ -70,9 +70,14 @@ exact moment the application reports it's dying:
 
 ```bash
 # Start the sidecar (foreground; wrap in systemd / supervisor / a
-# Kubernetes sidecar container in real deployments)
+# Kubernetes sidecar container in real deployments).
+# The sidecar refuses to bind unless the socket's parent directory
+# is mode 0700 and owned by the current uid; on systemd hosts the
+# default $XDG_RUNTIME_DIR/reli already satisfies this so the
+# --socket flag can be omitted. Otherwise prepare a 0700 dir first.
+mkdir -p /var/run/reli && chmod 0700 /var/run/reli
 reli inspector:sidecar \
-    --socket=/tmp/reli-sidecar.sock \
+    --socket=/var/run/reli/sidecar.sock \
     --output-dir=/tmp/reli-dumps
 ```
 

@@ -757,8 +757,8 @@ reli converter:rbt < trace.txt > trace.rbt
 reli rbt:recover < corrupted.rbt > recovered.rbt
 reli rbt:recover -f phpspy < corrupted.rbt > recovered.txt
 
-# Flamegraph (phpspy input only, pipes through perl scripts)
-reli converter:flamegraph < trace.txt > graph.svg
+# Flamegraph (auto-detects rbt or phpspy input; pipes through Brendan Gregg's perl scripts)
+reli converter:flamegraph < trace.rbt > graph.svg
 ```
 
 ### Analyzing `.rbt` traces in the terminal
