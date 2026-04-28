@@ -248,6 +248,15 @@ the HTML itself:
 | three.js | 0.150.1 | MIT |
 | 3d-force-graph | 1.73.0 | MIT |
 
+> **Network access required when opening the HTML.** The generated
+> `<file>.viz.html` references the libraries above by `https://unpkg.com/...`
+> URLs. On an air-gapped host or a browser without internet access
+> the page renders an empty canvas (no errors, just blank panels).
+> If you need offline viewing, mirror the three scripts to a local
+> path and rewrite the `<script src="...">` tags in the emitted
+> HTML, or run `rmem:live` instead and serve over a private network
+> from a host that can reach unpkg.
+
 ## rmem:live
 
 Same viz as `rmem:viz`, but served over HTTP with a **live SSE event
@@ -315,8 +324,8 @@ reli rmem:serve output.rmem --timeout=1800
 ### Querying
 
 ```bash
-# Using rmem:query CLI
-reli rmem:query --server=sock:/run/user/.../a1b2c3d4.sock
+# Using rmem:query CLI (--server takes the bare socket path)
+reli rmem:query --server=/run/user/.../a1b2c3d4.sock --node=12345
 
 # Using socat
 echo '{"action":"query.roots"}' | socat - UNIX-CONNECT:/run/user/.../a1b2c3d4.sock

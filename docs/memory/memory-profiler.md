@@ -103,34 +103,34 @@ And the output is like below. The target process is [psalm](https://github.com/v
     ],
     "location_types_summary": {
         "ZendObjectMemoryLocation": {
-            "location_count": 124341,
+            "count": 124341,
             "memory_usage": 45245784
         },
         "ZendArrayTableOverheadMemoryLocation": {
-            "location_count": 108548,
+            "count": 108548,
             "memory_usage": 21204736
         },
         "ZendArrayTableMemoryLocation": {
-            "location_count": 109462,
+            "count": 109462,
             "memory_usage": 17964240
         },
         "ZendStringMemoryLocation": {
-            "location_count": 242532,
+            "count": 242532,
             "memory_usage": 16149456
         },
 <--- snip --->
     "class_objects_summary": {
         "Psalm\\CodeLocation": {
             "count": 32875,
-            "total_size": 13413000
+            "memory_usage": 13413000
         },
         "Psalm\\Type\\Union": {
             "count": 24924,
-            "total_size": 12960480
+            "memory_usage": 12960480
         },
         "Psalm\\Internal\\MethodIdentifier": {
             "count": 8838,
-            "total_size": 636336
+            "memory_usage": 636336
         },
 <--- snip --->
     "context": {

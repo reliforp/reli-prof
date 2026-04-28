@@ -129,11 +129,31 @@ sudo php ./reli inspector:daemon -P "^php-fpm" -F rbt -o ./traces/
 Useful flags (in addition to the `inspector:trace` set):
 
 - `-P/--target-regex <regex>` (required)
-- `-T/--threads <N>` — worker pool size
+- `-T/--threads <N>` — worker pool size (default 8)
 
 Output modes for `.rbt` come in two flavours: per-worker files
 (`-F rbt -o <dir>/`) which each worker writes independently, or a
 single bundled stream. See [binary-trace-format.md](binary-trace-format.md).
+
+### Sizing `-T`
+
+Workers are reli's tracer threads, not target threads. Match `-T`
+roughly to the number of target processes you expect the regex to
+match concurrently:
+
+- **Workers > matched targets**: idle workers stay parked. With
+  `-F rbt -o <dir>/` they still create their `worker_<pid>.rbt`
+  output files, so directories will contain 0-byte files for the
+  idle workers (harmless, but `find <dir> -size 0 -delete` cleans
+  up after a run if it bothers downstream tooling).
+- **Workers < matched targets**: surplus matches share workers
+  round-robin. Each worker can sample multiple targets, but the
+  effective per-target rate drops with the share count. For dense
+  pools (php-fpm with many children, FrankenPHP worker arrays),
+  raise `-T` until each worker handles a small handful of targets.
+- **Default 8** is sized for "medium pool" cases. A 64-worker
+  php-fpm pool will under-cover at the default; a single-target
+  smoke test will leave 7 workers idle.
 
 ## `inspector:top`
 
