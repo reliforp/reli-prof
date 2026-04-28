@@ -18,7 +18,10 @@ use Reli\Inspector\Output\MemoryOutput\BinaryMemoryOutput;
 use Reli\Inspector\Output\MemoryOutput\Report\ReportGenerator;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendMmChunkMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 use Reli\Lib\Process\MemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
@@ -363,6 +366,79 @@ class BinaryFormatRoundTripTest extends TestCase
         // All children should include node 2
         $all_children = $substrate->getChildren(1);
         $this->assertContains(2, $all_children);
+    }
+
+    /**
+     * Regression for "BinaryMemoryOutput does not support the non-streaming
+     * output() path": MemoryCommand needs to compute region sums + overhead
+     * directly from the binary sink (no SQLite intermediate exists in the
+     * binary path), so the helper must scan the location temp file and
+     * surface both per-region size sums and the total bin_overhead.
+     */
+    public function testComputeRegionSumsAndOverheadFromBinarySink(): void
+    {
+        $chunk_locations = new MemoryLocations();
+        $chunk_locations->add(new ZendMmChunkMemoryLocation(0x1000, 0x10000));
+        $huge_locations = new MemoryLocations();
+        $huge_locations->add(new ZendMmChunkMemoryLocation(0x200000, 0x10000));
+        $vm_stack_locations = new MemoryLocations();
+        $compiler_arena_locations = new MemoryLocations();
+
+        $region_boundaries = new RegionBoundaries(
+            $chunk_locations,
+            $huge_locations,
+            $vm_stack_locations,
+            $compiler_arena_locations,
+        );
+
+        $sink = new BinaryContextTreeSink($region_boundaries, batch_size: 10);
+
+        // Two locations inside the chunk → zend_mm_heap, sizes 100 + 50
+        $sink->emitNode(
+            node_id: 1,
+            parent_node_id: null,
+            link_name: 'in_chunk_a',
+            type: 'TypeA',
+            locations: [new MemoryLocation(0x1100, 100)],
+            attributes: [],
+        );
+        $sink->emitNode(
+            node_id: 2,
+            parent_node_id: 1,
+            link_name: 'in_chunk_b',
+            type: 'TypeB',
+            locations: [new MemoryLocation(0x2000, 50)],
+            attributes: [],
+        );
+        // One location inside the huge block, size 4096
+        $sink->emitNode(
+            node_id: 3,
+            parent_node_id: null,
+            link_name: 'in_huge',
+            type: 'TypeC',
+            locations: [new MemoryLocation(0x200500, 4096)],
+            attributes: [],
+        );
+        // One location outside any tracked region — should be dropped
+        $sink->emitNode(
+            node_id: 4,
+            parent_node_id: null,
+            link_name: 'outside',
+            type: 'TypeD',
+            locations: [new MemoryLocation(0xDEAD0000, 32)],
+            attributes: [],
+        );
+
+        $result = $sink->computeRegionSumsAndOverhead();
+
+        $this->assertSame(150, $result['sums']['zend_mm_heap'] ?? null);
+        $this->assertSame(4096, $result['sums']['zend_mm_huge'] ?? null);
+        // RegionBoundaries returns 'outside' for unclassified addresses;
+        // the helper interns whatever region_boundaries hands back so the
+        // 'outside' bucket is surfaced verbatim — do not silently drop it.
+        $this->assertSame(32, $result['sums']['outside'] ?? null);
+        // No ZendMmChunk attached to the test chunk → bin overhead stays 0.
+        $this->assertSame(0, $result['overhead']);
     }
 
     public function testGenerateFromBinaryIncludesDedupCandidate(): void
