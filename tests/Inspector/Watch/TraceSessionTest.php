@@ -14,6 +14,8 @@ declare(strict_types=1);
 namespace Reli\Inspector\Watch;
 
 use PHPUnit\Framework\TestCase;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallFrame;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 
 class TraceSessionTest extends TestCase
 {
@@ -107,5 +109,44 @@ class TraceSessionTest extends TestCase
         $this->assertNotNull($path);
         $this->assertFileExists($path);
         $session->stop();
+    }
+
+    public function testEmptySessionLeavesNoArtifact(): void
+    {
+        // Reproducer for the watch + --on-enter=trace + --oneshot=N
+        // race: ENTER opens the trace file but the watch loop terminates
+        // before any sample reaches recordSample(). The .rbt header is
+        // never written, so without cleanup the file would be left at
+        // zero bytes in the action-output-dir.
+        $session = new TraceSession($this->tmpdir);
+        $session->start(1234, 1700000000.0);
+        $path = $session->getCurrentPath();
+        $this->assertNotNull($path);
+        $this->assertFileExists($path);
+
+        $session->stop();
+
+        $this->assertFileDoesNotExist($path);
+        $this->assertNull($session->getCurrentPath());
+    }
+
+    public function testRecordedSessionKeepsFile(): void
+    {
+        $session = new TraceSession($this->tmpdir);
+        $session->start(1234, 1700000000.0);
+        $path = $session->getCurrentPath();
+        $this->assertNotNull($path);
+
+        $session->recordSample(
+            new CallTrace(
+                new CallFrame('App', 'run', '/app.php', null),
+            ),
+        );
+
+        $session->stop();
+
+        $this->assertFileExists($path);
+        $this->assertGreaterThan(0, \filesize($path));
+        $this->assertSame($path, $session->getCurrentPath());
     }
 }

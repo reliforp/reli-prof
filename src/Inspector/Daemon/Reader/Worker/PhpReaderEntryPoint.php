@@ -49,6 +49,10 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
 
         $output_settings = $set_settings_message->output_settings;
         $use_binary_direct = $output_settings !== null && $output_settings->isBinaryTrace();
+        $binary_output_dir = $use_binary_direct ? $output_settings->output_path : null;
+        if ($use_binary_direct && $output_settings->rbt_compress) {
+            $this->compress = true;
+        }
 
         // Derive sampling period from loop settings (ns → µs)
         $sampling_period_us = (int)(
@@ -58,18 +62,24 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
             $sampling_period_us = 10000;
         }
 
-        // Open the output file once; segments share the stream
-        if ($use_binary_direct && $output_settings->output_path !== null) {
-            $this->compress = $output_settings->rbt_compress;
-            $this->openBinaryStream($output_settings->output_path);
-        }
-
         $this->installSignalHandler();
 
         while ($this->loop_condition->shouldContinue()) {
             $attach_message = $this->protocol->receiveAttach();
             Log::debug('attach_message', [$attach_message]);
             $pid = $attach_message->process_descriptor->pid;
+
+            // Open the output file lazily on the first attach. Workers
+            // spawned in excess of the active target count never reach
+            // this point, so they don't leave behind a zero-byte
+            // worker_<pid>.rbt artifact in the output directory.
+            if (
+                $use_binary_direct
+                && $this->binary_stream === null
+                && $binary_output_dir !== null
+            ) {
+                $this->openBinaryStream($binary_output_dir);
+            }
 
             // Start a new self-contained segment for this attach.
             // A fresh BinaryTraceWriter resets frame/stack intern state.
