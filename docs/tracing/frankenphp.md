@@ -103,16 +103,10 @@ A few realities on FrankenPHP that the snippet above is built around:
   attaches against the same FrankenPHP process skip the
   brute-force scan and read the cached offset directly, but the
   attach still only succeeds against workers whose
-  `_tsrm_ls_cache` slot has actually been populated. Whether
-  idle (never-served-a-request) workers have a populated slot
-  varies by FrankenPHP build: on some builds the slot is set at
-  thread startup and the cached offset is enough, on others
-  (observed on `dunglas/frankenphp:latest` with PHP 8.5.5) the
-  slot stays zero until the worker handles its first request and
-  cold attaches keep failing per-thread. If you hit the
-  uninitialised-slot error against a thread that has never
-  served a request, push traffic through that worker first
-  regardless of cache state.
+  `_tsrm_ls_cache` slot has actually been populated. A
+  never-served-a-request worker may still fail with the
+  uninitialised-slot error even with a warm cache; recovery is
+  the same — push traffic through that worker first.
 
   TSRM resolving is not the same as having something to look at:
   `inspector:memory:dump` against a TSRM-resolved cold worker in
