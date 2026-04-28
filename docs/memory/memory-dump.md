@@ -20,7 +20,7 @@ php ./reli inspector:memory:report snapshot.rmem
 
 `-f sqlite3` is also supported by `inspector:memory:analyze` / `inspector:memory:report` /
 `inspector:memory:compare` if you want to query with SQL tools, but `rmem:explore`,
-`rmem:serve`, and `rmem:mcp` read `.rmem` only.
+`rmem:query`, `rmem:serve`, and `rmem:mcp` read `.rmem` only.
 
 ## How it works
 

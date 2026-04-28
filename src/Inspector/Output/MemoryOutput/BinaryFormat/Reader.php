@@ -110,7 +110,14 @@ final class Reader
 
         $magic = substr($headerBytes, 0, 4);
         if ($magic !== Format::MAGIC) {
-            throw new \RuntimeException('Invalid rmem magic: ' . bin2hex($magic));
+            $message = 'Invalid rmem magic: ' . bin2hex($magic);
+            if (str_starts_with($headerBytes, "SQLite format 3\x00")) {
+                $message .= ' (this looks like a SQLite file — re-capture with'
+                    . ' `-f binary -o snapshot.rmem`, or convert an existing dump'
+                    . ' with `inspector:memory:analyze <dump> -f binary -o snapshot.rmem`;'
+                    . ' see docs/troubleshooting.md)';
+            }
+            throw new \RuntimeException($message);
         }
 
         $version = unpack('V', $headerBytes, 4)[1];

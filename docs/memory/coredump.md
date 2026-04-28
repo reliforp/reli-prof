@@ -48,8 +48,8 @@ $ php ./reli rmem:explore snapshot.rmem
 
 `-f sqlite3` is also supported if you want to query the same snapshot
 with SQL tools — `inspector:memory:report` / `inspector:memory:compare`
-accept either format. `rmem:explore`, `rmem:serve`, and `rmem:mcp`
-read `.rmem` only.
+accept either format. `rmem:explore`, `rmem:query`, `rmem:serve`,
+and `rmem:mcp` read `.rmem` only.
 
 The output of `inspector:coredump` uses the same
 [`MemoryProfilerSettings`](../../src/Inspector/Settings/MemoryProfilerSettings/MemoryProfilerSettingsFromConsoleInput.php)
@@ -59,7 +59,7 @@ Which downstream tool you can feed depends on the format:
 
 - `inspector:memory:report` and `inspector:memory:compare` accept
   `.rmem` (binary) or SQLite (`.db` / `.sqlite`).
-- `rmem:explore`, `rmem:serve`, and `rmem:mcp` require `.rmem`.
+- `rmem:explore`, `rmem:query`, `rmem:serve`, and `rmem:mcp` require `.rmem`.
 
 ## Arguments and options
 
