@@ -57,10 +57,10 @@ sudo php ./reli phpspy:trace -p <zts-pid>
 ```
 
 If you only need the EG address (e.g. you want to invoke phpspy
-yourself with a custom workflow), use `inspector:eg`:
+yourself with a custom workflow), use `inspector:eg_address`:
 
 ```bash
-sudo php ./reli inspector:eg -p <zts-pid>
+sudo php ./reli inspector:eg_address -p <zts-pid>
 # 0x555ae7825d80
 ```
 

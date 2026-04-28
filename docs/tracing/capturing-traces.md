@@ -15,7 +15,7 @@ tracing backend, [phpspy-hybrid.md](phpspy-hybrid.md).
 | `inspector:trace` | Sample one process (by `-p <pid>`) or spawn one and sample it |
 | `inspector:daemon` | Concurrently sample every process whose command-line matches a regex |
 | `inspector:top` | UNIX-`top`-style live aggregated view across matching processes |
-| `inspector:eg` | Just the EG address (e.g. to feed phpspy manually) |
+| `inspector:eg_address` | Just the EG address (e.g. to feed phpspy manually) |
 
 All four require `CAP_SYS_PTRACE` on the reli process (running as
 root is usually enough).
@@ -148,7 +148,7 @@ Flags are the regex/pool subset of `inspector:daemon`:
 `-P/--target-regex`, `-T/--threads`, `-d/--depth`, `-s/--sleep-ns`,
 `--with-native-trace`.
 
-## `inspector:eg`
+## `inspector:eg_address`
 
 Just the EG address, no sampling. Useful if you want to feed phpspy
 manually, or script an integration that needs to bootstrap phpspy
@@ -156,7 +156,7 @@ itself with an EG address (which phpspy alone cannot resolve for
 ZTS):
 
 ```bash
-$ sudo php ./reli inspector:eg -p <pid>
+$ sudo php ./reli inspector:eg_address -p <pid>
 0x555ae7825d80
 ```
 

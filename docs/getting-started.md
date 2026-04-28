@@ -114,6 +114,13 @@ composer install
 > The rest of this page uses **`reli`** as the command name, matching
 > the Docker-wrapper install above. On a native checkout (Composer or
 > Git) the equivalent command is `./reli` — substitute as you read.
+>
+> The `./reli` shebang is `#!/usr/bin/env php`, so the `php` on your
+> `PATH` must be **8.5+**. On distros that ship an older default
+> (e.g. Ubuntu with `php8.4-cli` from deadsnakes/sury), either install
+> `php8.5-cli` and switch the default — `sudo update-alternatives
+> --set php /usr/bin/php8.5` — or invoke explicitly with
+> `php8.5 ./reli ...`. The Docker wrapper sidesteps this entirely.
 
 ## 2. Smoke test
 

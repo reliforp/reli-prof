@@ -6,14 +6,24 @@ Unlike `inspector:watch` (polling-based monitoring), the sidecar responds to **e
 
 ## Quick Start
 
-**Start the sidecar** (uses the per-user systemd runtime dir, which is
-already mode 0700 on most distros — no setup needed):
+**Start the sidecar.** When `$XDG_RUNTIME_DIR` is set (interactive
+desktop / SSH login session under systemd), the default socket path
+sits inside the per-user runtime dir, which is already mode 0700 — no
+setup needed:
 
 ```bash
 mkdir -p /tmp/reli-dumps
 reli inspector:sidecar --output-dir=/tmp/reli-dumps
 # → [sidecar] Listening on /run/user/<uid>/reli/sidecar.sock
 ```
+
+If `$XDG_RUNTIME_DIR` isn't set (root shells outside a user session,
+basic Docker / systemd-nspawn containers, sandboxed CI environments),
+this command exits with `Cannot resolve default sidecar socket path`.
+Pre-create a 0700 parent directory you own and pass `--socket`
+explicitly — see the override block below — or set
+`$RELI_SIDECAR_SOCKET` to the same path so the application-side
+`MemoryLimitHandler` finds the daemon without further configuration.
 
 **In your PHP application (one line in bootstrap):**
 

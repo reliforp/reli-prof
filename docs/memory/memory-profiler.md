@@ -38,39 +38,22 @@ See [Getting started § Install](../getting-started.md#1-install) for the
 recommended install paths (Docker wrapper, Composer, Git).
 
 # Options
-```bash
-./reli inspector:memory --help
-Description:
-  get memory usage from an outer process
 
-Usage:
-  inspector:memory [options] [--] [<cmd> [<args>...]]
+`./reli inspector:memory --help` is the source of truth for the full
+flag list and defaults. The flags you most often reach for:
 
-Arguments:
-  cmd                                                                command to execute as a target: either pid (via -p/--pid) or cmd must be specified
-  args                                                               command line arguments for cmd
-
-Options:
-      --stop-process|--no-stop-process                               stop the process while inspecting (default: on)
-      --pretty-print|--no-pretty-print                               pretty print the result (default: off)
-      --memory-limit-error-file=MEMORY-LIMIT-ERROR-FILE              file path where memory_limit is exceeded
-      --memory-limit-error-line=MEMORY-LIMIT-ERROR-LINE              line number where memory_limit is exceeded
-      --memory-limit-error-max-depth[=MEMORY-LIMIT-ERROR-MAX-DEPTH]  max attempts to trace back the VM stack on memory_limit error [default: 512]
-  -p, --pid=PID                                                      process id
-      --php-regex[=PHP-REGEX]                                        regex to find the php binary loaded in the target process
-      --libpthread-regex[=LIBPTHREAD-REGEX]                          regex to find the libpthread.so loaded in the target process
-      --php-version[=PHP-VERSION]                                    php version (auto|v7[0-4]|v8[012345]) of the target (default: auto)
-      --php-path[=PHP-PATH]                                          path to the php binary (only needed in tracing chrooted ZTS target)
-      --libpthread-path[=LIBPTHREAD-PATH]                            path to the libpthread.so (only needed in tracing chrooted ZTS target)
-  -h, --help                                                         Display help for the given command. When no command is given display help for the list command
-  -q, --quiet                                                        Do not output any message
-  -V, --version                                                      Display this application version
-      --ansi|--no-ansi                                               Force (or disable --no-ansi) ANSI output
-  -n, --no-interaction                                               Do not ask any interactive question
-      --memory-limit=MEMORY-LIMIT                                     set PHP memory_limit for analysis (e.g. 2G, 512M)
-  -v|vv|vvv, --verbose                                               Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug
-
-```
+- `-p, --pid <PID>` — target process id (or pass a `cmd` after `--` to spawn one)
+- `-f, --output-format <fmt>` — `json` (default), `sqlite3`, `binary` (`.rmem`),
+  `report`, `report-json`, `mysql`, `postgresql`. `binary` / `sqlite3` /
+  `mysql` / `postgresql` require `-o` (or `--db-*`).
+- `-o, --output <path>` — write to a file instead of stdout
+- `--pretty-print` — pretty-print the JSON output (default: off)
+- `--stop-process` / `--no-stop-process` — `SIGSTOP` the target during the read (default: on)
+- `--db-host` / `--db-port` / `--db-name` / `--db-user` / `--db-password` — destination for `mysql` / `postgresql` formats
+- `--memory-limit-error-file` / `--memory-limit-error-line` / `--memory-limit-error-max-depth` — focus analysis on a specific `memory_limit` site (used by `inspector:sidecar`)
+- `--php-regex` / `--libpthread-regex` / `--zts-globals-regex` / `--php-version` / `--php-path` / `--libpthread-path` — target binary discovery and version overrides (rarely needed; ZTS / chroot / unusual binary names)
+- `--no-cache` — bypass the binary analysis cache for this run
+- `--memory-limit <size>` — `ini_set('memory_limit', ...)` for the analyser itself, not the target
 
 # Usage
 > [!CAUTION]
