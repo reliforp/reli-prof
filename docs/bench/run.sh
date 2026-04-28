@@ -2,7 +2,7 @@
 # Benchmark orchestrator. Runs each script with each profiler config and
 # emits a CSV of (config, bench, run, target_wall_seconds).
 #
-# Run from repo root: bash bench/run.sh > bench/results/raw.csv
+# Run from repo root: bash docs/bench/run.sh > docs/bench/results/raw.csv
 set -euo pipefail
 
 EXTDIR="$(/usr/bin/php8.4 -r 'echo PHP_EXTENSION_DIR;')"

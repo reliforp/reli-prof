@@ -17,9 +17,9 @@ interactively:
 | `rmem:mcp` | MCP (Model Context Protocol) server for AI assistants |
 | `rmem:query` | One-shot CLI queries against a `.rmem` file or running server |
 
-All five UI surfaces (TUI, browser, AI) can be wired together over a
-single focus bus so that moving the cursor anywhere is reflected
-everywhere — see [§ Three-way focus bus](#three-way-focus-bus).
+The TUI, browser, and AI surfaces can be wired together over a single
+focus bus so that moving the cursor anywhere is reflected everywhere
+— see [§ Three-way focus bus](#three-way-focus-bus).
 
 ## rmem:explore
 

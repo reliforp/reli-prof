@@ -14,9 +14,9 @@
 #
 # Both run with opcache + tracing JIT enabled (the production
 # default). SPX is excluded because it produces wrong values under
-# tracing JIT (see bench/README.md).
+# tracing JIT (see docs/bench/README.md).
 #
-# Output: bench/results/realworld.csv
+# Output: docs/bench/results/realworld.csv
 set -euo pipefail
 
 EXTDIR="$(/usr/bin/php8.4 -r 'echo PHP_EXTENSION_DIR;')"

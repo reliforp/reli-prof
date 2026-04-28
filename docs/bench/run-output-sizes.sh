@@ -3,7 +3,7 @@
 # (Laravel route × 2000 dispatches). One run each — the order of
 # magnitude is what we want.
 #
-# Output: bench/results/output-sizes.csv
+# Output: docs/bench/results/output-sizes.csv
 set -uo pipefail
 
 EXTDIR="$(/usr/bin/php8.4 -r 'echo PHP_EXTENSION_DIR;')"
@@ -64,7 +64,7 @@ xdebug_size=$(stat -c %s /tmp/cachegrind.out.* 2>/dev/null | sort -rn | head -1)
 echo "xdebug-profile,laravel-route-${ITERS},${xdebug_size:-0},cachegrind"
 
 # ---- SPX default (full instrumentation) — JIT off because SPX
-# corrupts execution under tracing JIT (see bench/RESULTS.md).
+# corrupts execution under tracing JIT (see docs/bench/RESULTS.md).
 rm -rf /tmp/outsize-spx-dir && mkdir -p /tmp/outsize-spx-dir
 SPX_ENABLED=1 SPX_REPORT=full \
     /usr/bin/php8.4 -n $LARAVEL_EXTS \

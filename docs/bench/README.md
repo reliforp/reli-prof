@@ -38,21 +38,21 @@ process has its own CPU cost on top of the target's wall time.
 
 ```bash
 # Run from repo root.
-RUNS=3 bash bench/run.sh > bench/results/raw.csv 2>bench/results/run.log
-RUNS=3 bash bench/run-external.sh > bench/results/external.csv 2>bench/results/external.log
+RUNS=3 bash docs/bench/run.sh > docs/bench/results/raw.csv 2>docs/bench/results/run.log
+RUNS=3 bash docs/bench/run-external.sh > docs/bench/results/external.csv 2>docs/bench/results/external.log
 
 # Long targets (1-3s baseline, n=10) — better signal-to-noise, but
 # only for sampling/light tools (full instrumentation would take
 # 10+ minutes per cell).
-RUNS=10 bash bench/run-long.sh > bench/results/long.csv 2>bench/results/long.log
+RUNS=10 bash docs/bench/run-long.sh > docs/bench/results/long.csv 2>docs/bench/results/long.log
 
 # JIT-on suite (target opcache + tracing JIT, plus reli's own PHP
 # 8.5 JIT for the relijit row). Two-tier: light tools at long, heavy
 # tools at short. SPX is excluded under JIT — see "Profiler / JIT
 # compatibility quirks" below.
-RUNS_LIGHT=10 RUNS_HEAVY=3 bash bench/run-jit.sh > bench/results/jit.csv 2>bench/results/jit.log
+RUNS_LIGHT=10 RUNS_HEAVY=3 bash docs/bench/run-jit.sh > docs/bench/results/jit.csv 2>docs/bench/results/jit.log
 
-php -n bench/summarize.php bench/results/raw.csv bench/results/external.csv > bench/results/summary.txt
+php -n docs/bench/summarize.php docs/bench/results/raw.csv docs/bench/results/external.csv > docs/bench/results/summary.txt
 ```
 
 ## Setup pitfalls
@@ -113,7 +113,7 @@ explicitly enabled. The picture changes in two important ways:
   1271×.
 
 If you only cite one set of numbers, the JIT-on numbers
-(`bench/results/jit.csv`) are the more production-realistic
+(`docs/bench/results/jit.csv`) are the more production-realistic
 "what does this cost in a typical CLI / FPM configuration?"
 answer.
 
@@ -203,7 +203,7 @@ recording:
   [NoiseByNorthwest/php-spx#215](https://github.com/NoiseByNorthwest/php-spx/issues/215),
   noting that just *loading* SPX (even with `auto_start=0`) is
   enough to corrupt JIT execution. Reproducer in
-  `bench/run-jit.sh`'s comments. The JIT-on suite excludes SPX
+  `docs/bench/run-jit.sh`'s comments. The JIT-on suite excludes SPX
   as a result.
 
 For comparison, in our tests:

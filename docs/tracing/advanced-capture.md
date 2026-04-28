@@ -22,10 +22,10 @@ it differently:
   analysis with `./reli rbt:analyze --with-opcode < trace.rbt`, or
   press `c` inside `rbt:explore` to toggle the opcode column.
 - **phpspy text output**: opt in at capture time with
-  `--template=phpspy_with_opcode`:
+  `--output-format=template:phpspy_with_opcode`:
 
   ```bash
-  $ sudo php ./reli i:trace --template=phpspy_with_opcode -p <pid>
+  $ sudo php ./reli i:trace --output-format=template:phpspy_with_opcode -p <pid>
   0 <VM>::ZEND_ASSIGN <VM>:-1
   1 Mandelbrot::iterate /home/sji/work/test/mandelbrot.php:33:ZEND_ASSIGN
   2 Mandelbrot::__construct /home/sji/work/test/mandelbrot.php:12:ZEND_DO_FCALL

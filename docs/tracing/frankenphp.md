@@ -213,7 +213,7 @@ capture and then `usleep`s for a few seconds). For automated
 capture, prefer the condition-driven workflows that fire while a
 request is active by construction:
 
-- [`inspector:watch`](capturing-traces.md) with `--memory-usage`,
+- [`inspector:watch`](../monitoring/watch-command.md) with `--memory-usage`,
   `--watch-function`, `--cpu-usage` etc. plus `--action=memory-dump`
   polls the target and only triggers when the condition holds, so
   it naturally lands inside a request.

@@ -1,8 +1,16 @@
 # Troubleshooting
 
-## I get an error message "php module not found" and can't get a trace!
+## "regex used to filter /proc/{pid}/maps matched nothing" / "php module not found"
 
-If your PHP binary uses a non-standard binary name that does not end with `/php`, use the `--php-regex` option to specify the name of the executable (or shared object) that contains the PHP interpreter.
+Both of these surface the same root cause: reli's default `--php-regex` (`/php$`) did not match any module in the target's `/proc/<pid>/maps`. Distro builds with versioned binary names (`php8.4`, `php8.5`), embedded interpreters (FrankenPHP's `libphp.so`), and any other non-standard layout will hit this. Use `--php-regex` to specify the executable (or shared object) that contains the PHP interpreter:
+
+```bash
+# Debian/Ubuntu /usr/bin/php8.4 (or any versioned binary name)
+sudo php ./reli inspector:trace -p <pid> --php-regex='/usr/bin/php'
+
+# Inspect the target's maps if you're not sure what to match
+sudo cat /proc/<pid>/maps | grep -E 'r-xp.*\.so|/php'
+```
 
 For FrankenPHP specifically, PHP is loaded as `libphp.so` and pthread lives in `libc.so`; see [tracing/frankenphp.md](tracing/frankenphp.md) for the full set of flags (`--php-regex`, `--libpthread-regex`, `--target-thread-regex`).
 

@@ -15,7 +15,7 @@
 #     work is folded into the target's totals. Baseline (no profiler)
 #     measured the same way as a reference.
 #
-# Output: bench/results/cpu.csv
+# Output: docs/bench/results/cpu.csv
 #   columns: profiler, depth, run, target_wall, sampler_user, sampler_sys, sampler_rss_kb
 # (For in-process configs, "sampler_*" columns hold the target-process
 # numbers; subtract baseline to estimate sampler-side cost.)
