@@ -80,6 +80,8 @@ return [
     ProcessSearcherInterface::class => autowire(ProcessSearcher::class),
     Config::class => fn () => AppDirectory::loadConfig(__DIR__ . '/config.php'),
     TemplatePathResolverInterface::class => autowire(TemplatePathResolver::class),
+    VariableReader::class => autowire()
+        ->constructorParameter('heap_stats_reader', autowire(HeapStatsReader::class)),
     VariableReaderInterface::class => autowire(VariableReader::class)
         ->constructorParameter('heap_stats_reader', autowire(HeapStatsReader::class)),
     StateCollector::class => function (Container $container) {
