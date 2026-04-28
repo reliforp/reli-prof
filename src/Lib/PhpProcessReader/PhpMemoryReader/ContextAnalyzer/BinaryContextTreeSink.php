@@ -464,14 +464,15 @@ final class BinaryContextTreeSink implements ContextTreeSink
     }
 
     /**
-     * Compute per-region size sums and total bin_overhead by scanning
-     * the location temp file. Equivalent to RegionsSummary::queryRegionSums
-     * but operates directly on the binary location rows so the binary
-     * streaming path doesn't need a SQLite intermediate.
+     * Compute raw per-region size sums and total bin_overhead by scanning
+     * the binary location temp file.
      *
-     * Note: unlike the SQL variant, this does not deduplicate overlapping
-     * locations by address — the binary path has historically reported
-     * raw sums and that is what the existing tests assume.
+     * This is the binary streaming counterpart of
+     * RegionsSummary::queryRegionSums(), but it intentionally reports raw
+     * location-row sums: unlike the SQL variant it does not GROUP BY
+     * address / MAX(size) and does not skip overlapping locations. The
+     * binary report path has historically read these raw sums, and the
+     * existing tests assume that shape.
      *
      * @return array{sums: array<string, int>, overhead: int}
      */

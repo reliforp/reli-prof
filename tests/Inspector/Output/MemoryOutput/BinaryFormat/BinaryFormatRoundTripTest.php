@@ -419,7 +419,9 @@ class BinaryFormatRoundTripTest extends TestCase
             locations: [new MemoryLocation(0x200500, 4096)],
             attributes: [],
         );
-        // One location outside any tracked region — should be dropped
+        // One location outside any tracked region — RegionBoundaries
+        // returns 'outside' for it, so it should be surfaced under
+        // sums['outside'] rather than silently dropped.
         $sink->emitNode(
             node_id: 4,
             parent_node_id: null,
