@@ -676,6 +676,8 @@ reli inspector:daemon -F rbt --rbt-compress -o /path/to/output_dir/ ...
 - No raw `.rbt` data touches disk — only compressed data is written
 - Without `--rbt-compress`, output is raw `.rbt` per worker (default, best for recovery/tail)
 
+**Single-shot and bundled modes don't auto-suffix the filename.** Only daemon per-worker mode rewrites the extension, because there reli generates the per-worker filename itself (`worker_{pid}.rbt` → `worker_{pid}.rbt.gz`). In `inspector:trace` and `-F rbt-bundled`, `-o` is treated as the exact output path: `-o foo.rbt --rbt-compress` writes gzip content to a file named `foo.rbt`. `rbt:analyze` auto-detects gzip so the file still works, but external tools (`file`, `tar`) will see a `.rbt`-named gzip blob. Pass `-o foo.rbt.gz` explicitly if you want the extension to match the contents.
+
 ### When to use which
 
 | Format | Best for |
