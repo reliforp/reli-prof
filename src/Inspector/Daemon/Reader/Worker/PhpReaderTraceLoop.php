@@ -21,6 +21,7 @@ use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
 use Reli\Inspector\Watch\TraceVarPeekCollector;
 use Reli\Inspector\Watch\VariableReaderInterface;
+use Reli\Lib\PhpProcessReader\CallTraceReader\CallTrace;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader;
 use Reli\Lib\PhpProcessReader\CallTraceReader\TraceCache;
 use Reli\Lib\Process\ProcessSpecifier;
@@ -31,11 +32,24 @@ use function Reli\Lib\Defer\defer;
 
 final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
 {
+    /**
+     * Default number of consecutive ticks with no PHP frames the reader
+     * will tolerate before releasing the worker back to the pool. At
+     * the default 10 ms sample interval this is roughly 2 s — long
+     * enough to ride through the request boundary of a regular-mode
+     * (per-request) FrankenPHP / mod_php worker, short enough that a
+     * truly idle TID does not occupy a worker slot indefinitely.
+     * Worker-mode FrankenPHP and the like never observe null call
+     * traces and so never hit this budget.
+     */
+    public const int DEFAULT_IDLE_TICK_BUDGET = 200;
+
     public function __construct(
         private CallTraceReader $executor_globals_reader,
         private ReaderLoopProvider $reader_loop_provider,
         private ProcessStopper $process_stopper,
         private VariableReaderInterface $variable_reader,
+        private int $idle_tick_budget = self::DEFAULT_IDLE_TICK_BUDGET,
     ) {
     }
 
@@ -77,6 +91,15 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
         /** @var TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> */
         $target_php_settings = new TargetPhpSettings($target_process_descriptor->php_version);
 
+        // A null call trace from readCallTrace means "this thread has no
+        // PHP frames active right now" (current_execute_data == 0) — the
+        // normal state of a regular-mode FrankenPHP / mod_php worker
+        // between requests. Treat it as an idle sample rather than an
+        // error: yield an empty trace so the AsyncLoop keeps spinning,
+        // and only release the worker once we have stayed idle long
+        // enough that some other TID likely deserves the slot more.
+        $idle_streak = 0;
+
         $loop = $this->reader_loop_provider->getMainLoop(
             function () use (
                 $get_trace_settings,
@@ -87,6 +110,7 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
                 $cg_address,
                 $process_specifier,
                 $target_php_settings,
+                &$idle_streak,
             ): Generator {
                 if ($loop_settings->stop_process and $this->process_stopper->stop($target_process_descriptor->pid)) {
                     defer($_, fn () => $this->process_stopper->resume($target_process_descriptor->pid));
@@ -100,8 +124,28 @@ final class PhpReaderTraceLoop implements PhpReaderTraceLoopInterface
                     $trace_cache
                 );
                 if (is_null($call_trace)) {
+                    if (++$idle_streak > $this->idle_tick_budget) {
+                        // Signal release-this-worker via exception so the
+                        // outer AsyncLoop terminates cleanly. Returning
+                        // without yielding would deadlock the retry
+                        // middleware, which has no normal-completion exit.
+                        throw new IdleBudgetExceededException(
+                            sprintf(
+                                'TID %d stayed idle for %d ticks',
+                                $target_process_descriptor->pid,
+                                $this->idle_tick_budget,
+                            )
+                        );
+                    }
+                    // Empty CallTrace as a "ride through brief idle"
+                    // marker — PhpReaderEntryPoint drops it before any
+                    // writer sees it. We can't simply skip the yield:
+                    // a chain that returns without yielding deadlocks
+                    // RetryOnExceptionMiddlewareAsync's while loop.
+                    yield new TraceMessage(new CallTrace(), null, null);
                     return;
                 }
+                $idle_streak = 0;
                 $annotations = $var_peek_collector?->collect(
                     $call_trace,
                     $process_specifier,

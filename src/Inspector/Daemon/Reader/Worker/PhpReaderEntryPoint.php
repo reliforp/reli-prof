@@ -101,6 +101,17 @@ final class PhpReaderEntryPoint implements WorkerEntryPointInterface
                 );
                 Log::debug('start trace');
                 foreach ($loop_runner as $message) {
+                    if ($message->trace->call_frames === []) {
+                        // Idle ride-through marker from PhpReaderTraceLoop:
+                        // the target had no PHP frames in flight at this
+                        // tick. The yield exists only to keep the AsyncLoop
+                        // alive (the retry middleware deadlocks on a
+                        // chain that returns without yielding); drop it
+                        // before any writer or IPC sees it. Genuine idle
+                        // intervals show up as gaps between samples in
+                        // timestamped (--rbt-timestamps=delta) rbt output.
+                        continue;
+                    }
                     if ($use_binary_direct && $this->binary_writer !== null) {
                         // Per-worker rbt mode: annotations never leave the
                         // worker — they go straight into our own .rbt file.

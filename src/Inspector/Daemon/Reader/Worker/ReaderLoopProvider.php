@@ -36,7 +36,10 @@ final class ReaderLoopProvider
             ->addProcess(
                 ExitLoopOnSpecificExceptionMiddlewareAsync::class,
                 [
-                    [ProcessNotFoundException::class]
+                    [
+                        ProcessNotFoundException::class,
+                        IdleBudgetExceededException::class,
+                    ]
                 ]
             )
             ->addProcess(

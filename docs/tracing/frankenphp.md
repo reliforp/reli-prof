@@ -224,6 +224,29 @@ CLI-style invocations (`frankenphp php-cli script.php`) keep the
 worker in PHP for the whole script lifetime and avoid the regular-
 mode timing issue the same way worker mode does.
 
+### `inspector:daemon` against regular-mode FrankenPHP
+
+`inspector:daemon` works against regular-mode FrankenPHP, but only
+the moments when a worker is actually executing PHP produce samples.
+Between requests there are no PHP frames to record and reli emits
+nothing for those ticks — rbt and template output contain only real
+frames. Idle intervals therefore appear as gaps in the sample stream,
+not as zero-frame samples; if you need to attribute that gap to
+"worker was idle" vs "reli was reattaching", enable
+`--rbt-timestamps=delta` and cross-reference the timestamps with your
+access logs / APM. Worker mode keeps the worker on the PHP call
+stack continuously and so produces a dense, gap-free sample stream
+without any of this.
+
+To avoid losing samples to attach/detach churn around request
+boundaries, the reader rides through up to ~200 idle ticks (≈ 2 s
+at the default 10 ms `-s`; scales with `-s`) before releasing the
+worker back to the dispatcher pool. After that it detaches and the
+dispatcher reassigns it on its next searcher cycle. This only
+matters when `-T` is smaller than the number of PHP threads; with
+the default `-T 8` and typical FrankenPHP `num_threads` ≤ 8 every
+TID has its own permanent reader.
+
 ## Caveats
 
 - **Thread name as identifier is an internal FrankenPHP convention,
