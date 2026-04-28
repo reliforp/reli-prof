@@ -83,6 +83,37 @@ is similar across JIT-on/off, but the baseline it's measured
 against is faster under JIT-on). xhprof on a deep-stack workload
 reaches 1271× in our suite; Xdebug profile mode reaches 160-180×.
 
+> **Caveat for the heavy-tool multipliers.** Numbers like "xhprof
+> 1640×" don't translate one-to-one across hosts. Across the
+> sandbox these were measured on and a modern x86 desktop the
+> JIT-on baseline only got ~1.5× faster, but xhprof on the same
+> workload got ~27× faster — dropping the `fib-32` multiplier
+> from 1640× to ~70-90×. So the multiplier is not simply a
+> reflection of overall CPU speed (in that case both numbers
+> would scale together and the multiplier would stay roughly
+> constant); xhprof's per-call hook is doing some kind of work
+> whose cost ratio against a baseline interpreter op shifts
+> across hosts. We have one concrete piece of evidence on
+> *what* that work is — `strace -c` on this host shows xhprof
+> issuing exactly two `clock_gettime` calls per PHP function
+> entry/exit (e.g. 43798 `clock_gettime` syscalls for fib(20)'s
+> 21891 calls). `clock_gettime` is vDSO-accelerated on a healthy
+> modern x86 (~30 ns) but can fall back to a real syscall path
+> (~1 µs+) in heavily virtualised / mitigation-laden environments,
+> and that multiplies straight through xhprof's call density.
+> Xdebug profile mode shows the same multiplier-shrinkage shape
+> (180× → ~95×). We haven't actually measured the syscall path
+> on the sandbox to confirm this is the dominant cause; cache
+> behaviour against xhprof's per-function hashmap is another
+> candidate we haven't ruled out. So treat the *direction*
+> (multiplier shrinks dramatically on faster / less-virtualised
+> hosts) as established and the *exact mechanism* as
+> still-needing-measurement. The qualitative ranking — sampling
+> tools at baseline, full-instrumentation tools two-to-three
+> orders of magnitude heavier — is robust; the absolute
+> multiplier headline is not. Reproduction on a faster host is
+> in [`results/COMPARE-vs-RESULTS.md`](results/COMPARE-vs-RESULTS.md).
+
 (SPX is excluded from this row: under PHP 8.4 tracing JIT it
 returns visibly wrong values — `fib(25)` returns `1407295`
 instead of `75025` — and exits in ~1 ms. See "Notes & quirks"
@@ -189,6 +220,23 @@ Three operationally useful observations:
    workload range the bulk-read design targets.
 
 ### Profiler-side CPU at 1 kHz
+
+> [!IMPORTANT]
+> **The absolute CPU figures in this section are the most
+> host-dependent numbers in this document, and the relative
+> ordering of phpspy vs reli per-sample cost can flip on faster
+> hardware.** phpspy's per-sample cost is dominated by `N ×
+> process_vm_readv` syscall latency (linear in depth). reli's is
+> dominated by PHP-side stack-walk execution (mostly flat in
+> depth). On the slow sandbox where these numbers were measured,
+> phpspy was the more expensive sampler at typical depths; on a
+> modern fast x86 host phpspy is the *cheaper* sampler at depths
+> ≤ 100 because syscall latency drops faster than PHP execution
+> speeds up. The depth-scaling **shape** (phpspy linear, reli
+> flat) is robust across hosts; the absolute numbers and the
+> crossover depth are not. See
+> [`results/COMPARE-vs-RESULTS.md`](results/COMPARE-vs-RESULTS.md)
+> for a side-by-side reproduction on a different host.
 
 Same depth sweep, this time looking at CPU consumed by the
 sampler. At 1 ms sampling against a ~5 s ~5 s baseline target:

@@ -55,6 +55,39 @@ RUNS_LIGHT=10 RUNS_HEAVY=3 bash bench/run-jit.sh > bench/results/jit.csv 2>bench
 php -n bench/summarize.php bench/results/raw.csv bench/results/external.csv > bench/results/summary.txt
 ```
 
+## Setup pitfalls
+
+A reproduction on Ubuntu / Debian default kernel settings will
+silently produce wrong numbers without these two checks.
+
+- **`ptrace_scope` must be 0** (or the bench user must have
+  `CAP_SYS_PTRACE`). On Ubuntu the default is 1, which lets a
+  process ptrace only its own descendants. phpspy attaches by
+  PID — to a sibling — so `process_vm_readv` returns `EPERM` on
+  every sample. The bench scripts redirect phpspy stderr to
+  `/dev/null`, so you don't see the `copy_proc_mem: Failed to copy
+  executor_globals; err=Operation not permitted` message; instead
+  you get a 0-byte `/tmp/bench-phpspy.out` and a "phpspy at 1.0×
+  baseline" cell that's actually a baseline run with a no-op
+  sampler. Fix:
+
+  ```bash
+  sudo sh -c 'echo 0 > /proc/sys/kernel/yama/ptrace_scope'
+  ```
+
+  Reverts on reboot. reli's `--cmd args` form forks the target,
+  so reli itself is unaffected — only phpspy cells fail.
+
+- **Sanity-check actual sample counts before trusting any cell.**
+  The same silent failure mode applies to anything else that pokes
+  another process's address space, and external samplers don't
+  flag dropped samples in the output stream. After a run, check
+  `wc -l /tmp/bench-phpspy.out` is non-zero, or count rbt samples
+  via `php ./reli rbt:analyze < /tmp/bench-reli.rbt | grep
+  'samples'`. The `cpu-rates.csv` and `cpu-samples.csv` outputs
+  already include captured-sample counts per cell — non-zero is
+  the basic gate.
+
 ## JIT on vs JIT off
 
 The original suite (`run.sh` / `run-long.sh`) uses `php -n` which
