@@ -208,6 +208,65 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
         $this->assertSame(123, $json['global::$val']['value']);
     }
 
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testPeekMemoryVariable(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        $target_script = <<<'CODE'
+            <?php
+            $padding = str_repeat('x', 1024 * 1024);
+            fputs(STDOUT, "ready\n");
+            fgets(STDIN);
+            CODE;
+
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes,
+        );
+
+        $s = fgets($pipes[1]);
+        $this->assertSame("ready\n", $s);
+
+        $command = $this->createCommand();
+        $app = new Application();
+        $app->addCommand($command);
+
+        $tester = new CommandTester($command);
+        $tester->execute([
+            '-p' => (string)$pid,
+            '--var' => [
+                'memory::memory_get_usage',
+                'memory::memory_get_peak_usage',
+            ],
+            '--format' => 'json',
+            '--php-version' => $php_version,
+        ]);
+
+        $this->assertSame(0, $tester->getStatusCode());
+        $json = json_decode(trim($tester->getDisplay()), true);
+        $this->assertIsArray($json);
+        $this->assertArrayHasKey('memory::memory_get_usage', $json);
+        $this->assertNotNull(
+            $json['memory::memory_get_usage'],
+            'memory::memory_get_usage must not be null'
+                . ' (regression: HeapStatsReader was missing from'
+                . ' the concrete VariableReader DI binding)',
+        );
+        $this->assertSame('long', $json['memory::memory_get_usage']['type']);
+        $this->assertGreaterThan(
+            1024 * 1024,
+            $json['memory::memory_get_usage']['value'],
+        );
+        $this->assertNotNull($json['memory::memory_get_peak_usage']);
+        $this->assertGreaterThanOrEqual(
+            $json['memory::memory_get_usage']['value'],
+            $json['memory::memory_get_peak_usage']['value'],
+        );
+    }
+
     public function testNoVarReturnsError(): void
     {
         $command = $this->createCommand();
