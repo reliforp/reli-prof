@@ -114,3 +114,4 @@ php ./reli inspector:memory:analyze snapshot.relimem \
 - [memory-report.md](memory-report.md) — automated analysis reports
 - [watch-command.md](../monitoring/watch-command.md) — condition-triggered dumps
 - [sidecar.md](../monitoring/sidecar.md) — daemon mode for on-demand dumps
+- [internals/memory-dump-inspect.md](../internals/memory-dump-inspect.md) — `inspector:memory:dump:inspect`, a developer tool that prints the `.relimem` header / memory map / region list (output schema is unstable, intended for debugging the capture pipeline itself)
