@@ -86,15 +86,25 @@ final class TraceSession
     /**
      * Stop the current trace recording session.
      *
-     * Finalizes the .rbt file (checkpoint + segment end).
+     * Finalizes the .rbt file (checkpoint + segment end). When the session
+     * was opened but no sample was ever recorded — e.g. ENTER fired and
+     * `--oneshot` terminated the watch loop on the next poll, before the
+     * first sample could be taken — the trace file would otherwise be left
+     * at zero bytes. In that case we drop the empty file so the output
+     * directory does not accumulate inert artifacts.
      */
     public function stop(): void
     {
         if ($this->output === null) {
             return;
         }
+        $had_samples = $this->output->hasSamples();
         $this->output->finish();
         $this->output = null;
+        if (!$had_samples && $this->current_path !== null) {
+            @\unlink($this->current_path);
+            $this->current_path = null;
+        }
     }
 
     public function isActive(): bool

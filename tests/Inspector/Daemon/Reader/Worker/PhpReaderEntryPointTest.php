@@ -23,7 +23,9 @@ use Reli\Inspector\Daemon\Reader\Protocol\Message\SetSettingsMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\Message\TraceMessage;
 use Reli\Inspector\Daemon\Reader\Protocol\PhpReaderWorkerProtocolInterface;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
+use Reli\Inspector\Settings\OutputSettings\OutputSettings;
 use Reli\Inspector\Settings\TraceLoopSettings\TraceLoopSettings;
+use Reli\Lib\Loop\LoopCondition\LoopConditionInterface;
 use Reli\Lib\Loop\LoopCondition\OnlyOnceCondition;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpProcessReader\CallTraceReader\CallFrame;
@@ -154,6 +156,61 @@ class PhpReaderEntryPointTest extends BaseTestCase
         );
 
         $entry_point->run();
+    }
+
+    public function testIdleWorkerLeavesNoBinaryArtifact(): void
+    {
+        // A daemon worker that never receives an attach message — i.e.
+        // -T is larger than the live target count — must not leave a
+        // zero-byte worker_<pid>.rbt behind in the output directory.
+        // The output stream is opened lazily on first attach, so an
+        // idle worker drops out via shouldContinue() without creating
+        // any file.
+        $tmpdir = \sys_get_temp_dir() . '/reli-test-idle-worker-' . \getmypid();
+        @\mkdir($tmpdir, 0755, true);
+        try {
+            $output_settings = new OutputSettings(
+                output_format: 'rbt',
+                output_path: $tmpdir,
+                rbt_timestamps: 'delta',
+                rbt_compress: false,
+            );
+            $settings = new SetSettingsMessage(
+                new TraceLoopSettings(1, 'q', 10, false),
+                new GetTraceSettings(PHP_INT_MAX),
+                $output_settings,
+            );
+            $php_reader_task = Mockery::mock(PhpReaderTraceLoopInterface::class);
+            $protocol = Mockery::mock(PhpReaderWorkerProtocolInterface::class);
+            $protocol->expects()->receiveSettings()->andReturns($settings)->once();
+            // Loop never enters: receiveAttach is not called.
+            $protocol->shouldNotReceive('receiveAttach');
+
+            $never = Mockery::mock(LoopConditionInterface::class);
+            $never->shouldReceive('shouldContinue')->andReturn(false);
+
+            $entry_point = new PhpReaderEntryPoint(
+                $php_reader_task,
+                $protocol,
+                $never,
+            );
+            $entry_point->run();
+
+            $files = \glob($tmpdir . '/*');
+            $this->assertSame(
+                [],
+                $files === false ? [] : $files,
+                'idle worker must not create any rbt file',
+            );
+        } finally {
+            $files = \glob($tmpdir . '/*');
+            if ($files !== false) {
+                foreach ($files as $f) {
+                    @\unlink($f);
+                }
+            }
+            @\rmdir($tmpdir);
+        }
     }
 
     private function getTestTrace(string $function, ?int $pid = null): TraceMessage

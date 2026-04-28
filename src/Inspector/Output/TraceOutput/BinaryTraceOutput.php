@@ -51,6 +51,19 @@ final class BinaryTraceOutput implements TraceOutput, MergedTraceOutput
     }
 
     /**
+     * Whether any sample has been written through this output.
+     *
+     * Header is emitted lazily on the first sample, so this also indicates
+     * whether the underlying stream has any bytes written via this output.
+     * Used by callers (e.g. TraceSession) to drop empty trace artifacts
+     * when a session is opened but no sample is ever recorded.
+     */
+    public function hasSamples(): bool
+    {
+        return $this->header_written;
+    }
+
+    /**
      * Finalize: write checkpoint + segment end, then gzip if configured.
      */
     public function finish(): void
