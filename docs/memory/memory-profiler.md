@@ -79,7 +79,7 @@ Options:
 This tool can be used like this.
 
 ```
-sudo ./reli i:m --pretty-print -p <pid_of_target_process> >memory_analyzed.json
+sudo ./reli inspector:memory --pretty-print -p <pid_of_target_process> >memory_analyzed.json
 ```
 
 The analysis takes seconds in many case. During the analysis, the target process is stopped by default.
@@ -452,7 +452,7 @@ register_shutdown_function(
         $pid = getmypid();
         $file_opt = '--memory-limit-error-file=' . escapeshellarg($error['file']);
         $line_opt = '--memory-limit-error-line=' . escapeshellarg((string)$error['line']);
-        system("sudo reli i:m -p {$pid} --no-stop-process {$file_opt} {$line_opt} >{$pid}_memory_analyzed.json");
+        system("sudo reli inspector:memory -p {$pid} --no-stop-process {$file_opt} {$line_opt} >{$pid}_memory_analyzed.json");
     }
 );
 
@@ -473,7 +473,7 @@ If you need to analyze the target at the exact timing you want, you have to touc
 
 ```php
 $pid = getmypid();
-system("sudo reli i:m -p {$pid} --no-stop-process >{$pid}_memory_analyzed.json");
+system("sudo reli inspector:memory -p {$pid} --no-stop-process >{$pid}_memory_analyzed.json");
 ```
 
 And you can also use [Xdebug](https://xdebug.org/). If the target is stopped at one of the breakpoints you set, then it's a good timing to analyze the target by Reli. This way you don't have to change the target code, though the behavior of the PHP VM isn't exactly same as the production enviornment in this case. Xdebug itself can be used to get the content of variables, but if you use Reli in addition to it, you can also get the statical data of the memory usage or reference graphs. 
@@ -782,13 +782,13 @@ It's not a bug of Reli, but a limitation of `jq`. Currently, `jq` doesn't have a
 Try this.
 
 ```bash
-$ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof i:m -p <pid_of_target_process> >memory_analyzed.json
+$ docker run -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof inspector:memory -p <pid_of_target_process> >memory_analyzed.json
 ```
 
 If you hit the memory_limit during the analysis, then you can increase the memory_limit like this.
 
 ```bash
-$ docker run --entrypoint=php -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof -dmemory_limit=2G reli i:m -p <pid_of_target_process> >memory_analyzed.json
+$ docker run --entrypoint=php -it --security-opt="apparmor=unconfined" --cap-add=SYS_PTRACE --pid=host reliforp/reli-prof -dmemory_limit=2G reli inspector:memory -p <pid_of_target_process> >memory_analyzed.json
 ```
 
 # Database output

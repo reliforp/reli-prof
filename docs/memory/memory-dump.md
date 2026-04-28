@@ -99,7 +99,7 @@ php ./reli inspector:memory:analyze snapshot.relimem \
 
 ## Comparison with `gcore`
 
-| | `i:m:dump` | `gcore` |
+| | `inspector:memory:dump` | `gcore` |
 |---|---|---|
 | Output format | `.relimem` (analyzer-ready) | ELF core (needs post-processing) |
 | Size | Pagemap-filtered (resident pages only) | All writable VMAs |

@@ -2,7 +2,7 @@
 
 ## Summary
 
-`i:m:dump` produces a minimal, analyzer-ready dump that beats `gcore`
+`inspector:memory:dump` produces a minimal, analyzer-ready dump that beats `gcore`
 on both size and speed for typical PHP workloads. The key techniques:
 
 - **Pagemap residency filter**: reads `/proc/pid/pagemap` to skip
@@ -20,7 +20,7 @@ on both size and speed for typical PHP workloads. The key techniques:
 
 ### Results: 30 OSS library test cases
 
-| Metric | `i:m:dump` (default) | `gcore` |
+| Metric | `inspector:memory:dump` (default) | `gcore` |
 |---|---|---|
 | Size (typical) | **2-50x smaller** | baseline |
 | Size (extension-heavy) | **50x smaller** | baseline |
@@ -53,7 +53,7 @@ Phase 5: Bulk read + write
 
 ## `--exclude-heap` usage guide
 
-By default `i:m:dump` captures the full process memory including the
+By default `inspector:memory:dump` captures the full process memory including the
 glibc `[heap]` and anonymous writable mmap regions. This gives complete
 coverage: every byte the analyzer might need is present in the dump.
 
