@@ -213,6 +213,80 @@ class PhpReaderEntryPointTest extends BaseTestCase
         }
     }
 
+    public function testAttachWithOnlyEmptyTracesLeavesNoArtifact(): void
+    {
+        // A daemon worker that *does* receive an attach but observes
+        // only the trace loop's idle ride-through markers (empty
+        // CallTrace) for the entire attach must not leave behind a
+        // header+metadata-only worker_<pid>.rbt segment. Header,
+        // metadata, writer construction, and stream open are all
+        // deferred to the first non-empty trace, so an attach that
+        // never produces a real sample also produces no artifact.
+        $tmpdir = \sys_get_temp_dir() . '/reli-test-empty-attach-' . \getmypid();
+        @\mkdir($tmpdir, 0755, true);
+        try {
+            $output_settings = new OutputSettings(
+                output_format: 'rbt',
+                output_path: $tmpdir,
+                rbt_timestamps: 'delta',
+                rbt_compress: false,
+            );
+            $settings = new SetSettingsMessage(
+                new TraceLoopSettings(1, 'q', 10, false),
+                new GetTraceSettings(PHP_INT_MAX),
+                $output_settings,
+            );
+            $attach = new AttachMessage(
+                new TargetProcessDescriptor(
+                    424242,
+                    0,
+                    0,
+                    ZendTypeReader::V80,
+                ),
+            );
+            $php_reader_task = Mockery::mock(PhpReaderTraceLoopInterface::class);
+            $protocol = Mockery::mock(PhpReaderWorkerProtocolInterface::class);
+            $protocol->expects()->receiveSettings()->andReturns($settings)->once();
+            $protocol->expects()->receiveAttach()->andReturns($attach)->once();
+            // Trace loop yields only the idle ride-through marker —
+            // no real PHP frames ever observed for this attach.
+            $php_reader_task->shouldReceive('run')->andReturns(
+                (function () {
+                    yield new TraceMessage(new CallTrace(), null, null);
+                    yield new TraceMessage(new CallTrace(), null, null);
+                    yield new TraceMessage(new CallTrace(), null, null);
+                })()
+            );
+            $protocol->shouldNotReceive('sendTrace');
+            $protocol->expects()
+                ->sendDetachWorker()
+                ->with(Matchers::equalTo(new DetachWorkerMessage(424242)))
+                ->once();
+
+            $entry_point = new PhpReaderEntryPoint(
+                $php_reader_task,
+                $protocol,
+                new OnlyOnceCondition(),
+            );
+            $entry_point->run();
+
+            $files = \glob($tmpdir . '/*');
+            $this->assertSame(
+                [],
+                $files === false ? [] : $files,
+                'attach with only empty traces must not create any rbt artifact',
+            );
+        } finally {
+            $files = \glob($tmpdir . '/*');
+            if ($files !== false) {
+                foreach ($files as $f) {
+                    @\unlink($f);
+                }
+            }
+            @\rmdir($tmpdir);
+        }
+    }
+
     private function getTestTrace(string $function, ?int $pid = null): TraceMessage
     {
         return new TraceMessage(
