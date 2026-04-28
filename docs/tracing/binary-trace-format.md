@@ -98,13 +98,18 @@ IDs, lengths, depths, and timestamp deltas use **protobuf-compatible base-128 va
 - The lower 7 bits of each byte carry data
 - MSB (bit 7) is the continuation flag: 1 = more bytes follow, 0 = final byte
 - Little-endian byte order (least significant byte first)
-- Unsigned integers only
+- Values are 64-bit signed integers; non-negatives take 1–9 bytes. Negative
+  values follow protobuf's `int64` rules — encoded as their 64-bit
+  two's-complement bit pattern and always take 10 bytes. The only field
+  that legitimately goes negative is `lineno` (`-1` for internal /
+  unknown-line frames); other fields (IDs, lengths, deltas) are unsigned.
 
 | Value Range | Bytes |
 |-------------|-------|
 | 0 - 127 | 1 |
 | 128 - 16,383 | 2 |
 | 16,384 - 2,097,151 | 3 |
+| any negative `int64` | 10 |
 
 ---
 

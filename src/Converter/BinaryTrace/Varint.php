@@ -16,15 +16,22 @@ namespace Reli\Converter\BinaryTrace;
 final class Varint
 {
     /**
-     * Encode an unsigned integer as a base-128 varint (protobuf style).
+     * Encode a 64-bit integer as a base-128 varint (protobuf int64 wire format).
+     *
+     * Non-negative values use 1–9 bytes. Negative values are encoded as their
+     * 64-bit two's-complement representation and always take 10 bytes —
+     * matching protobuf's int64 encoding. Round-trips through {@see decode}
+     * back to the original signed PHP int.
      */
     public static function encode(int $value): string
     {
-        assert($value >= 0);
         $bytes = '';
         do {
             $byte = $value & 0x7F;
-            $value >>= 7;
+            // PHP's >> is arithmetic (sign-extending). Mask the top 7 bits to
+            // make this a logical right shift so negative values terminate at
+            // 10 bytes instead of looping forever.
+            $value = ($value >> 7) & 0x01FFFFFFFFFFFFFF;
             if ($value !== 0) {
                 $byte |= 0x80;
             }

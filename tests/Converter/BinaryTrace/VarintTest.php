@@ -39,6 +39,14 @@ final class VarintTest extends BaseTestCase
         yield '300' => [300, 'ac02'];
         yield '16384' => [16384, '808001'];
         yield '10000' => [10000, '904e'];
+        yield 'PHP_INT_MAX' => [PHP_INT_MAX, 'ffffffffffffffff7f'];
+        // Negative values use protobuf int64 wire format: 64-bit two's
+        // complement, always 10 bytes. -1 is the sentinel reli writes for
+        // internal-call linenos, so this is a regression case for the
+        // encoder hanging in an infinite loop.
+        yield '-1' => [-1, 'ffffffffffffffffff01'];
+        yield '-2' => [-2, 'feffffffffffffffff01'];
+        yield 'PHP_INT_MIN' => [PHP_INT_MIN, '80808080808080808001'];
     }
 
     public function testDecodeWithOffset(): void
