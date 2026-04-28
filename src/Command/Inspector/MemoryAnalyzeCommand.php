@@ -30,7 +30,7 @@ final class MemoryAnalyzeCommand extends ReliCommand
     #[\Override]
     public static function getDockerProfile(): DockerProfile
     {
-        return DockerProfile::Full;
+        return DockerProfile::Minimal;
     }
 
     public function __construct(
