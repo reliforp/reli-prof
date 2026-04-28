@@ -464,6 +464,57 @@ final class BinaryContextTreeSink implements ContextTreeSink
     }
 
     /**
+     * Compute raw per-region size sums and total bin_overhead by scanning
+     * the binary location temp file.
+     *
+     * This is the binary streaming counterpart of
+     * RegionsSummary::queryRegionSums(), but it intentionally reports raw
+     * location-row sums: unlike the SQL variant it does not GROUP BY
+     * address / MAX(size) and does not skip overlapping locations. The
+     * binary report path has historically read these raw sums, and the
+     * existing tests assume that shape.
+     *
+     * @return array{sums: array<string, int>, overhead: int}
+     */
+    public function computeRegionSumsAndOverhead(): array
+    {
+        $this->flush();
+
+        $fh = fopen($this->locationTmpPath, 'rb');
+        if ($fh === false) {
+            return ['sums' => [], 'overhead' => 0];
+        }
+        $row_size = Format::LOCATION_ROW_SIZE;
+
+        /** @var array<string, int> $sums */
+        $sums = [];
+        $total_overhead = 0;
+        while (true) {
+            $row = fread($fh, $row_size);
+            if ($row === false || strlen($row) < $row_size) {
+                break;
+            }
+            /** @var array{1: int} $size_row */
+            $size_row = unpack('P', $row, 20);
+            /** @var array{1: int} $region_id_row */
+            $region_id_row = unpack('V', $row, 40);
+            /** @var array{1: int} $overhead_row */
+            $overhead_row = unpack('V', $row, 44);
+            $size = $size_row[1];
+            $region_id = $region_id_row[1];
+            $bin_overhead = $overhead_row[1];
+            $region = $this->stringDict->lookup($region_id);
+            if ($region === null) {
+                continue;
+            }
+            $sums[$region] = ($sums[$region] ?? 0) + $size;
+            $total_overhead += $bin_overhead;
+        }
+        fclose($fh);
+        return ['sums' => $sums, 'overhead' => $total_overhead];
+    }
+
+    /**
      * Delete temp files. Called after the .rmem is fully written.
      */
     public function cleanup(): void

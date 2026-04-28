@@ -187,7 +187,7 @@ final class MemoryDumpReader
         // Use corrected summary if region sums are available from the
         // backfilled locations. Compute region sums directly from the
         // location temp file since we don't have a SQL DB.
-        $region_sums = $this->computeRegionSumsFromSink($sink);
+        $region_sums = $sink->computeRegionSumsAndOverhead()['sums'];
         $summary_base = $region_sums !== []
             ? $analyzed_regions->summary->correctedToArray($region_sums)
             : $analyzed_regions->summary->toArray();
@@ -201,48 +201,6 @@ final class MemoryDumpReader
         unset($collected_memories, $analyzed_regions, $region_analyzer);
 
         $binary_output->finalizeStreaming($sink, $summary);
-    }
-
-    /**
-     * Compute region → total_size sums from the location temp file.
-     * Equivalent to RegionsSummary::queryRegionSums but without SQL.
-     *
-     * @return array<string, int> region_name => total_size
-     */
-    private function computeRegionSumsFromSink(
-        \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink $sink,
-    ): array {
-        $sink->flush();
-
-        $path = $sink->getLocationTmpPath();
-        $fh = fopen($path, 'rb');
-        if ($fh === false) {
-            return [];
-        }
-        $dict = $sink->getStringDict();
-        $row_size = \Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format::LOCATION_ROW_SIZE;
-
-        /** @var array<string, int> $sums */
-        $sums = [];
-        while (true) {
-            $row = fread($fh, $row_size);
-            if ($row === false || strlen($row) < $row_size) {
-                break;
-            }
-            $size_row = unpack('P', $row, 20);
-            assert(is_array($size_row));
-            $region_id_row = unpack('V', $row, 40);
-            assert(is_array($region_id_row));
-            $size = (int)$size_row[1];
-            $region_id = (int)$region_id_row[1];
-            $region = $dict->lookup($region_id);
-            if ($region === null) {
-                continue;
-            }
-            $sums[$region] = ($sums[$region] ?? 0) + $size;
-        }
-        fclose($fh);
-        return $sums;
     }
 
     /**
