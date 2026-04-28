@@ -78,20 +78,12 @@ final class ActionFactory
             }
         }
 
-        if (count($actions) === 0) {
-            /** @psalm-suppress InvalidArgument */
-            $actions[] = new MemoryDumpAction(
-                $this->memory_dumper,
-                $this->process_stopper,
-                $target_php_settings,
-                $eg_address,
-                $cg_address,
-                $settings->action_output_dir,
-                $disk_tracker,
-                $settings->include_binary,
-            );
-        }
-
+        // Settings is the single source of truth for which actions
+        // run; an empty list means "no regular actions, use lifecycle
+        // / triggers for side-effects". The implicit "default to
+        // memory-dump" lives in WatchSettingsFromConsoleInput so it
+        // can be gated on the user not having configured --on-enter
+        // or --on-exit.
         return $actions;
     }
 
@@ -136,12 +128,8 @@ final class ActionFactory
             }
         }
 
-        if (count($actions) === 0) {
-            $actions[] = $settings->log_file !== null
-                ? LogAction::toFile($settings->log_file)
-                : new LogAction();
-        }
-
+        // See buildActions() — Settings owns the implicit memory-dump
+        // fallback, gated on no lifecycle action being configured.
         return $actions;
     }
 

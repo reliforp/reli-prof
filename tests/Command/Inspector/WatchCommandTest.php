@@ -97,8 +97,12 @@ class WatchCommandTest extends TestCase
     {
         $cmd = self::makeCommand();
         $def = $cmd->getDefinition();
+        // --action's CLI-level default is empty: the implicit
+        // "memory-dump if nothing else specified" lives in
+        // WatchSettingsFromConsoleInput::createSettings, gated on
+        // no --on-enter / --on-exit being set.
         $action_opt = $def->getOption('action');
-        $this->assertSame(['memory-dump'], $action_opt->getDefault());
+        $this->assertSame([], $action_opt->getDefault());
 
         $output_dir = $def->getOption('action-output-dir');
         $this->assertNull($output_dir->getDefault());

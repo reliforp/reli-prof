@@ -115,8 +115,12 @@ class ActionFactoryTest extends BaseTestCase
         $this->assertInstanceOf(ExecAction::class, $actions[0]);
     }
 
-    public function testBuildDaemonActionsDefaultsToLog(): void
+    public function testBuildDaemonActionsEmptyReturnsEmpty(): void
     {
+        // The factory has no implicit fallback any more — Settings
+        // owns the "default to memory-dump" decision and gates it on
+        // the absence of any lifecycle action. An empty actions list
+        // therefore passes through verbatim.
         $factory = new ActionFactory(
             Mockery::mock('overload:' . \Reli\Lib\PhpProcessReader\CallTraceReader\CallTraceReader::class),
             Mockery::mock('overload:' . \Reli\Inspector\MemoryDump\MemoryDumper::class),
@@ -129,8 +133,7 @@ class ActionFactoryTest extends BaseTestCase
             $output,
             new DiskUsageTracker(1024 * 1024 * 1024),
         );
-        $this->assertCount(1, $actions);
-        $this->assertInstanceOf(LogAction::class, $actions[0]);
+        $this->assertSame([], $actions);
     }
 
     public function testBuildDaemonActionsMultiple(): void
