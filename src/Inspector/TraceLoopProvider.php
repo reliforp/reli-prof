@@ -22,6 +22,7 @@ use Reli\Lib\Loop\LoopMiddleware\CallableMiddleware;
 use Reli\Lib\Loop\LoopMiddleware\KeyboardCancelMiddleware;
 use Reli\Lib\Loop\LoopMiddleware\NanoSleepMiddleware;
 use Reli\Lib\Loop\LoopMiddleware\RetryOnExceptionMiddleware;
+use Reli\Lib\Loop\LoopMiddleware\SignalCancelMiddleware;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Process\ProcessNotFoundException;
 
@@ -37,6 +38,7 @@ final class TraceLoopProvider
         return $this->loop_builder
             ->addProcess(ExitLoopOnSpecificExceptionMiddleware::class, [[ProcessNotFoundException::class]])
             ->addProcess(RetryOnExceptionMiddleware::class, [$settings->max_retries, [MemoryReaderException::class]])
+            ->addProcess(SignalCancelMiddleware::class, [])
             ->addProcess(KeyboardCancelMiddleware::class, [$settings->cancel_key, new EchoBackCanceller()])
             ->addProcess(NanoSleepMiddleware::class, [$settings->sleep_nano_seconds])
             ->addProcess(CallableMiddleware::class, [$main])
