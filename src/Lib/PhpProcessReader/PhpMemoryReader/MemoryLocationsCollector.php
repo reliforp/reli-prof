@@ -158,6 +158,7 @@ final class MemoryLocationsCollector
             $walked_chunk_count++;
         }
         $huge_memory_locations = new MemoryLocations();
+        $huge_total_bytes = 0;
         foreach ($zend_mm_main_chunk->heap_slot->iterateHugeList($dereferencer) as $huge_list) {
             $huge_memory_locations->add(
                 ZendMmChunkMemoryLocation::fromZendMmHugeList($huge_list)
@@ -165,6 +166,7 @@ final class MemoryLocationsCollector
             $memory_locations->add(
                 ZendMmHugeListMemoryLocation::fromZendMmHugeList($huge_list)
             );
+            $huge_total_bytes += $huge_list->size;
         }
 
         $memory_get_usage_size = $zend_mm_main_chunk->heap_slot->size;
@@ -179,9 +181,14 @@ final class MemoryLocationsCollector
         $last_chunks_delete_count = $zend_mm_main_chunk->heap_slot->last_chunks_delete_count;
 
         // Warn if chunk walk was incomplete (corrupt next pointer or
-        // chunks outside dump region).
+        // chunks outside dump region). real_size is ZendMM's bookkeeping
+        // for everything currently mmap'd from the OS — active chunks +
+        // cached (held-for-reuse) chunks + huge allocations — so the
+        // captured-bytes side has to include all three or single huge
+        // allocations falsely trip the guard.
         $walked_chunk_bytes = $walked_chunk_count * ZendMmChunk::SIZE;
-        if ($memory_get_usage_real_size > 0 && $walked_chunk_bytes < $memory_get_usage_real_size * 0.5) {
+        $captured_bytes = $walked_chunk_bytes + $cached_chunks_size + $huge_total_bytes;
+        if ($memory_get_usage_real_size > 0 && $captured_bytes < $memory_get_usage_real_size * 0.5) {
             $walked_mb = number_format($walked_chunk_bytes / 1024 / 1024, 1);
             $real_mb = number_format($memory_get_usage_real_size / 1024 / 1024, 1);
             fwrite(STDERR, "WARNING: ZendMM chunk walk incomplete — found {$walked_mb} MB"
