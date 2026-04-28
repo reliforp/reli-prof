@@ -132,7 +132,12 @@ final class DaemonCommand extends ReliCommand
 
         // Pass resolved output dir to workers (not the raw user path)
         $worker_output_settings = $rbt_output_dir !== null
-            ? new OutputSettings($output_settings->output_format, $rbt_output_dir)
+            ? new OutputSettings(
+                $output_settings->output_format,
+                $rbt_output_dir,
+                $output_settings->rbt_timestamps,
+                $output_settings->rbt_compress,
+            )
             : $output_settings;
 
         $worker_pool = WorkerPool::create(
