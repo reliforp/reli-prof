@@ -19,15 +19,19 @@ on:
 jobs:
 
   phpunit-unit:
-    name: phpunit (unit)
+    name: phpunit (unit, PHP ${{ matrix.php-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ['8.4', '8.5']
     steps:
       - uses: actions/checkout@v6
 
       - name: Setup PHP Action
         uses: shivammathur/setup-php@v2
         with:
-          php-version: 8.5
+          php-version: ${{ matrix.php-version }}
           extensions: ffi, dom, mbstring
           coverage: pcov
 
@@ -39,8 +43,8 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
-          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
-          restore-keys: ${{ runner.os }}-composer-
+          key: ${{ runner.os }}-composer-${{ matrix.php-version }}-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-composer-${{ matrix.php-version }}-
 
       - name: Validate composer.json and composer.lock
         run: composer validate
@@ -68,7 +72,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: build/logs/clover.xml
-          flag-name: unit
+          flag-name: unit-php${{ matrix.php-version }}
           parallel: true
 
   build-dev-image:
@@ -425,15 +429,19 @@ jobs:
       image: ${{ env.IMAGE }}:${{ steps.hash.outputs.tag }}
 
   phpunit-unit-arm64:
-    name: phpunit (unit, ARM64)
+    name: phpunit (unit, PHP ${{ matrix.php-version }}, ARM64)
     runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ['8.4', '8.5']
     steps:
       - uses: actions/checkout@v6
 
       - name: Setup PHP Action
         uses: shivammathur/setup-php@v2
         with:
-          php-version: 8.5
+          php-version: ${{ matrix.php-version }}
           extensions: ffi, dom, mbstring
           coverage: pcov
 
@@ -445,8 +453,8 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
-          key: ${{ runner.os }}-${{ runner.arch }}-composer-${{ hashFiles('**/composer.json') }}
-          restore-keys: ${{ runner.os }}-${{ runner.arch }}-composer-
+          key: ${{ runner.os }}-${{ runner.arch }}-composer-${{ matrix.php-version }}-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-composer-${{ matrix.php-version }}-
 
       - name: Install dependencies
         run: composer install --prefer-dist --no-progress --no-suggest
@@ -465,7 +473,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           file: build/logs/clover.xml
-          flag-name: unit-arm64
+          flag-name: unit-arm64-php${{ matrix.php-version }}
           parallel: true
 
   build-test-mysql-images-arm64:

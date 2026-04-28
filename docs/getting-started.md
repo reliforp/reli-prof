@@ -39,7 +39,7 @@ For the full catalogue of tasks-and-commands, see the
 
 ### Runtime
 
-- PHP 8.5+ (NTS / ZTS)
+- PHP 8.4+ (NTS / ZTS)
 - 64bit Linux x86_64 (or AArch64, experimental)
 - `FFI` extension enabled
 - `PCNTL` extension enabled
@@ -61,7 +61,8 @@ For the full catalogue of tasks-and-commands, see the
 ## 1. Install
 
 The Docker image is the easiest starting point — PHP 8.5, FFI, and
-PCNTL pre-built, no host toolchain needed. A one-line command
+PCNTL pre-built, no host toolchain needed (the published image runs
+on PHP 8.5 even though the supported runner floor is 8.4). A one-line command
 installs a shell function `reli` so the rest of this doc works
 exactly as written, with no docker flag incantations to remember:
 
@@ -116,11 +117,12 @@ composer install
 > Git) the equivalent command is `./reli` — substitute as you read.
 >
 > The `./reli` shebang is `#!/usr/bin/env php`, so the `php` on your
-> `PATH` must be **8.5+**. On distros that ship an older default
-> (e.g. Ubuntu with `php8.4-cli` from deadsnakes/sury), either install
-> `php8.5-cli` and switch the default — `sudo update-alternatives
-> --set php /usr/bin/php8.5` — or invoke explicitly with
-> `php8.5 ./reli ...`. The Docker wrapper sidesteps this entirely.
+> `PATH` must be **8.4+**. Debian 13 (trixie), Ubuntu 25.10, Fedora 43,
+> and Alpine 3.22 ship 8.4 as the default and work out of the box.
+> On older distro defaults (e.g. Ubuntu 24.04 LTS with PHP 8.3),
+> install `php8.4-cli` and switch the default — `sudo update-alternatives
+> --set php /usr/bin/php8.4` — or invoke explicitly with
+> `php8.4 ./reli ...`. The Docker wrapper sidesteps this entirely.
 
 ## 2. Smoke test
 
