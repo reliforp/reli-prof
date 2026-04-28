@@ -117,10 +117,8 @@ composer install
 > Git) the equivalent command is `./reli` — substitute as you read.
 >
 > The `./reli` shebang is `#!/usr/bin/env php`, so the `php` on your
-> `PATH` must be **8.4+**. Debian 13 (trixie), Ubuntu 25.10, Fedora 43,
-> and Alpine 3.22 ship 8.4 as the default and work out of the box.
-> On older distro defaults (e.g. Ubuntu 24.04 LTS with PHP 8.3),
-> install `php8.4-cli` and switch the default — `sudo update-alternatives
+> `PATH` must be **8.4+**. If your default is older, install
+> `php8.4-cli` and switch the default — `sudo update-alternatives
 > --set php /usr/bin/php8.4` — or invoke explicitly with
 > `php8.4 ./reli ...`. The Docker wrapper sidesteps this entirely.
 
