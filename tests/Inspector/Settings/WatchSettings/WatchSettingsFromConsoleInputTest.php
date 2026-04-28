@@ -33,7 +33,7 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
             'cpu-usage' => null,
             'cpu-usage-exit' => null,
             'cpu-sustain' => null,
-            'action' => ['memory-dump'],
+            'action' => [],
             'on-enter' => [],
             'on-exit' => [],
             'action-exec-command' => null,
@@ -184,6 +184,57 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
             ]));
 
         $this->assertSame(['trace-once', 'log'], $settings->actions);
+    }
+
+    public function testImplicitMemoryDumpWhenNothingSpecified(): void
+    {
+        // Backward-compat: `reli inspector:watch -p X --memory-usage=256M`
+        // (no --action, no lifecycle) still falls back to memory-dump.
+        $settings = (new WatchSettingsFromConsoleInput())
+            ->createSettings($this->makeInput());
+
+        $this->assertSame(['memory-dump'], $settings->actions);
+    }
+
+    public function testNoImplicitMemoryDumpWhenOnEnterIsSet(): void
+    {
+        // The user opted into lifecycle-driven actions; we must not
+        // silently inject a memory-dump alongside (which previously
+        // produced a multi-MB heap dump next to a continuous trace).
+        $settings = (new WatchSettingsFromConsoleInput())
+            ->createSettings($this->makeInput([
+                'on-enter' => ['trace'],
+            ]));
+
+        $this->assertSame([], $settings->actions);
+        $this->assertSame(['trace'], $settings->on_enter_actions);
+    }
+
+    public function testNoImplicitMemoryDumpWhenOnExitIsSet(): void
+    {
+        $settings = (new WatchSettingsFromConsoleInput())
+            ->createSettings($this->makeInput([
+                'on-exit' => ['stop-trace'],
+            ]));
+
+        $this->assertSame([], $settings->actions);
+        $this->assertSame(['stop-trace'], $settings->on_exit_actions);
+    }
+
+    public function testExplicitActionWithLifecycleHonoredAsIs(): void
+    {
+        // Both --action and lifecycle are explicit — no fallback runs,
+        // both lists pass through verbatim.
+        $settings = (new WatchSettingsFromConsoleInput())
+            ->createSettings($this->makeInput([
+                'action' => ['log'],
+                'on-enter' => ['trace'],
+                'on-exit' => ['stop-trace'],
+            ]));
+
+        $this->assertSame(['log'], $settings->actions);
+        $this->assertSame(['trace'], $settings->on_enter_actions);
+        $this->assertSame(['stop-trace'], $settings->on_exit_actions);
     }
 
     public function testMaxDumpSize(): void

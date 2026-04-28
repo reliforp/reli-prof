@@ -99,8 +99,11 @@ final class WatchSettingsFromConsoleInput
                 null,
                 InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
                 'actions to execute while active with cooldown'
-                    . ' (memory-dump, trace-once, log, exec)',
-                ['memory-dump'],
+                    . ' (memory-dump, trace-once, log, exec).'
+                    . ' Defaults to memory-dump only when neither --action'
+                    . ' nor any lifecycle action (--on-enter / --on-exit)'
+                    . ' is specified.',
+                [],
             )
             ->addOption(
                 'on-enter',
@@ -263,6 +266,20 @@ final class WatchSettingsFromConsoleInput
         $on_enter_actions = $input->getOption('on-enter');
         /** @var list<string> $on_exit_actions */
         $on_exit_actions = $input->getOption('on-exit');
+
+        // Implicit memory-dump fallback: only when the user opts into
+        // none of the action mechanisms. Specifying --on-enter or
+        // --on-exit signals "I want lifecycle-driven actions" and the
+        // legacy "default to memory-dump" behaviour would otherwise
+        // silently produce a multi-MB heap dump alongside, e.g.,
+        // a continuous trace session.
+        if (
+            count($actions) === 0
+            && count($on_enter_actions) === 0
+            && count($on_exit_actions) === 0
+        ) {
+            $actions = ['memory-dump'];
+        }
 
         // --oneshot=N is an alias for --max-triggers=N
         $max_triggers_raw = (string)(

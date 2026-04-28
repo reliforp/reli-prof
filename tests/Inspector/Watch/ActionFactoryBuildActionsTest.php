@@ -160,8 +160,14 @@ class ActionFactoryBuildActionsTest extends BaseTestCase
         $this->assertInstanceOf(ExecAction::class, $actions[0]);
     }
 
-    public function testBuildActionsDefaultsToMemoryDump(): void
+    public function testBuildActionsEmptyReturnsEmpty(): void
     {
+        // ActionFactory is no longer responsible for the implicit
+        // "default to memory-dump" fallback — that decision lives in
+        // WatchSettingsFromConsoleInput, gated on the absence of any
+        // lifecycle action. With actions=[] in settings, buildActions
+        // returns an empty list verbatim so the watch loop's
+        // `count($actions) > 0` guard skips the regular-action path.
         $factory = $this->makeFactory();
         $output = Mockery::mock(TraceOutput::class);
         $tps = new TargetPhpSettings(php_version: 'v84');
@@ -177,8 +183,7 @@ class ActionFactoryBuildActionsTest extends BaseTestCase
             $tps,
             new DiskUsageTracker(1024 * 1024),
         );
-        $this->assertCount(1, $actions);
-        $this->assertInstanceOf(MemoryDumpAction::class, $actions[0]);
+        $this->assertSame([], $actions);
     }
 
     public function testBuildActionsMultiple(): void
