@@ -10,7 +10,7 @@
 #     reli's startup happens before the timed code starts and reli is
 #     ready to sample. We pre-prime reli's cache before measuring.
 #
-# Usage: bash bench/run-external.sh > bench/results/external.csv
+# Usage: bash docs/bench/run-external.sh > docs/bench/results/external.csv
 set -euo pipefail
 
 SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)/scripts"

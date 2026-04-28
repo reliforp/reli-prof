@@ -8,7 +8,7 @@
 #   - reli is also tested with its OWN PHP JIT enabled (PHP 8.5 has
 #     opcache built into the binary; no .so to load).
 #
-# Output: bench/results/jit.csv
+# Output: docs/bench/results/jit.csv
 set -euo pipefail
 
 EXTDIR="$(/usr/bin/php8.4 -r 'echo PHP_EXTENSION_DIR;')"
@@ -34,7 +34,7 @@ LIGHT_CONFIGS=(
     # NOTE: SPX is excluded from this JIT-on suite. It produces visibly
     # wrong fib values (e.g. fib(25) returns 1407295 instead of 75025)
     # and exits in ~1ms when PHP 8.4 tracing JIT is enabled, in either
-    # default or SPX_SAMPLING_PERIOD mode. See bench/README.md.
+    # default or SPX_SAMPLING_PERIOD mode. See docs/bench/README.md.
 )
 
 HEAVY_CONFIGS=(

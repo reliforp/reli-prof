@@ -8,14 +8,14 @@
 # This script writes its CSV output as a drop-in replacement for
 # the affected `datadog-prof` rows in `long.csv` / `raw.csv`.
 #
-# Usage: bash bench/run-datadog-fix.sh > bench/results/datadog-fix.csv
+# Usage: bash docs/bench/run-datadog-fix.sh > docs/bench/results/datadog-fix.csv
 set -euo pipefail
 
 EXTDIR="$(/usr/bin/php8.4 -r 'echo PHP_EXTENSION_DIR;')"
 SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)/scripts"
 RUNS="${RUNS:-10}"
 
-# Note: extension= (not zend_extension=). See bench/README.md.
+# Note: extension= (not zend_extension=). See docs/bench/README.md.
 CFG="-dextension=${EXTDIR}/datadog-profiling.so -ddatadog.profiling.enabled=1 -ddatadog.trace.enabled=0 -ddatadog.appsec.enabled=0 -ddatadog.profiling.log_level=off -ddatadog.instrumentation_telemetry_enabled=0"
 
 LONG_BENCHES=(

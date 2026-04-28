@@ -5,7 +5,7 @@
 #
 # 1 run per depth; we just want the order-of-magnitude.
 #
-# Output: bench/results/cpu-samples.csv
+# Output: docs/bench/results/cpu-samples.csv
 set -euo pipefail
 
 EXTDIR="$(/usr/bin/php8.4 -r 'echo PHP_EXTENSION_DIR;')"

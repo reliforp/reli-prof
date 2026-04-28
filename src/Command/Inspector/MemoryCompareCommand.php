@@ -42,17 +42,17 @@ final class MemoryCompareCommand extends ReliCommand
     public function configure(): void
     {
         $this->setName('inspector:memory:compare')
-            ->setDescription('compare two memory snapshot SQLite databases')
+            ->setDescription('compare two memory snapshots (.rmem or SQLite .db/.sqlite)')
         ;
         $this->addArgument(
             'baseline',
             InputArgument::REQUIRED,
-            'path to the baseline SQLite database file'
+            'path to the baseline snapshot (.rmem or SQLite .db/.sqlite)'
         );
         $this->addArgument(
             'target',
             InputArgument::OPTIONAL,
-            'path to the target SQLite database file (omit to compare run IDs within the same file)'
+            'path to the target snapshot (.rmem or SQLite .db/.sqlite); omit to compare run IDs within the same file'
         );
         $this->addOption(
             'run-id-baseline',

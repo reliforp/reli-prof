@@ -24,7 +24,7 @@ Reli samples the call stack on a timer, so each trace reflects what the VM is do
 | Trace many processes at once (e.g. a php-fpm pool) | `inspector:daemon -P <regex>` | [tracing/capturing-traces.md](tracing/capturing-traces.md) |
 | Live `top`-style aggregation | `inspector:top -P <regex>` | [tracing/capturing-traces.md](tracing/capturing-traces.md) |
 | Include C-level frames | add `--with-native-trace` | [tracing/advanced-capture.md](tracing/advanced-capture.md) |
-| See the opcode in phpspy text output (`.rbt` records it unconditionally) | `--template=phpspy_with_opcode` | [tracing/advanced-capture.md](tracing/advanced-capture.md) |
+| See the opcode in phpspy text output (`.rbt` records it unconditionally) | `--output-format=template:phpspy_with_opcode` | [tracing/advanced-capture.md](tracing/advanced-capture.md) |
 | Resolve JIT-compiled function names in native traces | `opcache.jit_debug=0x10` + `--with-native-trace` | [tracing/advanced-capture.md](tracing/advanced-capture.md) |
 | Use phpspy as the fast C backend, with reli-driven ZTS support | `phpspy:trace`, `phpspy:daemon` | [tracing/phpspy-hybrid.md](tracing/phpspy-hybrid.md) |
 | Attach a PHP variable to every sample | `inspector:trace --trace-var=…` | [inspection/trace-var-command.md](inspection/trace-var-command.md) |

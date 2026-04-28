@@ -1,5 +1,5 @@
 <?php
-// Summarise bench/results/cpu.csv into a per-(profiler, depth) view
+// Summarise docs/bench/results/cpu.csv into a per-(profiler, depth) view
 // of *sampler-side CPU*, where "sampler-side" means:
 //   - phpspy: the phpspy process directly (separate process).
 //   - reli, Excimer, Datadog, baseline: the (combined) target+sampler
@@ -10,7 +10,7 @@
 // "sampler CPU above baseline" column so the in-process and
 // external numbers can be read on the same axis.
 //
-// Usage: php bench/summarize-cpu.php bench/results/cpu.csv
+// Usage: php docs/bench/summarize-cpu.php docs/bench/results/cpu.csv
 
 $path = $argv[1] ?? null;
 if (!$path) {

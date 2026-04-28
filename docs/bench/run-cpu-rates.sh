@@ -7,7 +7,7 @@
 # {30, 100, 200}, and report wall time, sample efficiency, and
 # samples-per-target-second.
 #
-# Output: bench/results/cpu-rates.csv
+# Output: docs/bench/results/cpu-rates.csv
 set -euo pipefail
 
 EXTDIR="$(/usr/bin/php8.4 -r 'echo PHP_EXTENSION_DIR;')"

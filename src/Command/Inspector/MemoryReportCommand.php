@@ -39,7 +39,7 @@ final class MemoryReportCommand extends ReliCommand
     public function configure(): void
     {
         $this->setName('inspector:memory:report')
-            ->setDescription('generate analysis report from a memory snapshot SQLite database')
+            ->setDescription('generate analysis report from a memory snapshot (.rmem or SQLite .db/.sqlite)')
         ;
         $this->addArgument(
             'db-file',

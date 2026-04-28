@@ -266,7 +266,7 @@ reproducer doesn't lose hours.
    that's actually a baseline run with a no-op sampler. Fix:
    `sudo sh -c 'echo 0 > /proc/sys/kernel/yama/ptrace_scope'`.
    reli's `--cmd args` form forks the target so reli is
-   unaffected. Now documented in `bench/README.md`.
+   unaffected. Now documented in `docs/bench/README.md`.
 
 2. **Disk fill from xdebug + SPX outputs.** `run-jit.sh` writes
    400–600 MB `/tmp/cachegrind.out.<pid>` per xdebug-profile

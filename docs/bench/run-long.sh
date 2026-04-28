@@ -5,7 +5,7 @@
 # only — full-instrumentation configs would take 10+ minutes per cell
 # at this scale.
 #
-# Usage: bash bench/run-long.sh > bench/results/long.csv
+# Usage: bash docs/bench/run-long.sh > docs/bench/results/long.csv
 set -euo pipefail
 
 EXTDIR="$(/usr/bin/php8.4 -r 'echo PHP_EXTENSION_DIR;')"
