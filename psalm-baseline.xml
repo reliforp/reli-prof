@@ -71,24 +71,8 @@
       <code><![CDATA[\FFI\CArray<int>|null]]></code>
       <code><![CDATA[\FFI\CArray<int>|null]]></code>
     </MoreSpecificReturnType>
-    <RedundantConditionGivenDocblockType>
-      <code><![CDATA[is_resource($this->fh)]]></code>
-    </RedundantConditionGivenDocblockType>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/BinaryFormat/DerivedCacheWriter.php">
-    <InvalidOperand>
-      <code><![CDATA[getmypid()]]></code>
-    </InvalidOperand>
-    <InvalidPropertyAssignmentValue>
-      <code><![CDATA[$this->fh]]></code>
-      <code><![CDATA[$this->fh]]></code>
-    </InvalidPropertyAssignmentValue>
-    <MixedAssignment>
-      <code><![CDATA[$this->fh]]></code>
-    </MixedAssignment>
-    <PossiblyFalseOperand>
-      <code><![CDATA[getmypid()]]></code>
-    </PossiblyFalseOperand>
     <PossiblyInvalidArgument>
       <code><![CDATA[$data[$elemOffset]]]></code>
     </PossiblyInvalidArgument>
@@ -96,6 +80,9 @@
       <code><![CDATA[unpack('P', $rmemHeader, 16)[1]]]></code>
       <code><![CDATA[unpack('V', $rmemHeader, 12)[1]]]></code>
     </PossiblyInvalidArrayAccess>
+    <RiskyTruthyFalsyComparison>
+      <code><![CDATA[getmypid()]]></code>
+    </RiskyTruthyFalsyComparison>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/Comparison/Formatter/TextComparisonFormatter.php">
     <TypeDoesNotContainType>
@@ -124,10 +111,6 @@
      *     examples: array<string, mixed>
      * }>]]></code>
     </MoreSpecificReturnType>
-    <RedundantCondition>
-      <code><![CDATA[$cnt <= 50]]></code>
-      <code><![CDATA[$info['ref_count'] <= 50]]></code>
-    </RedundantCondition>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/Report/Substrate/FfiCsrGraphSubstrate.php">
     <DocblockTypeContradiction>
@@ -141,12 +124,6 @@
     <PropertyTypeCoercion>
       <code><![CDATA[$profiles]]></code>
     </PropertyTypeCoercion>
-  </file>
-  <file src="src/Lib/ByteStream/CDataByteReader.php">
-    <RedundantConditionGivenDocblockType>
-      <code><![CDATA[assert(is_int($value))]]></code>
-      <code><![CDATA[is_int($value)]]></code>
-    </RedundantConditionGivenDocblockType>
   </file>
   <file src="src/Lib/PhpInternals/Types/Zend/ZendOp.php">
     <PropertyTypeCoercion>
