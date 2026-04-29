@@ -42,7 +42,7 @@ sudo php ./reli inspector:trace -p <pid> -o trace.rbt
 
 Useful flags:
 
-- `-F/--output-format=rbt|rbt-bundled|template:phpspy|template:phpspy_with_opcode|template:json_lines`
+- `-f/--output-format=rbt|rbt-bundled|template:phpspy|template:phpspy_with_opcode|template:json_lines`
 - `-o/--output <path>` — file path (default: stdout)
 - `-d/--depth <N>` — max stack depth
 - `-s/--sleep-ns <N>` — sleep between samples (default ~10 ms)
@@ -52,7 +52,7 @@ Useful flags:
 
 ### What the output looks like
 
-Pick the format with `-F`. If `-F` is omitted, the format is chosen
+Pick the format with `-f`. If `-f` is omitted, the format is chosen
 from the output destination: writing to a `.rbt` file picks the
 binary format, anything else (including stdout) falls back to the
 configured default template — phpspy text out of the box.

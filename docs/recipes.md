@@ -128,8 +128,10 @@ thread, not a worker, and attaching to it produces empty traces /
 
 ```bash
 ps -L -p "$(pgrep -o frankenphp)" -o tid,comm | awk '$2 ~ /^php-[0-9a-f]+$/'
-#   12345 php-0
-#   12346 php-1
+#   12345 php-1abc34de
+#   12346 php-2bcd45ef
+# (FrankenPHP names worker threads with a hex suffix; the regex above also
+#  excludes `php-main`, the bootstrap thread.)
 
 sudo reli inspector:trace -p 12345 \
     --php-regex='.*/libphp\.so$' \

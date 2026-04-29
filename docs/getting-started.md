@@ -103,9 +103,12 @@ on shared hosts):
 eval "$(docker run --rm reliforp/reli-prof docker:print-wrapper --profile=minimal)"
 ```
 
-If a command fails unexpectedly under `reli-view`, reinstall with
-`--profile=full` and retry — `reli-view` intentionally omits the
-host privileges needed for attaching to live processes.
+The minimal profile installs the shell function as `reli-view` (not
+`reli`), so the two profiles can coexist; invoke it as `reli-view
+rbt:explore trace.rbt`, etc. If a command fails unexpectedly under
+`reli-view`, reinstall with `--profile=full` and retry — `reli-view`
+intentionally omits the host privileges needed for attaching to live
+processes.
 
 ### From Composer
 
@@ -129,10 +132,21 @@ composer install
 > Git) the equivalent command is `./reli` — substitute as you read.
 >
 > The `./reli` shebang is `#!/usr/bin/env php`, so the `php` on your
-> `PATH` must be **8.4+**. If your default is older, install
-> `php8.4-cli` and switch the default — `sudo update-alternatives
-> --set php /usr/bin/php8.4` — or invoke explicitly with
-> `php8.4 ./reli ...`. The Docker wrapper sidesteps this entirely.
+> `PATH` must be **8.4+**. If your default is older — or if your
+> distro only installs versioned binaries like `php8.4` without an
+> unversioned `php` symlink — invoke reli explicitly with the
+> versioned interpreter:
+>
+> ```bash
+> php8.4 ./reli ...
+> ```
+>
+> On Debian / Ubuntu you can additionally repoint the default with
+> `sudo update-alternatives --set php /usr/bin/php8.4` so that
+> `./reli` works directly. Other distros use different mechanisms
+> (`alternatives` on Fedora / RHEL, manual symlinks elsewhere); the
+> versioned-interpreter form above is the portable fallback. The
+> Docker wrapper sidesteps this entirely.
 
 ## 2. Smoke test
 
