@@ -15,9 +15,21 @@ eval "$(docker run --rm reliforp/reli-prof docker:print-wrapper)"
 eval "$(docker run --rm reliforp/reli-prof docker:print-wrapper --profile=minimal)"
 ```
 
-Add the line to `~/.bashrc` / `~/.zshrc` for persistence. The image tag is
-baked into the emitted wrapper (matching the image the `docker run` pulled),
-so you don't get accidental `:latest` drift.
+For persistence across shells, save the emitted wrapper to a file once
+and `source` it from your rc — pasting the `eval "$(docker run ...)"`
+line into `~/.bashrc` / `~/.zshrc` directly re-runs `docker run` on
+every shell start and breaks shell startup if the Docker daemon is
+down:
+
+```bash
+mkdir -p ~/.local/share/reli
+docker run --rm reliforp/reli-prof docker:print-wrapper > ~/.local/share/reli/wrapper.sh
+echo 'source ~/.local/share/reli/wrapper.sh' >> ~/.bashrc   # or ~/.zshrc
+```
+
+The image tag is baked into the emitted wrapper (matching the image
+the `docker run` pulled), so you don't get accidental `:latest` drift —
+re-run the snippet above to upgrade.
 
 ## Profiles
 
