@@ -44,6 +44,15 @@ final class DerivedCacheReader
 
     public function __destruct()
     {
+        // The runtime check is required: PHP keeps the value as a
+        // `closed-resource` after the first fclose(), and is_resource()
+        // returns false for that. The docblock-vs-runtime mismatch
+        // (declared `resource`, may actually be `closed-resource` mid-
+        // destruct) is the very thing Psalm flags here, so suppress
+        // narrowly with a comment rather than papering over it with
+        // `resource|closed-resource` — that'd cascade PossiblyInvalid-
+        // Argument complaints across every fseek / fread call below.
+        /** @psalm-suppress RedundantConditionGivenDocblockType */
         if (is_resource($this->fh)) {
             fclose($this->fh);
         }
@@ -194,6 +203,8 @@ final class DerivedCacheReader
 
     /**
      * Load a section into an FFI int32 array via chunked fread + memcpy.
+     *
+     * @return \FFI\CArray<int>|null
      */
     public function loadInt32Section(string $name): ?\FFI\CData
     {
@@ -202,6 +213,8 @@ final class DerivedCacheReader
 
     /**
      * Load a section into an FFI int64 array via chunked fread + memcpy.
+     *
+     * @return \FFI\CArray<int>|null
      */
     public function loadInt64Section(string $name): ?\FFI\CData
     {

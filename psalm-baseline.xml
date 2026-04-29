@@ -63,24 +63,16 @@
     </PossiblyNullArgument>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/BinaryFormat/DerivedCacheReader.php">
-    <RedundantConditionGivenDocblockType>
-      <code><![CDATA[is_resource($this->fh)]]></code>
-    </RedundantConditionGivenDocblockType>
+    <LessSpecificReturnStatement>
+      <code><![CDATA[$this->loadFfiSection($name, 'int32_t', 4)]]></code>
+      <code><![CDATA[$this->loadFfiSection($name, 'int64_t', 8)]]></code>
+    </LessSpecificReturnStatement>
+    <MoreSpecificReturnType>
+      <code><![CDATA[\FFI\CArray<int>|null]]></code>
+      <code><![CDATA[\FFI\CArray<int>|null]]></code>
+    </MoreSpecificReturnType>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/BinaryFormat/DerivedCacheWriter.php">
-    <InvalidOperand>
-      <code><![CDATA[getmypid()]]></code>
-    </InvalidOperand>
-    <InvalidPropertyAssignmentValue>
-      <code><![CDATA[$this->fh]]></code>
-      <code><![CDATA[$this->fh]]></code>
-    </InvalidPropertyAssignmentValue>
-    <MixedAssignment>
-      <code><![CDATA[$this->fh]]></code>
-    </MixedAssignment>
-    <PossiblyFalseOperand>
-      <code><![CDATA[getmypid()]]></code>
-    </PossiblyFalseOperand>
     <PossiblyInvalidArgument>
       <code><![CDATA[$data[$elemOffset]]]></code>
     </PossiblyInvalidArgument>
@@ -88,6 +80,9 @@
       <code><![CDATA[unpack('P', $rmemHeader, 16)[1]]]></code>
       <code><![CDATA[unpack('V', $rmemHeader, 12)[1]]]></code>
     </PossiblyInvalidArrayAccess>
+    <RiskyTruthyFalsyComparison>
+      <code><![CDATA[getmypid()]]></code>
+    </RiskyTruthyFalsyComparison>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/Comparison/Formatter/TextComparisonFormatter.php">
     <TypeDoesNotContainType>
@@ -95,28 +90,14 @@
     </TypeDoesNotContainType>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/Report/BinaryReportDataProvider.php">
-    <InvalidPropertyFetch>
-      <code><![CDATA[$locRows[$li]->class_id]]></code>
-      <code><![CDATA[$locRows[$li]->location_type_id]]></code>
-      <code><![CDATA[$locRows[$li]->string_value_id]]></code>
-    </InvalidPropertyFetch>
+    <ArgumentTypeCoercion>
+      <code><![CDATA[$locIndex]]></code>
+      <code><![CDATA[$locIndex]]></code>
+    </ArgumentTypeCoercion>
     <LessSpecificReturnStatement>
       <code><![CDATA[self::getDedupCandidateStatsFallback($reader, $limit)]]></code>
       <code><![CDATA[self::getDedupCandidateStatsFallback($reader, $limit)]]></code>
     </LessSpecificReturnStatement>
-    <MixedArgument>
-      <code><![CDATA[$classId]]></code>
-      <code><![CDATA[$locRows[$li]->location_type_id]]></code>
-    </MixedArgument>
-    <MixedAssignment>
-      <code><![CDATA[$classId]]></code>
-      <code><![CDATA[$meta['string_value_id']]]></code>
-      <code><![CDATA[$svId]]></code>
-    </MixedAssignment>
-    <MixedReturnTypeCoercion>
-      <code><![CDATA[$meta]]></code>
-      <code><![CDATA[array{size: int, location_type: ?string, class_name: ?string, string_value_id: ?int}]]></code>
-    </MixedReturnTypeCoercion>
     <MoreSpecificReturnType>
       <code><![CDATA[list<array{
      *     link_name: string,
@@ -130,24 +111,6 @@
      *     examples: array<string, mixed>
      * }>]]></code>
     </MoreSpecificReturnType>
-    <PossiblyNullArgument>
-      <code><![CDATA[$classId]]></code>
-      <code><![CDATA[$locRows[$li]->location_type_id]]></code>
-    </PossiblyNullArgument>
-    <PossiblyNullPropertyFetch>
-      <code><![CDATA[$locRows[$li]->class_id]]></code>
-      <code><![CDATA[$locRows[$li]->location_type_id]]></code>
-      <code><![CDATA[$locRows[$li]->string_value_id]]></code>
-    </PossiblyNullPropertyFetch>
-    <RedundantCondition>
-      <code><![CDATA[$cnt <= 50]]></code>
-      <code><![CDATA[$info['ref_count'] <= 50]]></code>
-    </RedundantCondition>
-    <UndefinedPropertyFetch>
-      <code><![CDATA[$locRows[$li]->class_id]]></code>
-      <code><![CDATA[$locRows[$li]->location_type_id]]></code>
-      <code><![CDATA[$locRows[$li]->string_value_id]]></code>
-    </UndefinedPropertyFetch>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/Report/Substrate/FfiCsrGraphSubstrate.php">
     <DocblockTypeContradiction>
@@ -157,27 +120,17 @@
     <MixedArgument>
       <code><![CDATA[$ci]]></code>
       <code><![CDATA[$ci]]></code>
-      <code><![CDATA[$ntColIdxData]]></code>
-      <code><![CDATA[$ntRowPtrData]]></code>
     </MixedArgument>
     <PropertyTypeCoercion>
       <code><![CDATA[$profiles]]></code>
-      <code><![CDATA[$sccBuf]]></code>
-      <code><![CDATA[$subtreeBuf]]></code>
     </PropertyTypeCoercion>
   </file>
-  <file src="src/Lib/ByteStream/CDataByteReader.php">
-    <RedundantConditionGivenDocblockType>
-      <code><![CDATA[assert(is_int($value))]]></code>
-      <code><![CDATA[is_int($value)]]></code>
-    </RedundantConditionGivenDocblockType>
-  </file>
   <file src="src/Lib/PhpInternals/Types/Zend/ZendOp.php">
-    <MixedAssignment>
-      <code><![CDATA[$this->op1]]></code>
-      <code><![CDATA[$this->op2]]></code>
-      <code><![CDATA[$this->result]]></code>
-    </MixedAssignment>
+    <PropertyTypeCoercion>
+      <code><![CDATA[$this->casted_cdata->casted->op1]]></code>
+      <code><![CDATA[$this->casted_cdata->casted->op2]]></code>
+      <code><![CDATA[$this->casted_cdata->casted->result]]></code>
+    </PropertyTypeCoercion>
   </file>
   <file src="src/Lib/PhpInternals/Types/Zend/ZendOpArray.php">
     <RedundantCondition>
@@ -204,17 +157,6 @@
     <PossiblyNullArgument>
       <code><![CDATA[$this->perNodeClasses]]></code>
     </PossiblyNullArgument>
-    <PossiblyNullArrayAccess>
-      <code><![CDATA[$this->perNodeClasses[$node_id]]]></code>
-      <code><![CDATA[$this->perNodeSizes[$node_id]]]></code>
-    </PossiblyNullArrayAccess>
-    <PossiblyNullOperand>
-      <code><![CDATA[$this->perNodeSizes[$node_id]]]></code>
-    </PossiblyNullOperand>
-    <PossiblyNullReference>
-      <code><![CDATA[$this->perNodeClasses]]></code>
-      <code><![CDATA[$this->perNodeSizes]]></code>
-    </PossiblyNullReference>
   </file>
   <file src="src/Lib/PhpProcessReader/PhpMemoryReader/MemoryLocation/FfiIntSet.php">
     <InvalidOperand>

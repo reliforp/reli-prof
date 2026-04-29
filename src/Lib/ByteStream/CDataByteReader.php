@@ -51,9 +51,7 @@ final class CDataByteReader implements ByteReaderInterface
     {
         $result = '';
         for ($i = $offset, $last_offset = $offset + $size; $i < $last_offset; $i++) {
-            $value = $this->source[$i];
-            assert(is_int($value));
-            $result .= chr($value);
+            $result .= chr($this->source[$i]);
         }
         return $result;
     }

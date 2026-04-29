@@ -840,6 +840,8 @@ final class BinaryReportDataProvider
     /**
      * Build a single node's meta on demand from nodeSizes + locIndex/locRows.
      *
+     * @param \FFI\CArray<int>|null $locIndex
+     * @param \FFI\CArray<\FFI\PhpInternals\LocationRow>|null $locRows
      * @return array{size: int, location_type: ?string, class_name: ?string, string_value_id: ?int}
      */
     private static function buildNodeMeta(
@@ -895,6 +897,15 @@ final class BinaryReportDataProvider
         $edge_count = $reader->getSectionElementCount(Format::SECTION_EDGES);
         $edgeRows = $reader->castSection(Format::SECTION_EDGES, 'EdgeRow');
 
+        /**
+         * @var array<string, array{
+         *     link_name_id: int,
+         *     size: int,
+         *     ref_count: int,
+         *     sample_parent_node_id: int,
+         *     sample_child_node_id: int,
+         * }>
+         */
         $coarse = [];
         if ($edgeRows !== null) {
             for ($i = 0; $i < $edge_count; $i++) {
@@ -973,6 +984,19 @@ final class BinaryReportDataProvider
         usort($candidates, fn (array $a, array $b): int => $b['coarse_total'] <=> $a['coarse_total']);
         $candidates = array_slice($candidates, 0, $candidate_limit);
 
+        /**
+         * @var array<string, array{
+         *     link_name: string,
+         *     size: int,
+         *     sample_parent_node_id: int,
+         *     sample_child_node_id: int,
+         *     sample_location_type: ?string,
+         *     sample_child_node_ids: list<int>,
+         *     seen_children: array<int, true>,
+         *     string_counts: array<string, int>,
+         *     object_samples: list<string>,
+         * }>
+         */
         $groups = [];
         foreach ($candidates as $candidate) {
             $groups[$candidate['key']] = [
