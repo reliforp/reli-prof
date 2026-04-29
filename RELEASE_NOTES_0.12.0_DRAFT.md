@@ -174,11 +174,12 @@ for the full list.
 
 ## Acknowledgements
 
-Most of 0.12.0 took shape over a six-week intensive push using Claude
-Code, layered on top of reli's pre-existing foundations — the
-FFI-based memory reading, ELF parsing, ZendMM walking, and TSRM /
-TLS resolution that have been the project's craft work since long
-before AI coding assistants were a thing. The bulk of the new code
-that 0.12.0 added on top of those foundations — DWARF parsing from
-scratch among many other pieces — landed with substantial Claude
-help. A separate write-up on the experience is in progress.
+Most of 0.12.0 took shape over a six-week intensive push, layered on
+top of reli's pre-existing foundations — the FFI-based memory reading,
+ELF parsing, ZendMM walking, and TSRM / TLS resolution that have been
+the project's craft work since long before AI coding assistants were
+a thing. The bulk of new code on top of those foundations — DWARF
+parsing from scratch among many other pieces — was Claude Code's
+work, with the maintainer directing and reviewing. "AI-assisted"
+understates the inversion: in this round, the human was the
+assistant. A separate write-up on the experience is in progress.
