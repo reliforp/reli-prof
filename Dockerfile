@@ -18,8 +18,9 @@ RUN apt-get update && apt-get install -y \
 # uses assert() for two distinct purposes: type narrowing for Psalm (the
 # downstream code is strictly typed and would crash with TypeError on
 # violation, so the assert is purely informational), and runtime contracts
-# whose failure would silently corrupt output (those are explicitly written
-# as Webmozart\Assert::* and are unaffected by this setting). With
+# whose failure would silently corrupt output (those are written as
+# regular runtime checks — either Webmozart\Assert::* or an explicit
+# `if (...) throw` — and are unaffected by this setting). With
 # zend.assertions=-1 the bare assert() calls are stripped at compile time;
 # the dev image (Dockerfile-dev) leaves the PHP default of 1 in place so
 # the type-narrowing asserts still fire during phpunit.
