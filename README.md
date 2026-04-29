@@ -64,7 +64,7 @@ Render the heap as a standalone HTML file — Circle Pack, Treemap, Sunburst, 3D
 ```bash
 # Recommended for production: short stop, then offline analysis.
 $ reli inspector:memory:dump -p <pid> -o snapshot.rdump
-$ reli inspector:memory:analyze snapshot.rdump -f binary -o snapshot.rmem
+$ reli inspector:memory:analyze snapshot.rdump -f rmem -o snapshot.rmem
 
 # Standalone HTML
 $ reli rmem:viz snapshot.rmem
@@ -90,7 +90,7 @@ Capture a snapshot and get a prioritised report back — dominant classes, cycle
 ```bash
 # Recommended for production: short stop, then offline analysis.
 $ reli inspector:memory:dump -p <pid> -o snapshot.rdump
-$ reli inspector:memory:analyze snapshot.rdump -f binary -o snapshot.rmem
+$ reli inspector:memory:analyze snapshot.rdump -f rmem -o snapshot.rmem
 $ reli inspector:memory:report snapshot.rmem
 ```
 
