@@ -142,10 +142,10 @@ roughly to the number of target processes you expect the regex to
 match concurrently:
 
 - **Workers > matched targets**: idle workers stay parked. With
-  `-F rbt -o <dir>/` they still create their `worker_<pid>.rbt`
-  output files, so directories will contain 0-byte files for the
-  idle workers (harmless, but `find <dir> -size 0 -delete` cleans
-  up after a run if it bothers downstream tooling).
+  `-F rbt -o <dir>/` the per-worker output stream is opened lazily on
+  the first attach, so workers that never get assigned a target leave
+  no `worker_<pid>.rbt` artifact behind. Extra workers are therefore a
+  scheduling/resource concern only, not an output-cleanup concern.
 - **Workers < matched targets**: surplus matches share workers
   round-robin. Each worker can sample multiple targets, but the
   effective per-target rate drops with the share count. For dense

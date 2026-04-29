@@ -1,8 +1,9 @@
 # Analyzing `.rbt` traces — `rbt:analyze` and `rbt:explore`
 
-Once you've captured a binary trace into a `.rbt` file (see
-[binary-trace-format.md](binary-trace-format.md) for capture options),
-reli ships two commands for poking at it without leaving the terminal:
+Once you've captured a binary trace into a `.rbt` file, reli ships two
+commands for poking at it without leaving the terminal. For capture
+commands and options, see [capturing-traces.md](capturing-traces.md);
+for the on-disk format, see [binary-trace-format.md](binary-trace-format.md).
 
 | Command | Use it for |
 |---|---|
@@ -442,7 +443,9 @@ name out of the explorer and paste it into an `--callers=` query.
 
 ## See also
 
-- [binary-trace-format.md](binary-trace-format.md) — capture options,
-  format spec, gzip / segment behaviour, recovery
+- [capturing-traces.md](capturing-traces.md) — how to capture `.rbt`
+  traces (`inspector:trace`, `inspector:daemon`, capture options)
+- [binary-trace-format.md](binary-trace-format.md) — `.rbt` format
+  spec, gzip / segment behaviour, recovery
 - [internals/binary-intermediate-format.md](../internals/binary-intermediate-format.md)
   — design notes on why the analyze/explore split exists
