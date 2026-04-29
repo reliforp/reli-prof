@@ -140,9 +140,19 @@ privilege:
 - `--network=host` lets the container bind directly on host interfaces.
 - `--security-opt=apparmor=unconfined` removes AppArmor constraints.
 
-Inside the container, reli runs as the host user (`--user $(id -u):$(id -g)`);
-`CAP_SYS_PTRACE` is made effective via file capabilities on
-`/usr/local/bin/php` in the image (installed at build time).
+Inside the container, reli runs as the host user (`--user $(id -u):$(id -g)`).
+Linux zeroes the effective capability set at exec for non-zero uids, so
+`--cap-add=SYS_PTRACE` alone would still leave ptrace returning `EPERM`.
+The wrapper works around that by setting `--entrypoint /opt/reli/php-ptrace/php`,
+selecting a shadow copy of the PHP binary that carries `cap_sys_ptrace=eip`
+as a file capability — on exec the kernel re-promotes `CAP_SYS_PTRACE` into
+the effective set. The default ENTRYPOINT (`/usr/local/bin/php`) is
+intentionally left clean, so plain `docker run reliforp/reli-prof <cmd>`
+for offline-only commands (`rbt:analyze`, `inspector:memory:report`,
+`converter:*`, …) works without `--cap-add`. The shadow copy's basename is
+`php` (the variant tag is in the directory name), so reli's default
+`--php-regex` matches `/proc/<pid>/maps` for processes started from it —
+relevant when one wrapper-launched reli attaches to another.
 
 Trust the wrapper accordingly: the Full profile is fine for
 single-user laptops and dedicated CI runners, but think twice on
