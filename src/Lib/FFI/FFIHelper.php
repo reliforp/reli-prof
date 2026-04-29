@@ -40,7 +40,6 @@ final class FFIHelper
      * `?? throw new …` at every site — Psalm would otherwise flag those
      * as RedundantCondition / TypeDoesNotContainNull.
      *
-     * @template T of CData
      * @param \FFI\CType|non-empty-string $type
      */
     public static function cast(\FFI\CType|string $type, CData &$ptr): CData

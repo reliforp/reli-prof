@@ -248,9 +248,13 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
                 $is_tree = ord($data[$off + 12]);
 
                 if ($parent_idx < $nc) {
-                    $allDeg[$parent_idx] = Cast::toInt($allDeg[$parent_idx]) + 1;
+                    // (int) on FFI int32_t[] reads: avoid Cast::toInt() in
+                    // this O(edgeCount) loop. Element type is provably int
+                    // at runtime, but Psalm's FFI stub leaves offsetGet as
+                    // CData|null|scalar, so InvalidCast stays in baseline.
+                    $allDeg[$parent_idx] = (int)$allDeg[$parent_idx] + 1;
                     if ($is_tree === 1) {
-                        $treeDeg[$parent_idx] = Cast::toInt($treeDeg[$parent_idx]) + 1;
+                        $treeDeg[$parent_idx] = (int)$treeDeg[$parent_idx] + 1;
                         $treeEdgeCount++;
 
                         // Track tree parent for child
@@ -261,7 +265,7 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
                             $treeParents[$child_idx] = $parent_idx;
                         }
                     } else {
-                        $nontreeDeg[$parent_idx] = Cast::toInt($nontreeDeg[$parent_idx]) + 1;
+                        $nontreeDeg[$parent_idx] = (int)$nontreeDeg[$parent_idx] + 1;
                         $nontreeEdgeCount++;
                     }
                 }
@@ -278,12 +282,14 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
         $treeRowPtr[0] = 0;
         $allRowPtr[0] = 0;
         $nontreeRowPtr[0] = 0;
+        // O(nc) prefix-sum: keep `(int)` to match the per-edge loops above.
         for ($i = 0; $i < $nc; $i++) {
-            $treeRowPtr[$i + 1] = Cast::toInt($treeRowPtr[$i]) + Cast::toInt($treeDeg[$i]);
-            $allRowPtr[$i + 1] = Cast::toInt($allRowPtr[$i]) + Cast::toInt($allDeg[$i]);
-            $nontreeRowPtr[$i + 1] = Cast::toInt($nontreeRowPtr[$i]) + Cast::toInt($nontreeDeg[$i]);
+            $treeRowPtr[$i + 1] = (int)$treeRowPtr[$i] + (int)$treeDeg[$i];
+            $allRowPtr[$i + 1] = (int)$allRowPtr[$i] + (int)$allDeg[$i];
+            $nontreeRowPtr[$i + 1] = (int)$nontreeRowPtr[$i] + (int)$nontreeDeg[$i];
         }
 
+        // One-shot scalar reads — Cast::toInt() is fine here, only 3 calls.
         $totalAllEdges = Cast::toInt($allRowPtr[$nc]);
         $totalTreeEdges = Cast::toInt($treeRowPtr[$nc]);
         $totalNontreeEdges = Cast::toInt($nontreeRowPtr[$nc]);
@@ -300,9 +306,9 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
         $allPos = FFIHelper::new("int32_t[{$nc}]");
         $nontreePos = FFIHelper::new("int32_t[{$nc}]");
         for ($i = 0; $i < $nc; $i++) {
-            $treePos[$i] = Cast::toInt($treeRowPtr[$i]);
-            $allPos[$i] = Cast::toInt($allRowPtr[$i]);
-            $nontreePos[$i] = Cast::toInt($nontreeRowPtr[$i]);
+            $treePos[$i] = (int)$treeRowPtr[$i];
+            $allPos[$i] = (int)$allRowPtr[$i];
+            $nontreePos[$i] = (int)$nontreeRowPtr[$i];
         }
 
         // ---- Pass 2: fill col_idx ----
@@ -337,19 +343,19 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
                 $strength = ord($data[$off + 13]);
 
                 if ($parent_idx < $nc) {
-                    // All edges
-                    $pos = Cast::toInt($allPos[$parent_idx]);
+                    // All edges — `(int)` for the same hot-loop reasoning.
+                    $pos = (int)$allPos[$parent_idx];
                     $allColIdx[$pos] = $child_idx;
                     $allPos[$parent_idx] = $pos + 1;
 
                     if ($is_tree === 1) {
-                        $pos = Cast::toInt($treePos[$parent_idx]);
+                        $pos = (int)$treePos[$parent_idx];
                         $treeColIdx[$pos] = $child_idx;
                         $treeLinkNames[$pos] = $link_name_id;
                         $treeStrength[$pos] = $strength;
                         $treePos[$parent_idx] = $pos + 1;
                     } else {
-                        $pos = Cast::toInt($nontreePos[$parent_idx]);
+                        $pos = (int)$nontreePos[$parent_idx];
                         $nontreeColIdx[$pos] = $child_idx;
                         $nontreePos[$parent_idx] = $pos + 1;
                     }

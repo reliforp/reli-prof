@@ -24,6 +24,13 @@ use Reli\Lib\FFI\FFIHelper;
  *
  * Uses 0 as empty sentinel (no valid memory address is 0).
  * Linear probing with 75% max load factor, grows 2x.
+ *
+ * The `(int)` casts on `$this->slots[...]` are deliberate: add()/has()
+ * are called per memory location during analysis (millions of ops),
+ * and the FFI int64_t[] element type is provably int at runtime.
+ * PhpCast\Cast::toInt() would be safer in principle but its per-call
+ * method dispatch is measurable here. The resulting InvalidCast entries
+ * stay in psalm-baseline.xml on purpose.
  */
 final class FfiIntSet
 {

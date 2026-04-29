@@ -126,6 +126,23 @@
     </PossiblyInvalidArrayAccess>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/BinaryMemoryOutput.php">
+    <InvalidCast>
+      <code><![CDATA[$allDeg[$i]]]></code>
+      <code><![CDATA[$allDeg[$parent_idx]]]></code>
+      <code><![CDATA[$allPos[$parent_idx]]]></code>
+      <code><![CDATA[$allRowPtr[$i]]]></code>
+      <code><![CDATA[$allRowPtr[$i]]]></code>
+      <code><![CDATA[$nontreeDeg[$i]]]></code>
+      <code><![CDATA[$nontreeDeg[$parent_idx]]]></code>
+      <code><![CDATA[$nontreePos[$parent_idx]]]></code>
+      <code><![CDATA[$nontreeRowPtr[$i]]]></code>
+      <code><![CDATA[$nontreeRowPtr[$i]]]></code>
+      <code><![CDATA[$treeDeg[$i]]]></code>
+      <code><![CDATA[$treeDeg[$parent_idx]]]></code>
+      <code><![CDATA[$treePos[$parent_idx]]]></code>
+      <code><![CDATA[$treeRowPtr[$i]]]></code>
+      <code><![CDATA[$treeRowPtr[$i]]]></code>
+    </InvalidCast>
     <MixedArgument>
       <code><![CDATA[$nodeSlots]]></code>
       <code><![CDATA[$nodeSlots * 4]]></code>
