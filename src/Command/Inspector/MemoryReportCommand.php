@@ -86,87 +86,75 @@ final class MemoryReportCommand extends ReliCommand
             InputOption::VALUE_REQUIRED,
             'set PHP memory_limit for analysis (e.g. 2G, 512M)',
         );
+        // Advanced / tuning options.
+        // These mostly matter on large snapshots (multi-GB SQLite, OOM, slow
+        // substrate load). The help text below is a one-liner each; the
+        // background, defaults' rationale, and "which knob to reach for first"
+        // live in docs/internals/memory-report-tuning.md.
         $this->addOption(
             'ffi-csr',
             null,
             InputOption::VALUE_NEGATABLE,
-            'force FFI CSR graph substrate (default: auto; --ffi-csr to force on, --no-ffi-csr to force off)',
+            'force FFI CSR graph substrate on/off (default: auto)',
         );
         $this->addOption(
             'link-cache',
             null,
             InputOption::VALUE_REQUIRED,
-            'tree-edge link cache strategy: auto (default; bulk-read small graphs, lazy on huge ones),'
-            . ' eager (always bulk-read; faster, more memory),'
-            . ' lazy (per-edge with bounded cache; slower, flat memory)',
+            'tree-edge link cache: auto | eager | lazy',
             'auto',
         );
         $this->addOption(
             'substrate-bulk-fetch-chunk',
             null,
             InputOption::VALUE_REQUIRED,
-            'rows per chunked fetchAll when loading the substrate from SQLite.'
-            . ' Larger values trade memory for speed (fewer PHP/PDO round trips).'
-            . ' Default 200000 keeps per-chunk peak under ~80 MB on the wide loadEdgesFfi'
-            . ' row layout. The chunked loaders rely on a (run_id, node_id, type) covering'
-            . ' index on context_nodes and a (run_id, id) index on context_edges; both'
-            . ' are installed lazily on the first report run.',
+            'rows per chunked fetchAll when loading the SQLite substrate',
             '200000',
         );
         $this->addOption(
             'report-workers',
             null,
             InputOption::VALUE_REQUIRED,
-            'number of parallel workers for Phase 3 passes. 1 (default) runs sequentially'
-            . ' in the parent process. Higher values fork children via pcntl_fork; each'
-            . ' child inherits the substrate via copy-on-write and runs a subset of the'
-            . ' independent Phase 3 passes in parallel. Requires pcntl; silently falls'
-            . ' back to sequential if the extension is missing.',
+            'parallel workers for Phase 3 passes'
+            . ' (forks via pcntl_fork; falls back to sequential without ext-pcntl)',
             '1',
         );
         $this->addOption(
             'mmap-size',
             null,
             InputOption::VALUE_REQUIRED,
-            'SQLite mmap_size for the report read connection (and worker connections).'
-            . ' Suffix-aware: K / M / G are KiB / MiB / GiB; plain integers are bytes;'
-            . ' 0 disables mmap. Bigger means SQLite memory-maps more of the database'
-            . ' file instead of paying pread() per page on substrate load. Defaults to'
-            . ' 2G, which matches the typical SQLite compile-time cap'
-            . ' (SQLITE_MAX_MMAP_SIZE = 0x7fff0000 ≈ 2 GiB - 16 KiB on most distro'
-            . ' builds). Asking for more than the cap is harmless — SQLite silently'
-            . ' clamps — but the help text would lie about the effective value, so the'
-            . ' default is pinned at the realistic ceiling. For DBs larger than 2 GiB,'
-            . ' the trailing pages still go through pread + the kernel page cache,'
-            . ' which is usually fine if the file is already cache-warm.',
+            'SQLite mmap_size for the read connection; suffix-aware (K/M/G), 0 disables',
             '2G',
         );
         $this->addOption(
             'prefetch',
             null,
             InputOption::VALUE_NEGATABLE,
-            'Hint the kernel to read-ahead the entire DB file into the page cache'
-            . ' via posix_fadvise(POSIX_FADV_WILLNEED) before opening it. On Linux'
-            . ' this kicks off async read-ahead so SQLite hits a warm cache from the'
-            . ' first pread, which is the dominant lever on multi-GB analyze DBs that'
-            . ' overflow the SQLite mmap cap (~2 GiB). Silently no-ops on platforms'
-            . ' without posix_fadvise (e.g. macOS) or when PHP was built without FFI.'
-            . ' Default: on.',
+            'posix_fadvise(POSIX_FADV_WILLNEED) the DB file before opening (default: on)',
             true,
         );
         $this->addOption(
             'no-derived-cache',
             null,
             InputOption::VALUE_NONE,
-            'skip reading and writing the .rmem.derived sidecar cache'
-            . ' (subtree sizes, SCC). By default, the cache is read on'
-            . ' hit and written on miss to speed up subsequent report runs.',
+            'skip the .rmem.derived sidecar cache (subtree sizes, SCC)',
         );
         $this->addOption(
             'rebuild-derived-cache',
             null,
             InputOption::VALUE_NONE,
             'ignore existing .rmem.derived sidecar and recompute + rewrite it',
+        );
+
+        // Mention the tuning doc once as part of the command help so users
+        // who hit `--help` for tuning advice know where to look.
+        $this->setHelp(
+            "Generate a memory analysis report from a snapshot.\n\n"
+            . "Tuning knobs (--ffi-csr / --link-cache / --substrate-bulk-fetch-chunk\n"
+            . "/ --report-workers / --mmap-size / --prefetch / --no-derived-cache\n"
+            . "/ --rebuild-derived-cache) only matter on large snapshots; their\n"
+            . "background and which-knob-when guidance live in\n"
+            . "docs/internals/memory-report-tuning.md.\n",
         );
     }
 

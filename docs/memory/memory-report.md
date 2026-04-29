@@ -209,7 +209,7 @@ Options:
       --rebuild-derived-cache               Ignore an existing .rmem.derived sidecar and recompute + rewrite it
 ```
 
-The perf-tuning flags below the basics matter when reports either OOM or run slowly on large snapshots; see [§ Tips](#tips) for which knobs to reach for first.
+The perf-tuning flags below the basics matter when reports either OOM or run slowly on large snapshots; see [§ Tips](#tips) for which knobs to reach for first, and [internals/memory-report-tuning.md](../internals/memory-report-tuning.md) for the full background (defaults' rationale, SQLite mmap cap notes, derived-cache mechanics, etc.) — the `--help` text intentionally keeps these to one-liners.
 
 ### `inspector:memory` with report format
 
