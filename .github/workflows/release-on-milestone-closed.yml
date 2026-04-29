@@ -9,27 +9,26 @@ on:
 
 jobs:
   release:
-    name: "GIT tag, release & create merge-up PR"
+    name: "GIT tag, release & prepare next milestone"
     runs-on: ubuntu-latest
 
     steps:
       - name: "Checkout"
         uses: actions/checkout@v6
 
+      # 0.x note: laminas/automatic-releases is built around the post-1.0
+      # SemVer workflow where minor bumps are backwards-compatible and patch
+      # releases on an old minor must be merged up into the next minor. In a
+      # 0.x project each minor is effectively a major (BC breaks are allowed),
+      # so the merge-up step would generate noisy / conflicting PRs and is
+      # omitted here. `bump-changelog` is also dropped because this repo does
+      # not ship a CHANGELOG.md in keep-a-changelog format. Re-enable both
+      # once we cut 1.0 (or adopt a CHANGELOG file).
+
       - name: "Release"
         uses: "laminas/automatic-releases@v1"
         with:
           command-name: "laminas:automatic-releases:release"
-        env:
-          "GITHUB_TOKEN": ${{ secrets.GITHUB_TOKEN }}
-          "SIGNING_SECRET_KEY": ${{ secrets.SIGNING_SECRET_KEY }}
-          "GIT_AUTHOR_NAME": ${{ secrets.GIT_AUTHOR_NAME }}
-          "GIT_AUTHOR_EMAIL": ${{ secrets.GIT_AUTHOR_EMAIL }}
-
-      - name: "Create Merge-Up Pull Request"
-        uses: "laminas/automatic-releases@v1"
-        with:
-          command-name: "laminas:automatic-releases:create-merge-up-pull-request"
         env:
           "GITHUB_TOKEN": ${{ secrets.GITHUB_TOKEN }}
           "SIGNING_SECRET_KEY": ${{ secrets.SIGNING_SECRET_KEY }}
@@ -42,16 +41,6 @@ jobs:
           command-name: "laminas:automatic-releases:switch-default-branch-to-next-minor"
         env:
           "GITHUB_TOKEN": ${{ secrets.ORGANIZATION_ADMIN_TOKEN }}
-          "SIGNING_SECRET_KEY": ${{ secrets.SIGNING_SECRET_KEY }}
-          "GIT_AUTHOR_NAME": ${{ secrets.GIT_AUTHOR_NAME }}
-          "GIT_AUTHOR_EMAIL": ${{ secrets.GIT_AUTHOR_EMAIL }}
-
-      - name: "Bump Changelog Version On Originating Release Branch"
-        uses: "laminas/automatic-releases@v1"
-        with:
-          command-name: "laminas:automatic-releases:bump-changelog"
-        env:
-          "GITHUB_TOKEN": ${{ secrets.GITHUB_TOKEN }}
           "SIGNING_SECRET_KEY": ${{ secrets.SIGNING_SECRET_KEY }}
           "GIT_AUTHOR_NAME": ${{ secrets.GIT_AUTHOR_NAME }}
           "GIT_AUTHOR_EMAIL": ${{ secrets.GIT_AUTHOR_EMAIL }}

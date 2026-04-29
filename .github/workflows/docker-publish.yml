@@ -1,0 +1,155 @@
+name: Publish Docker image
+
+# Three trigger shapes, three tag shapes:
+#
+#   1. Tag push (e.g. `0.12.0`, set by laminas/automatic-releases on milestone
+#      close). Stable release. Pushes `:0.12.0`, `:0.12`, and `:latest`.
+#      Pre-release tags like `0.12.0-rc1` skip `:latest` and `:0.12`.
+#
+#   2. Push to a release branch matching `[0-9]+.[0-9]+.x` (e.g. `0.12.x`).
+#      Floating dev image. Pushes `:0.12.x-dev` so users can try
+#      not-yet-tagged fixes from the active release line. Never touches
+#      `:latest`.
+#
+#   3. Manual `workflow_dispatch` for any ref (PR branch, feature branch,
+#      SHA). Pushes a SHA-pinned `:manual-sha-<short>` tag — no floating
+#      tags, so PR / experimental builds never overwrite anything stable.
+#      Use this to share a one-off image of a PR with a reviewer or to
+#      reproduce a specific commit's behaviour.
+#
+# Required repo secrets:
+#   DOCKERHUB_USERNAME — Docker Hub account with push access to reliforp/reli-prof
+#   DOCKERHUB_TOKEN    — PAT scoped to that repo
+#
+# Why we inject COMPOSER_ROOT_VERSION as a build arg: `.git` is in
+# `.dockerignore` and `composer.json` has no `version` field, so without
+# external help Composer can't infer the root package version inside the
+# build and falls back to `1.0.0+no-version-set`, which makes
+# `reli --version` lie. We compute the right Composer version per trigger
+# (semver tag for stable, `<branch>-dev` alias for floating release-branch
+# builds, `dev-manual-<sha>` for dispatch) and pass it through.
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-*'
+    branches:
+      - '[0-9]+.[0-9]+.x'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build (branch name, tag, or full SHA). For PRs, use the head branch name."
+        required: true
+
+jobs:
+  publish:
+    name: Build and push reliforp/reli-prof
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+          # metadata-action's `context: git` and our own `git rev-parse`
+          # need the full ref objects, not the shallow default.
+          fetch-depth: 0
+
+      - name: Compute version metadata
+        id: ver
+        run: |
+          set -euo pipefail
+          short_sha="$(git rev-parse --short HEAD)"
+          case "${{ github.event_name }}" in
+            push)
+              if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+                composer_version="${GITHUB_REF_NAME}"
+              else
+                # Release branch like `0.12.x` becomes the Composer dev
+                # alias `0.12.x-dev`, which is exactly what
+                # `getPrettyVersion` returns when checking out the branch
+                # locally with `.git` available.
+                composer_version="${GITHUB_REF_NAME}-dev"
+              fi
+              ;;
+            workflow_dispatch)
+              # `dev-<branch>` is Composer's canonical "this is a dev
+              # build of branch <branch>" form. `manual-<sha>` as the
+              # synthetic branch name keeps the Docker tag and the
+              # Composer version visibly correlated.
+              composer_version="dev-manual-${short_sha}"
+              ;;
+            *)
+              echo "unsupported event: ${{ github.event_name }}" >&2
+              exit 1
+              ;;
+          esac
+          echo "composer=${composer_version}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "Composer root version: ${composer_version}"
+          echo "Short SHA: ${short_sha}"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: reliforp/reli-prof
+          # Disable the implicit `:latest` flavor; we add it explicitly
+          # under the right conditions below.
+          flavor: |
+            latest=false
+          tags: |
+            # --- Trigger 1: stable tag push -------------------------------
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') }}
+            # --- Trigger 2: release-branch dev push -----------------------
+            type=raw,value=${{ github.ref_name }}-dev,enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') }}
+            # --- Trigger 3: manual dispatch (SHA-pinned, sourced from the
+            # actually-checked-out HEAD, not the workflow trigger ref) ----
+            type=raw,value=manual-sha-${{ steps.ver.outputs.short_sha }},enable=${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            COMPOSER_ROOT_VERSION=${{ steps.ver.outputs.composer }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=docker-publish
+          cache-to: type=gha,mode=max,scope=docker-publish
+
+      - name: Verify version reported by image
+        run: |
+          set -euo pipefail
+          expected='${{ steps.ver.outputs.composer }}'
+          image="reliforp/reli-prof:${{ steps.meta.outputs.version }}"
+          out="$(docker run --rm --pull=always "$image" --version)"
+          echo "$out"
+          case "$out" in
+            *"$expected"*)
+              echo "OK: image reports '$expected'"
+              ;;
+            *)
+              echo "FAIL: expected '$expected' in --version output from $image" >&2
+              exit 1
+              ;;
+          esac
