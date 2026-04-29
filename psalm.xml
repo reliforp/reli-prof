@@ -2,7 +2,7 @@
 <psalm
     errorLevel="1"
     resolveFromConfigFile="true"
-    findUnusedBaselineEntry="false"
+    findUnusedBaselineEntry="true"
     findUnusedCode="false"
     maxShapedArraySize="200"
 
@@ -22,5 +22,6 @@
         <file name="tools/stubs/ffi/libc.php"/>
         <file name="tools/stubs/ffi/scalar.php"/>
         <file name="tools/stubs/ffi/php.php"/>
+        <file name="tools/stubs/php/unpack.php"/>
     </stubs>
 </psalm>

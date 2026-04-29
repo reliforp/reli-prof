@@ -9,7 +9,7 @@ namespace Reli\Inspector\MemoryDump\FastPath\Generated\v83;
 use Reli\Inspector\MemoryDump\FastPath\FastPathReader as FastPathReaderInterface;
 use Reli\Inspector\MemoryDump\FastPath\RegionByteProvider;
 
-/** @psalm-suppress PossiblyInvalidArrayAccess, MixedReturnStatement, MixedInferredReturnType */
+/** @psalm-suppress PossiblyInvalidArrayAccess */
 final class FastPathReader implements FastPathReaderInterface
 {
     public function __construct(
@@ -357,43 +357,19 @@ final class FastPathReader implements FastPathReaderInterface
     }
 
     #[\Override]
-    public function zvalSize(): int
-    {
-        return 16;
-    }
+    public function zvalSize(): int { return 16; }
     #[\Override]
-    public function bucketSize(): int
-    {
-        return 32;
-    }
+    public function bucketSize(): int { return 32; }
     #[\Override]
-    public function arraySize(): int
-    {
-        return 56;
-    }
+    public function arraySize(): int { return 56; }
     #[\Override]
-    public function stringHeaderSize(): int
-    {
-        return 24;
-    }
+    public function stringHeaderSize(): int { return 24; }
     #[\Override]
-    public function stringValOffset(): int
-    {
-        return 24;
-    }
+    public function stringValOffset(): int { return 24; }
     #[\Override]
-    public function objectHeaderSize(): int
-    {
-        return 56;
-    }
+    public function objectHeaderSize(): int { return 56; }
     #[\Override]
-    public function packedElementSize(): int
-    {
-        return 16;
-    }
+    public function packedElementSize(): int { return 16; }
     #[\Override]
-    public function isArrayUninitialized(int $flags): bool
-    {
-        return (bool)($flags & (1 << 3));
-    }
+    public function isArrayUninitialized(int $flags): bool { return (bool)($flags & (1 << 3)); }
 }

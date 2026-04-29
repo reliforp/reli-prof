@@ -134,7 +134,7 @@ final class Reader
         $toc_offset = unpack('P', $headerBytes, 16)[1];
 
         // Parse TOC
-        $tocBytes = $this->readBytes((int)$toc_offset, $section_count * Format::TOC_ENTRY_SIZE);
+        $tocBytes = $this->readBytes($toc_offset, $section_count * Format::TOC_ENTRY_SIZE);
         $pos = 0;
         for ($i = 0; $i < $section_count; $i++) {
             $name = rtrim(substr($tocBytes, $pos, Format::TOC_NAME_SIZE), "\0");
@@ -147,9 +147,9 @@ final class Reader
             $pos += 8;
 
             $this->toc[$name] = [
-                'offset' => (int)$offset,
-                'length' => (int)$length,
-                'element_count' => (int)$element_count,
+                'offset' => $offset,
+                'length' => $length,
+                'element_count' => $element_count,
             ];
         }
     }

@@ -6,8 +6,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\MemoryDump\FastPath\Generated\v85;
 
-/** @psalm-suppress PossiblyInvalidArrayAccess, MixedReturnStatement, MixedInferredReturnType */
-
+/** @psalm-suppress PossiblyInvalidArrayAccess */
 function bucket_val_value_ptr(string $buf, int $off): int
 {
     return unpack('P', $buf, $off + 0)[1];
@@ -28,11 +27,13 @@ function bucket_val_u1_type_info(string $buf, int $off): int
     return ord($buf[$off + 8]) | (ord($buf[$off + 8 + 1]) << 8) | (ord($buf[$off + 8 + 2]) << 16) | (ord($buf[$off + 8 + 3]) << 24);
 }
 
+/** @psalm-suppress PossiblyInvalidArrayAccess */
 function bucket_h(string $buf, int $off): int
 {
     return unpack('P', $buf, $off + 16)[1];
 }
 
+/** @psalm-suppress PossiblyInvalidArrayAccess */
 function bucket_key(string $buf, int $off): int
 {
     return unpack('P', $buf, $off + 24)[1];

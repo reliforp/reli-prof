@@ -279,8 +279,8 @@ class GraphSubstrate
                 $node_id = $node_id_row[1];
                 $address = $address_row[1];
                 $offset += Format::LOCATION_ROW_SIZE;
-                if ((int)$address !== 0) {
-                    $addr_to_nodes[(int)$address][] = (int)$node_id;
+                if ($address !== 0) {
+                    $addr_to_nodes[$address][] = $node_id;
                 }
             }
             unset($locData);

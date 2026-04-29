@@ -100,7 +100,7 @@ final class StringDict
         $offset = 0;
         $count_row = unpack('V', $data, $offset);
         assert(is_array($count_row));
-        $count = (int)$count_row[1];
+        $count = $count_row[1];
         $offset += 4;
         $dataLen = strlen($data);
         for ($i = 0; $i < $count; $i++) {
@@ -109,7 +109,7 @@ final class StringDict
             }
             $len_row = unpack('V', $data, $offset);
             assert(is_array($len_row));
-            $len = (int)$len_row[1];
+            $len = $len_row[1];
             $offset += 4;
             if ($offset + $len > $dataLen) {
                 break; // truncated string entry

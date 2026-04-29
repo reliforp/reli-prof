@@ -515,12 +515,12 @@ final class ReportGenerator
             $offset += Format::LOCATION_ROW_SIZE;
 
             // Filter by region (null region also included)
-            $region = $dict->lookup((int)$region_id);
+            $region = $dict->lookup($region_id);
             if ($region !== null && !in_array($region, $relevant_regions, true)) {
                 continue;
             }
 
-            $type = $dict->lookup((int)$location_type_id);
+            $type = $dict->lookup($location_type_id);
             if ($type === null) {
                 continue;
             }
@@ -528,7 +528,7 @@ final class ReportGenerator
                 $result[$type] = ['count' => 0, 'memory_usage' => 0];
             }
             $result[$type]['count']++;
-            $result[$type]['memory_usage'] += (int)$size;
+            $result[$type]['memory_usage'] += $size;
         }
 
         // Sort by memory_usage descending
@@ -563,15 +563,15 @@ final class ReportGenerator
             $region_id = unpack('V', $data, $offset + 40)[1];
             $offset += Format::LOCATION_ROW_SIZE;
 
-            if ((int)$class_id === Format::NULL_STRING_ID) {
+            if ($class_id === Format::NULL_STRING_ID) {
                 continue;
             }
-            $region = $dict->lookup((int)$region_id);
+            $region = $dict->lookup($region_id);
             if ($region !== null && !in_array($region, $relevant_regions, true)) {
                 continue;
             }
 
-            $class_name = $dict->lookup((int)$class_id);
+            $class_name = $dict->lookup($class_id);
             if ($class_name === null) {
                 continue;
             }
@@ -579,7 +579,7 @@ final class ReportGenerator
                 $result[$class_name] = ['count' => 0, 'memory_usage' => 0];
             }
             $result[$class_name]['count']++;
-            $result[$class_name]['memory_usage'] += (int)$size;
+            $result[$class_name]['memory_usage'] += $size;
         }
 
         uasort($result, fn (array $a, array $b): int => $b['memory_usage'] <=> $a['memory_usage']);

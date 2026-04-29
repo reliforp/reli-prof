@@ -6,18 +6,19 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\MemoryDump\FastPath\Generated\v74;
 
-/** @psalm-suppress PossiblyInvalidArrayAccess, MixedReturnStatement, MixedInferredReturnType */
-
+/** @psalm-suppress PossiblyInvalidArrayAccess */
 function zval_value_ptr(string $buf, int $off): int
 {
     return unpack('P', $buf, $off + 0)[1];
 }
 
+/** @psalm-suppress PossiblyInvalidArrayAccess */
 function zval_value_lval(string $buf, int $off): int
 {
     return unpack('P', $buf, $off + 0)[1];
 }
 
+/** @psalm-suppress PossiblyInvalidArrayAccess */
 function zval_value_dval(string $buf, int $off): int
 {
     return unpack('P', $buf, $off + 0)[1];

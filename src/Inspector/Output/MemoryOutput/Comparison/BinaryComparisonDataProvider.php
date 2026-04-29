@@ -58,8 +58,8 @@ final class BinaryComparisonDataProvider implements ComparisonDataProvider
             $value_id = unpack('V', $data, $offset)[1];
             $offset += 4;
 
-            $key = $dict->lookup((int)$key_id);
-            $value = $dict->lookup((int)$value_id);
+            $key = $dict->lookup($key_id);
+            $value = $dict->lookup($value_id);
             if ($key !== null && $value !== null && is_numeric($value)) {
                 $result[$key] = str_contains($value, '.')
                     ? (float)$value
@@ -141,30 +141,30 @@ final class BinaryComparisonDataProvider implements ComparisonDataProvider
             $region_id = unpack('V', $data, $offset + 40)[1];
             $offset += Format::LOCATION_ROW_SIZE;
 
-            $region = $dict->lookup((int)$region_id);
+            $region = $dict->lookup($region_id);
             if ($region !== null && !in_array($region, $relevant_regions, true)) {
                 continue;
             }
 
             // Type map
-            $type = $dict->lookup((int)$location_type_id);
+            $type = $dict->lookup($location_type_id);
             if ($type !== null) {
                 if (!isset($this->type_map_cache[$type])) {
                     $this->type_map_cache[$type] = ['count' => 0, 'memory_usage' => 0];
                 }
                 $this->type_map_cache[$type]['count']++;
-                $this->type_map_cache[$type]['memory_usage'] += (int)$size;
+                $this->type_map_cache[$type]['memory_usage'] += $size;
             }
 
             // Class map
-            if ((int)$class_id !== Format::NULL_STRING_ID) {
-                $class_name = $dict->lookup((int)$class_id);
+            if ($class_id !== Format::NULL_STRING_ID) {
+                $class_name = $dict->lookup($class_id);
                 if ($class_name !== null) {
                     if (!isset($this->class_map_cache[$class_name])) {
                         $this->class_map_cache[$class_name] = ['count' => 0, 'memory_usage' => 0];
                     }
                     $this->class_map_cache[$class_name]['count']++;
-                    $this->class_map_cache[$class_name]['memory_usage'] += (int)$size;
+                    $this->class_map_cache[$class_name]['memory_usage'] += $size;
                 }
             }
         }

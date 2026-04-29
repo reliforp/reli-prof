@@ -485,7 +485,11 @@ function generateFastPathReaderClass(string $version, array $all_offsets): strin
     $lines[] = 'use Reli\Inspector\MemoryDump\FastPath\FastPathReader as FastPathReaderInterface;';
     $lines[] = 'use Reli\Inspector\MemoryDump\FastPath\RegionByteProvider;';
     $lines[] = '';
-    $lines[] = '/** @psalm-suppress PossiblyInvalidArrayAccess, MixedReturnStatement, MixedInferredReturnType */';
+    // PossiblyInvalidArrayAccess on unpack(...)[1]: regionFor($address, $size)
+    // guarantees the buffer covers the field about to be read; the |false
+    // branch of unpack() (buffer-too-short) is therefore unreachable here.
+    // See tools/stubs/php/unpack.php for the format-aware return type.
+    $lines[] = '/** @psalm-suppress PossiblyInvalidArrayAccess */';
     $lines[] = 'final class FastPathReader implements FastPathReaderInterface';
     $lines[] = '{';
     $lines[] = '    public function __construct(';
@@ -634,8 +638,12 @@ function generateReaderFunctions(string $version, string $class_name, array $con
     $lines[] = '';
     $lines[] = "namespace {$ns};";
     $lines[] = '';
-    $lines[] = '/** @psalm-suppress PossiblyInvalidArrayAccess, MixedReturnStatement, MixedInferredReturnType */';
-    $lines[] = '';
+
+    // Functions that decode via unpack() get a per-function @psalm-suppress
+    // for PossiblyInvalidArrayAccess. The |false branch of unpack() requires
+    // a buffer-too-short condition that the caller's pre-validation rules
+    // out; encoding that invariant statically would require dependent types.
+    $unpack_read_types = ['u64le', 'ptr', 'i32le'];
 
     foreach ($methods as $const_name => $info) {
         $func_name = $prefix . '_' . strtolower($const_name);
@@ -647,6 +655,9 @@ function generateReaderFunctions(string $version, string $class_name, array $con
 
         $body = inlineReadExpr($read_type, '$buf', "\$off + {$offset}");
 
+        if (in_array($read_type, $unpack_read_types, true)) {
+            $lines[] = '/** @psalm-suppress PossiblyInvalidArrayAccess */';
+        }
         $lines[] = "function {$func_name}(string \$buf, int \$off): int";
         $lines[] = '{';
         $lines[] = "    return {$body};";

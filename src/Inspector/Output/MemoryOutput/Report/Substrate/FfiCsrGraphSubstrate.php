@@ -213,7 +213,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $offset = 0;
             for ($i = 0; $i < $nodeRowCount; $i++) {
                 $node_id = unpack('V', $nodeData, $offset)[1];
-                $all_node_ids[(int)$node_id] = true;
+                $all_node_ids[$node_id] = true;
                 $offset += Format::NODE_ROW_SIZE;
             }
         }
