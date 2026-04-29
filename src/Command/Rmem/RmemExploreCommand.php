@@ -632,6 +632,7 @@ final class RmemExploreCommand extends ReliCommand
                         // $response['data'] into a typed local so the
                         // assignment back lands on a known shape rather
                         // than on a mixed-array slot.
+                        /** @var mixed $data */
                         $data = $response['data'] ?? null;
                         if ($action === 'server.hello' && is_array($data)) {
                             /** @var array<string, mixed> $data */

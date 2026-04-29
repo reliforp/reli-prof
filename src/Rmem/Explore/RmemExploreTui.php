@@ -498,6 +498,7 @@ final class RmemExploreTui
             }
         }
 
+        /** @var array<string, mixed> */
         $response = match ($action) {
             'ui.navigate_sandwich' => $this->handleUiNavigateSandwich($request),
             'ui.navigate_roots' => $this->handleUiNavigateRoots(),
@@ -1102,7 +1103,13 @@ final class RmemExploreTui
         if ($reverse) {
             $panes = array_reverse($panes);
         }
+        // array_search can return false if the active pane fell out of
+        // the configured panes list (e.g. sidebar toggled off mid-cycle);
+        // start from -1 so the next-pane wraps to slot 0 in that case.
         $idx = array_search($this->activePane, $panes, true);
+        if ($idx === false) {
+            $idx = -1;
+        }
         $this->activePane = $panes[($idx + 1) % count($panes)];
         $this->broadcastIfFollow();
     }
@@ -1899,8 +1906,13 @@ final class RmemExploreTui
             $lastIdx = count($lines) - 1;
             $lines[$lastIdx] = "\e[1m/\e[0m" . $this->filterInput . "\e[5m▌\e[0m";
         } elseif ($this->filterPattern !== null) {
+            // $lines is non-empty here — render() always seeds at least
+            // the header line on entry. $lastIdx = count - 1 lands on
+            // a valid string slot.
             $lastIdx = count($lines) - 1;
-            $lines[$lastIdx] .= "  \e[33m[filter: {$this->filterPattern}]\e[0m";
+            if ($lastIdx >= 0) {
+                $lines[$lastIdx] .= "  \e[33m[filter: {$this->filterPattern}]\e[0m";
+            }
         }
 
         $body = implode("\n", array_slice($lines, 1)) . $sidebarBuf;
@@ -2042,6 +2054,7 @@ final class RmemExploreTui
         return $lines;
     }
 
+    /** @param list<string> &$lines */
     private function renderList(array &$lines, int $cols, int $totalRows): void
     {
         $bannerRows = $this->renderSourceBannerRows($this->bannerFocusId, $cols);
@@ -2091,6 +2104,7 @@ final class RmemExploreTui
         $lines[] = ' ' . implode(' | ', $statusParts);
     }
 
+    /** @param list<string> &$lines */
     private function renderSandwich(array &$lines, int $cols, int $totalRows): void
     {
         $bannerRows = $this->renderSourceBannerRows($this->bannerFocusId, $cols);
@@ -2182,7 +2196,7 @@ final class RmemExploreTui
         );
     }
 
-    /** @param array{node_id: int, retained: int, shallow: int, label: string, link_name?: string} $row */
+    /** @param Row $row */
     private function formatRow(array $row, bool $selected, int $cols): string
     {
         $retained = SizeFormatter::format($row['retained']);
@@ -2293,7 +2307,14 @@ final class RmemExploreTui
         return $followBadge . "\e[2m" . $bare . str_repeat(' ', $pad) . "\e[0m";
     }
 
-    /** @param list<string> &$lines */
+    /**
+     * @param list<string> &$lines
+     * @psalm-suppress ReferenceConstraintViolation the overlay only
+     *   writes to slots that already exist (the bounds check at the
+     *   top breaks once $lineIdx >= count($lines)), so the list shape
+     *   is preserved at runtime; Psalm's reference-variance check sees
+     *   the assignment as widening to `array<int<0, max>, string>`.
+     */
     private function renderHelpOverlay(array &$lines, int $cols, int $rows): void
     {
         $help = [
@@ -2348,7 +2369,11 @@ final class RmemExploreTui
             if ($i === 0 || $i === $boxH - 1) {
                 $content = str_repeat('─', $boxW);
             } else {
-                $text = $help[$i - 1] ?? '';
+                // The else branch entered only when $i is in [1, $boxH - 2],
+                // so $i - 1 is in [0, count($help) - 1]. Use array_key_exists
+                // to make the bound explicit for Psalm.
+                $idx = $i - 1;
+                $text = array_key_exists($idx, $help) ? $help[$idx] : '';
                 $content = str_pad($text, $boxW);
             }
             $startCol = max(0, (int)(($cols - $boxW) / 2));
@@ -2365,6 +2390,9 @@ final class RmemExploreTui
      * summary section via OverviewPass.
      *
      * @param list<string> &$lines
+     * @psalm-suppress ReferenceConstraintViolation see renderHelpOverlay
+     *   for the rationale: existing-slot writes preserve the list shape
+     *   at runtime even though Psalm's by-ref variance disagrees.
      */
     private function renderOverviewOverlay(array &$lines, int $cols, int $rows): void
     {

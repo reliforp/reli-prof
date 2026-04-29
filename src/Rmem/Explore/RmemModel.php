@@ -83,6 +83,9 @@ final class RmemModel
 
     private PathMap $pathMap;
 
+    /**
+     * @param array<int, string> $frameLabels
+     */
     private function __construct(
         private GraphSubstrate $substrate,
         array $frameLabels,

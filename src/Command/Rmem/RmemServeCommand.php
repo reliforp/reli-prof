@@ -187,6 +187,7 @@ final class RmemServeCommand extends ReliCommand
                     continue;
                 }
 
+                /** @var mixed $decoded */
                 $decoded = json_decode($line, true);
                 if (!is_array($decoded)) {
                     $response = ['ok' => false, 'error' => 'Invalid JSON'];

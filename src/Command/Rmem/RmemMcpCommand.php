@@ -180,6 +180,7 @@ final class RmemMcpCommand extends ReliCommand
             if ($line === false || $line === '') {
                 return ['ok' => false, 'error' => 'Socket read failed'];
             }
+            /** @var mixed $resp */
             $resp = json_decode(trim($line), true);
             /** @var array<string, mixed> */
             return is_array($resp) ? $resp : ['ok' => false, 'error' => 'Invalid response'];
@@ -205,6 +206,7 @@ final class RmemMcpCommand extends ReliCommand
             /** @var array<string, mixed> $request */
             $request = $decoded;
 
+            /** @var mixed $id */
             $id = $request['id'] ?? null;
             $method = (string)($request['method'] ?? '');
 
@@ -284,9 +286,19 @@ final class RmemMcpCommand extends ReliCommand
             return $this->makeToolResult($id, $text, !$ok);
         }
 
-        // Build backend request
+        // Build backend request. The values come straight from the
+        // JSON-decoded MCP request; carry the mixed through explicitly.
+        // The assignment is intentionally mixed-to-mixed (the target's
+        // shape declares `array<string, mixed>` too); Psalm flags every
+        // mixed-source assignment regardless of target.
         /** @var array<string, mixed> $backendRequest */
         $backendRequest = ['action' => $action];
+        /**
+         * @var mixed $value
+         * @psalm-suppress MixedAssignment $backendRequest is itself
+         *   `array<string, mixed>` so propagating the JSON request's
+         *   mixed values into a slot of the same widening is intended.
+         */
         foreach ($args as $key => $value) {
             $backendRequest[$key] = $value;
         }

@@ -284,6 +284,10 @@ final class DerivedCacheReader
             if ($chunk === false || strlen($chunk) !== $bytes) {
                 return null;
             }
+            // FFI::addr($buf[$i]) for an int array returns a pointer to
+            // the element at runtime, but Psalm sees `$buf[$i]` as the
+            // templated `int` element type and rejects the addr() call.
+            /** @psalm-suppress InvalidArgument */
             FFI::memcpy(FFI::addr($buf[$elemOffset]), $chunk, $bytes);
             $elemOffset += $batch;
         }

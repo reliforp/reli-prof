@@ -2547,7 +2547,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             return false;
         }
 
-        // scc_profiles: JSON
+        // scc_profiles: JSON. The cached section was produced by this
+        // class itself, so we trust the shape; the @var carries the
+        // declared property type past json_decode's array<array-key, mixed>.
         $profilesJson = $cache->getSectionData(DerivedCacheFormat::SECTION_SCC_PROFILES);
         if ($profilesJson === null) {
             return false;
@@ -2556,6 +2558,19 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         if (!is_array($profiles)) {
             return false;
         }
+        /**
+         * @var list<array{
+         *     id: int,
+         *     nodes: list<int>,
+         *     node_count: int,
+         *     total_size: int,
+         *     ext_in: int,
+         *     ext_out: int,
+         *     class_counts: array<string, int>,
+         *     signature: string,
+         *     single_owner_likelihood: string,
+         * }> $profiles
+         */
 
         // All sections valid — apply them
         $this->ffiSubtreeSizes = $subtreeBuf;
