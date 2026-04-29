@@ -61,7 +61,7 @@ final class MemoryDumpAction implements ActionInterface
         }
 
         $output_path = sprintf(
-            '%s/watch-%d-%s.dump',
+            '%s/watch-%d-%s.rdump',
             rtrim($this->output_dir, '/'),
             $process->pid,
             date('Ymd-His', (int)$event->timestamp),

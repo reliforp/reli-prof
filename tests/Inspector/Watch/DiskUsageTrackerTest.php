@@ -64,8 +64,8 @@ class DiskUsageTrackerTest extends TestCase
         mkdir($dir);
 
         // Create existing dump files
-        file_put_contents($dir . '/watch-123-20260330.dump', str_repeat('x', 300));
-        file_put_contents($dir . '/watch-456-20260330.dump', str_repeat('x', 200));
+        file_put_contents($dir . '/watch-123-20260330.rdump', str_repeat('x', 300));
+        file_put_contents($dir . '/watch-456-20260330.rdump', str_repeat('x', 200));
         // Non-matching file should be ignored
         file_put_contents($dir . '/other.txt', str_repeat('x', 999));
 
@@ -73,14 +73,14 @@ class DiskUsageTrackerTest extends TestCase
         $this->assertSame(500, $tracker->getTotalBytes());
 
         // Adding more should accumulate
-        file_put_contents($dir . '/watch-789-20260330.dump', str_repeat('x', 400));
-        $tracker->recordFile($dir . '/watch-789-20260330.dump');
+        file_put_contents($dir . '/watch-789-20260330.rdump', str_repeat('x', 400));
+        $tracker->recordFile($dir . '/watch-789-20260330.rdump');
         $this->assertSame(900, $tracker->getTotalBytes());
         $this->assertTrue($tracker->canWrite());
 
         // Over limit
-        file_put_contents($dir . '/watch-999-20260330.dump', str_repeat('x', 200));
-        $tracker->recordFile($dir . '/watch-999-20260330.dump');
+        file_put_contents($dir . '/watch-999-20260330.rdump', str_repeat('x', 200));
+        $tracker->recordFile($dir . '/watch-999-20260330.rdump');
         $this->assertFalse($tracker->canWrite());
 
         // Cleanup

@@ -198,7 +198,6 @@ final class PhpWatchControllerTest extends BaseTestCase
             actions: ['log'],
             action_exec_command: null,
             log_file: null,
-            memory_output_format: null,
         );
     }
 }

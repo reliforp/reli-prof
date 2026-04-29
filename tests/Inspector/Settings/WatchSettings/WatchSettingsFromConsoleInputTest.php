@@ -39,7 +39,6 @@ class WatchSettingsFromConsoleInputTest extends BaseTestCase
             'action-exec-command' => null,
             'action-output-dir' => null,
             'log-file' => null,
-            'memory-output-format' => 'json',
             'poll-interval' => null,
             'cooldown' => null,
             'max-triggers' => null,
