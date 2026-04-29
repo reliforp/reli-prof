@@ -259,7 +259,7 @@ the HTML itself:
 
 ## rmem:live
 
-Same viz as `rmem:viz`, but served over HTTP with a **live SSE event
+Same viz as `rmem:viz`, but served over HTTP with a **live sync
 channel** so browsers stay in sync with each other and with any TUI
 / MCP client that joins the bus.
 
@@ -379,16 +379,22 @@ For co-pilot mode (AI + human sharing TUI):
 
 ### Tools provided
 
-Three categories — query (always available), UI control (with
-`--control`), and browser bridge (with `--bridge URL`). The full
-tool list is in
+Three categories:
+
+- **Query tools** (always available) — inspect roots, nodes,
+  parents/children, rankings, cycles, and full-text search.
+- **UI control tools** (with `--control`) — move the TUI focus when
+  connected to `rmem:explore --serve --serve-control`.
+- **Browser bridge tools** (with `--bridge URL`) — broadcast focus
+  and highlight events to every connected visualization.
+
+The full tool list is in
 [internals/rmem-protocol.md](../internals/rmem-protocol.md#mcp-tools).
 
-The server includes built-in instructions that teach the AI agent
-about PHP memory concepts (shallow vs retained size, tree edges,
-SCCs, etc.) and recommended investigation workflows, so no
-additional documentation is needed for the agent to use the tools
-effectively.
+The server ships with built-in instructions covering PHP memory
+concepts (shallow vs retained size, tree edges, SCCs, etc.) and
+recommended investigation workflows, so MCP-capable clients can
+usually start with useful built-in guidance.
 
 ## Three-way focus bus
 

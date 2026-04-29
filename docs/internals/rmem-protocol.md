@@ -1,14 +1,23 @@
-# rmem Integration Protocols
+# rmem Integration Surface
 
-Wire-level reference for code that integrates with the `rmem:*`
-commands: HTTP/SSE for browsers, Unix-socket JSON for headless query
-servers, MCP tool surface for AI agents, and the focus bus that ties
-all three together.
+Index of the wire surfaces that the `rmem:*` commands expose for
+external clients: HTTP/SSE for browsers, Unix-socket JSON for headless
+query servers, MCP tool surface for AI agents, and the focus bus that
+ties all three together.
+
+> **Audience and stability.** This document is integration-facing — a
+> reference for code that talks to a running `rmem:live` / `rmem:serve` /
+> `rmem:mcp` process from the outside. It lives under `internals/` for
+> filing convenience, but is not a private implementation note: this
+> page is the source of truth for external clients. Wire details may
+> still change before 1.0; breaking changes will be called out in
+> release notes.
 
 For end-user usage of the commands themselves see
 [../memory/rmem-explore-and-serve.md](../memory/rmem-explore-and-serve.md).
-For the design rationale of the headless query server see
-[rmem-serve-design.md](rmem-serve-design.md).
+The full JSON-over-Unix-socket request/response specification lives in
+[rmem-serve-design.md](rmem-serve-design.md); this page indexes the
+action surface and points there for shapes.
 
 ## HTTP / SSE bridge
 
@@ -92,11 +101,10 @@ was launched.
   *set* of nodes together (useful for "these N are part of the
   leak"); empty array clears.
 
-The server includes built-in instructions that teach the AI agent
-about PHP memory concepts (shallow vs retained size, tree edges,
-SCCs, etc.) and recommended investigation workflows, so no
-additional documentation is needed for the agent to use the tools
-effectively.
+The server ships with built-in instructions covering PHP memory
+concepts (shallow vs retained size, tree edges, SCCs, etc.) and
+recommended investigation workflows, so MCP-capable clients can
+usually start with useful built-in guidance.
 
 ## Three-way focus bus
 
