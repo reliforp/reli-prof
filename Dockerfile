@@ -1,9 +1,7 @@
 FROM php:8.5-cli
 
-# libcap2-bin provides setcap; the file-capability set on /usr/local/bin/php
-# lets reli use CAP_SYS_PTRACE when the container is run as a non-root
-# `--user` (the normal mode under docker:print-wrapper). Without it, the
-# capability is in the bounding set only and memory reads fail with EPERM.
+# libcap2-bin provides setcap; the actual `setcap` invocation is deferred to
+# the final RUN below — see the comment there for why.
 RUN apt-get update && apt-get install -y \
       libffi-dev \
       libzip-dev \
@@ -11,7 +9,6 @@ RUN apt-get update && apt-get install -y \
     && docker-php-ext-install ffi \
     && docker-php-ext-install pcntl \
     && docker-php-ext-install zip \
-    && setcap cap_sys_ptrace=eip /usr/local/bin/php \
     && rm -rf /var/lib/apt/lists/*
 
 # Compile out bare assert() calls in the production image. The reli codebase
@@ -48,4 +45,32 @@ RUN if [ -n "${COMPOSER_ROOT_VERSION}" ]; then \
         composer install --no-dev; \
     fi
 
-ENTRYPOINT ["php", "reli"]
+# Build a setcap'd shadow copy of the PHP binary at /usr/local/bin/php-ptrace.
+# Wrappers that actually need ptrace (docker:print-wrapper --profile=full)
+# override the container entrypoint to invoke this binary; that copy carries
+# cap_sys_ptrace=eip, so ptrace works under `--user <non-root>` even though
+# Linux strips effective caps at exec for non-zero uid.
+#
+# /usr/local/bin/php itself is left untouched on purpose. A binary with `=eip`
+# file capabilities returns EPERM from execve() in any environment whose
+# bounding set lacks the requested cap (default Docker, BuildKit, k8s without
+# explicit cap-add, etc.). Putting the cap on /usr/local/bin/php would force
+# every `docker run reliforp/reli-prof <cmd>` invocation to require
+# `--cap-add=SYS_PTRACE`, even for offline-only commands like rbt:analyze
+# / inspector:memory:report / converter:* that never touch a live process.
+# A separate php-ptrace binary keeps the default ENTRYPOINT path usable
+# without extra caps and confines the regression to the wrapper-emitted
+# command line, which already passes --cap-add=SYS_PTRACE.
+#
+# Why `cp` and not `ln`: file capabilities are stored as xattrs on the
+# inode, so a hardlink would silently apply the cap to /usr/local/bin/php
+# as well, defeating the split. A real copy gives us a separate inode.
+RUN cp -p /usr/local/bin/php /usr/local/bin/php-ptrace \
+    && setcap cap_sys_ptrace=eip /usr/local/bin/php-ptrace
+
+# Absolute path on purpose. The wrapper emitted by docker:print-wrapper
+# overrides WORKDIR to the host's $PWD (so bind-mounted input/output paths
+# resolve naturally), and PHP CLI does not search PATH for script
+# arguments — a relative `reli` would fail to open whenever the host CWD
+# is not the reli source tree.
+ENTRYPOINT ["php", "/app/reli"]
