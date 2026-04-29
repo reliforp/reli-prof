@@ -197,20 +197,15 @@ stacks.
 
 ## Memory analysis additions (selected)
 
-Reli's memory graph coverage and analysis surface expand substantially in 0.12.
+Memory analysis in 0.12 expands in three directions:
 
-Selected additions include:
-
-- Generator / Fiber tracking
-- WeakReference / WeakMap tracking
-- PHP stream resource tracking
-- SimpleXML tracking
-- per-property memory ranking
-- cycle detection (SCC)
-- GC-pending detection
-- ownership patterns
-- ZendMM chunk cache + fragmentation passes
-- streaming-mode analysis for OOM-resistant work on 6 M+ edge graphs
+- **Broader heap coverage:** Generator / Fiber, WeakReference / WeakMap,
+  PHP stream resources, and SimpleXML are now tracked explicitly.
+- **Richer graph analysis:** new additions include per-property memory ranking,
+  cycle detection (SCC), GC-pending detection, ownership patterns, and
+  ZendMM chunk cache / fragmentation analysis.
+- **Better scalability:** streaming-mode analysis keeps memory usage bounded
+  and makes OOM-resistant work on graphs with 6 M+ edges practical.
 
 (#544, #545, #550, #552, #565, #637, #561, #564, #567, #562, #629, #570)
 
