@@ -83,6 +83,21 @@ reli inspector:sidecar --output-dir=/tmp/reli-dumps
 # --socket explicitly — see docs/monitoring/sidecar.md.
 ```
 
+Install the FFI-free client package in your application (the
+standalone client mirror; downgraded to PHP 7.0+ so it runs anywhere
+your application does):
+
+```bash
+# Until the first tagged release, the package is dev-main only —
+# requires "minimum-stability": "dev" + "prefer-stable": true in composer.json.
+composer require reliforp/reli-prof-sidecar-client:dev-main
+```
+
+Other install paths (full `reliforp/reli-prof` or vendoring the three
+client files) are documented in
+[monitoring/sidecar.md § Client Library](monitoring/sidecar.md#client-library);
+the standalone package is the recommended one.
+
 ```php
 // In your application bootstrap (index.php / bin/console / …)
 \Reli\Sidecar\Client\MemoryLimitHandler::register();

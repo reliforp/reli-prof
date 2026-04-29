@@ -618,7 +618,7 @@ reli inspector:daemon -f rbt-bundled ... > combined.rbt
 
 ## Output Format Selection
 
-The `--output-format` (`-F`) option selects the output format for `inspector:trace` and `inspector:daemon`:
+The `--output-format` (`-f`) option selects the output format for `inspector:trace` and `inspector:daemon`:
 
 | Value | Description |
 |-------|-------------|
