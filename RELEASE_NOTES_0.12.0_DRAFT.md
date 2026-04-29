@@ -200,14 +200,17 @@ stacks.
 Memory analysis in 0.12 expands in three directions:
 
 - **Broader heap coverage:** Generator / Fiber, WeakReference / WeakMap,
-  PHP stream resources, and SimpleXML are now tracked explicitly.
+  PHP stream resources, SimpleXML, PDO / mysqlnd internal allocations
+  (columns, bound parameters), and global callback / shutdown handler
+  retention are now tracked explicitly.
 - **Richer graph analysis:** new additions include per-property memory ranking,
   cycle detection (SCC), GC-pending detection, ownership patterns, and
   ZendMM chunk cache / fragmentation analysis.
 - **Better scalability:** streaming-mode analysis keeps memory usage bounded
   and makes OOM-resistant work on graphs with 6 M+ edges practical.
 
-(#544, #545, #550, #552, #565, #637, #561, #564, #567, #562, #629, #570)
+(#544, #545, #547, #550, #552, #561, #562, #564, #565, #567, #570, #581,
+#582, #590, #629, #637)
 
 ## Performance
 
