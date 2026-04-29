@@ -84,7 +84,10 @@ final class DerivedCacheWriter
         // getmypid() === false would mean "process info unavailable";
         // we have no recovery here so fall back to 0 (still produces a
         // valid path, and any open failure shows up at @fopen below).
-        $tempPath = $finalPath . '.tmp.' . (getmypid() ?: 0);
+        // Strict `=== false` rather than `?:` because getmypid()'s int
+        // return is non-zero in practice but Psalm cannot know that.
+        $pid = getmypid();
+        $tempPath = $finalPath . '.tmp.' . ($pid === false ? 0 : $pid);
 
         $fh = @fopen($tempPath, 'wb');
         if ($fh === false) {
@@ -148,6 +151,9 @@ final class DerivedCacheWriter
      * element counts). It does NOT detect overwrites that keep the
      * same structure but change section content — that would require
      * hashing the full file, which is too expensive for multi-GB rmem.
+     *
+     * @psalm-suppress PossiblyInvalidArrayAccess unpack() can't return false
+     *   here: each call is gated by a successful fread of the right length.
      */
     public function writeFingerprint(string $rmemPath): void
     {
@@ -274,6 +280,11 @@ final class DerivedCacheWriter
     /**
      * Chunked writer for FFI arrays. Converts FFI buffer to PHP strings
      * in 4 MB chunks instead of one huge FFI::string call.
+     */
+    /**
+     * @psalm-suppress PossiblyInvalidArgument FFI::addr($data[$i]) is the
+     *   documented per-element address-of pattern — `CData::offsetGet`'s
+     *   stub union is wider than what ext/ffi returns for sized int arrays.
      */
     private function writeFfiSection(string $name, \FFI\CData $data, int $count, int $elemSize): void
     {

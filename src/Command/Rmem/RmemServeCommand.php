@@ -146,6 +146,9 @@ final class RmemServeCommand extends ReliCommand
 
         $lastActivity = time();
 
+        // pcntl_signal-installed closure flips $running; Psalm collapses
+        // the variable to the literal `true` it sees at assignment.
+        /** @psalm-suppress RedundantCondition */
         while ($running) {
             if (function_exists('pcntl_signal_dispatch')) {
                 pcntl_signal_dispatch();

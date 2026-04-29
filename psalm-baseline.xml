@@ -1,36 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <files psalm-version="6.16.1@f1f5de594dc76faf8784e02d3dc4716c91c6f6ac">
-  <file src="src/Command/Inspector/MemoryDumpNormalizeCommand.php">
-    <InvalidOperand>
-      <code><![CDATA[$result['total_bytes'] / 1024.0]]></code>
-    </InvalidOperand>
-  </file>
-  <file src="src/Command/Rbt/AnalyzeCommand.php">
-    <MixedArgument>
-      <code><![CDATA[$key]]></code>
-      <code><![CDATA[$value]]></code>
-    </MixedArgument>
-    <MixedAssignment>
-      <code><![CDATA[$key]]></code>
-      <code><![CDATA[$value]]></code>
-    </MixedAssignment>
-    <PossiblyNullIterator>
-      <code><![CDATA[$entry['annotations']]]></code>
-    </PossiblyNullIterator>
-  </file>
   <file src="src/Command/Rmem/RmemExploreCommand.php">
-    <MixedArrayAssignment>
-      <code><![CDATA[$response['data']['serve_control']]]></code>
-    </MixedArrayAssignment>
     <MixedAssignment>
-      <code><![CDATA[$decoded]]></code>
+      <code><![CDATA[$data]]></code>
     </MixedAssignment>
-    <RedundantCondition>
-      <code><![CDATA[$running]]></code>
-    </RedundantCondition>
-    <RiskyTruthyFalsyComparison>
-      <code><![CDATA[realpath($file)]]></code>
-    </RiskyTruthyFalsyComparison>
   </file>
   <file src="src/Command/Rmem/RmemMcpCommand.php">
     <MixedAssignment>
@@ -40,22 +13,10 @@
       <code><![CDATA[$value]]></code>
     </MixedAssignment>
   </file>
-  <file src="src/Command/Rmem/RmemQueryCommand.php">
-    <MixedAssignment>
-      <code><![CDATA[$decoded]]></code>
-    </MixedAssignment>
-    <PossiblyInvalidArrayAccess>
-      <code><![CDATA[unpack('V', $data, $offset)[1]]]></code>
-      <code><![CDATA[unpack('V', $data, 0)[1]]]></code>
-    </PossiblyInvalidArrayAccess>
-  </file>
   <file src="src/Command/Rmem/RmemServeCommand.php">
     <MixedAssignment>
       <code><![CDATA[$decoded]]></code>
     </MixedAssignment>
-    <RedundantCondition>
-      <code><![CDATA[$running]]></code>
-    </RedundantCondition>
   </file>
   <file src="src/Inspector/MemoryDump/MemoryDumpReaderFactory.php">
     <PossiblyNullArgument>
@@ -64,25 +25,11 @@
   </file>
   <file src="src/Inspector/Output/MemoryOutput/BinaryFormat/DerivedCacheReader.php">
     <LessSpecificReturnStatement>
-      <code><![CDATA[$this->loadFfiSection($name, 'int32_t', 4)]]></code>
-      <code><![CDATA[$this->loadFfiSection($name, 'int64_t', 8)]]></code>
+      <code><![CDATA[$buf]]></code>
     </LessSpecificReturnStatement>
     <MoreSpecificReturnType>
       <code><![CDATA[\FFI\CArray<int>|null]]></code>
-      <code><![CDATA[\FFI\CArray<int>|null]]></code>
     </MoreSpecificReturnType>
-  </file>
-  <file src="src/Inspector/Output/MemoryOutput/BinaryFormat/DerivedCacheWriter.php">
-    <PossiblyInvalidArgument>
-      <code><![CDATA[$data[$elemOffset]]]></code>
-    </PossiblyInvalidArgument>
-    <PossiblyInvalidArrayAccess>
-      <code><![CDATA[unpack('P', $rmemHeader, 16)[1]]]></code>
-      <code><![CDATA[unpack('V', $rmemHeader, 12)[1]]]></code>
-    </PossiblyInvalidArrayAccess>
-    <RiskyTruthyFalsyComparison>
-      <code><![CDATA[getmypid()]]></code>
-    </RiskyTruthyFalsyComparison>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/Comparison/Formatter/TextComparisonFormatter.php">
     <TypeDoesNotContainType>
@@ -124,21 +71,6 @@
     <PropertyTypeCoercion>
       <code><![CDATA[$profiles]]></code>
     </PropertyTypeCoercion>
-  </file>
-  <file src="src/Lib/PhpInternals/Types/Zend/ZendOp.php">
-    <PropertyTypeCoercion>
-      <code><![CDATA[$this->casted_cdata->casted->op1]]></code>
-      <code><![CDATA[$this->casted_cdata->casted->op2]]></code>
-      <code><![CDATA[$this->casted_cdata->casted->result]]></code>
-    </PropertyTypeCoercion>
-  </file>
-  <file src="src/Lib/PhpInternals/Types/Zend/ZendOpArray.php">
-    <RedundantCondition>
-      <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $ptr)?->cdata]]></code>
-    </RedundantCondition>
-    <TypeDoesNotContainNull>
-      <code><![CDATA[\Reli\Lib\FFI\FFIHelper::cast('long', $ptr)]]></code>
-    </TypeDoesNotContainNull>
   </file>
   <file src="src/Lib/PhpInternals/ZendTypeReader.php">
     <MixedAssignment>

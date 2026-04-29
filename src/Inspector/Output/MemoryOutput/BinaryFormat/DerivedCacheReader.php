@@ -247,6 +247,7 @@ final class DerivedCacheReader
      * `CData::offsetGet()` is wider than what ext/ffi actually returns
      * for `int32_t[]` / `int64_t[]` elements.
      *
+     * @return \FFI\CArray<int>|null
      * @psalm-suppress PossiblyInvalidArgument
      */
     private function loadFfiSection(string $name, string $type, int $elemSize): ?\FFI\CData
