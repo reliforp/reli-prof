@@ -36,11 +36,16 @@ COPY . .
 # to `1.0.0+no-version-set`. That makes `reli --version` lie. The build arg
 # lets the publish workflow inject the right value (tag for stable builds,
 # `<branch>-dev` alias for floating release-branch builds,
-# `dev-manual-<sha>` for one-off dispatch builds). When unset (local
-# `docker build .`) Composer keeps its usual fallback behaviour.
+# `dev-manual-<sha>` for one-off dispatch builds). For unset / empty arg
+# (local `docker build .`) we don't export the env var at all, so Composer
+# keeps its usual fallback chain (composer.json → COMPOSER_ROOT_VERSION →
+# VCS → `1.0.0+no-version-set`) without an empty string masking the VCS
+# step.
 ARG COMPOSER_ROOT_VERSION
-ENV COMPOSER_ROOT_VERSION=${COMPOSER_ROOT_VERSION}
-
-RUN composer install --no-dev
+RUN if [ -n "${COMPOSER_ROOT_VERSION}" ]; then \
+        COMPOSER_ROOT_VERSION="${COMPOSER_ROOT_VERSION}" composer install --no-dev; \
+    else \
+        composer install --no-dev; \
+    fi
 
 ENTRYPOINT ["php", "reli"]
