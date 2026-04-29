@@ -344,7 +344,7 @@ final class MemoryCompareCommand extends ReliCommand
                 'node_id' => $node_id_u[1],
                 'location_type_id' => $type_id_u[1],
                 'class_id' => $class_id_u[1],
-                'size' => (int)$size_u[1],
+                'size' => $size_u[1],
             ];
         }
         return $result;

@@ -282,7 +282,12 @@ final class BinaryContextTreeSink implements ContextTreeSink
                 $this->flushLocations();
             }
 
-            // Accumulate per-node sizes and classes for on-disk sections
+            // Accumulate per-node sizes and classes for on-disk sections.
+            // `(int)` on the FFI int64_t/int32_t reads here is deliberate —
+            // emitNode() is called per location during analysis, so a
+            // PhpCast\Cast::toInt() method dispatch on every iteration
+            // would show up. Element type is provably int at runtime;
+            // the InvalidCast entries are kept in psalm-baseline.xml.
             $this->ensurePerNodeCapacity($node_id);
             $this->perNodeSizes[$node_id] = (int)$this->perNodeSizes[$node_id] + $location->size;
             if (

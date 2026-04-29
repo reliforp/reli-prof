@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput;
 
+use PhpCast\Cast;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\DiskBackedStringDict;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Writer;
@@ -247,6 +248,10 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
                 $is_tree = ord($data[$off + 12]);
 
                 if ($parent_idx < $nc) {
+                    // (int) on FFI int32_t[] reads: avoid Cast::toInt() in
+                    // this O(edgeCount) loop. Element type is provably int
+                    // at runtime, but Psalm's FFI stub leaves offsetGet as
+                    // CData|null|scalar, so InvalidCast stays in baseline.
                     $allDeg[$parent_idx] = (int)$allDeg[$parent_idx] + 1;
                     if ($is_tree === 1) {
                         $treeDeg[$parent_idx] = (int)$treeDeg[$parent_idx] + 1;
@@ -277,15 +282,17 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
         $treeRowPtr[0] = 0;
         $allRowPtr[0] = 0;
         $nontreeRowPtr[0] = 0;
+        // O(nc) prefix-sum: keep `(int)` to match the per-edge loops above.
         for ($i = 0; $i < $nc; $i++) {
             $treeRowPtr[$i + 1] = (int)$treeRowPtr[$i] + (int)$treeDeg[$i];
             $allRowPtr[$i + 1] = (int)$allRowPtr[$i] + (int)$allDeg[$i];
             $nontreeRowPtr[$i + 1] = (int)$nontreeRowPtr[$i] + (int)$nontreeDeg[$i];
         }
 
-        $totalAllEdges = (int)$allRowPtr[$nc];
-        $totalTreeEdges = (int)$treeRowPtr[$nc];
-        $totalNontreeEdges = (int)$nontreeRowPtr[$nc];
+        // One-shot scalar reads — Cast::toInt() is fine here, only 3 calls.
+        $totalAllEdges = Cast::toInt($allRowPtr[$nc]);
+        $totalTreeEdges = Cast::toInt($treeRowPtr[$nc]);
+        $totalNontreeEdges = Cast::toInt($nontreeRowPtr[$nc]);
 
         // Allocate col_idx + link_name + strength arrays
         $allColIdx = FFIHelper::new("int32_t[" . max(1, $totalAllEdges) . "]");
@@ -336,7 +343,7 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
                 $strength = ord($data[$off + 13]);
 
                 if ($parent_idx < $nc) {
-                    // All edges
+                    // All edges — `(int)` for the same hot-loop reasoning.
                     $pos = (int)$allPos[$parent_idx];
                     $allColIdx[$pos] = $child_idx;
                     $allPos[$parent_idx] = $pos + 1;

@@ -348,15 +348,13 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     continue;
                 }
 
-                /** @var array{1: int} */
                 $size_u = unpack('P', $sizesData, $i * 8);
-                $size = (int)$size_u[1];
+                $size = $size_u[1];
                 $ffiNodeSizes[$csrIdx] = $size;
                 $substrate->nodeSizesSum += $size;
 
-                /** @var array{1: int} */
                 $cls_u = unpack('V', $classesData, $i * 4);
-                $cls_id = (int)$cls_u[1];
+                $cls_id = $cls_u[1];
                 if ($cls_id !== Format::NULL_STRING_ID) {
                     $className = $dict->lookup($cls_id);
                     if ($className !== null) {
