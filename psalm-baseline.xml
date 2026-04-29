@@ -5,6 +5,19 @@
       <code><![CDATA[$result['total_bytes'] / 1024.0]]></code>
     </InvalidOperand>
   </file>
+  <file src="src/Command/Rbt/AnalyzeCommand.php">
+    <MixedArgument>
+      <code><![CDATA[$key]]></code>
+      <code><![CDATA[$value]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$key]]></code>
+      <code><![CDATA[$value]]></code>
+    </MixedAssignment>
+    <PossiblyNullIterator>
+      <code><![CDATA[$entry['annotations']]]></code>
+    </PossiblyNullIterator>
+  </file>
   <file src="src/Command/Rmem/RmemExploreCommand.php">
     <MixedArrayAssignment>
       <code><![CDATA[$response['data']['serve_control']]]></code>
@@ -21,6 +34,7 @@
   </file>
   <file src="src/Command/Rmem/RmemMcpCommand.php">
     <MixedAssignment>
+      <code><![CDATA[$backendRequest[$key]]]></code>
       <code><![CDATA[$id]]></code>
       <code><![CDATA[$resp]]></code>
       <code><![CDATA[$value]]></code>
@@ -45,19 +59,6 @@
     <RedundantCondition>
       <code><![CDATA[$running]]></code>
     </RedundantCondition>
-  </file>
-  <file src="src/Command/Rbt/AnalyzeCommand.php">
-    <MixedArgument>
-      <code><![CDATA[$key]]></code>
-      <code><![CDATA[$value]]></code>
-    </MixedArgument>
-    <MixedAssignment>
-      <code><![CDATA[$key]]></code>
-      <code><![CDATA[$value]]></code>
-    </MixedAssignment>
-    <PossiblyNullIterator>
-      <code><![CDATA[$entry['annotations']]]></code>
-    </PossiblyNullIterator>
   </file>
   <file src="src/Inspector/CoreDumpReader/CoreDumpReaderFactory.php">
     <TypeDoesNotContainNull>
