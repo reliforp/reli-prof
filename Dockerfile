@@ -68,4 +68,9 @@ RUN if [ -n "${COMPOSER_ROOT_VERSION}" ]; then \
 RUN cp -p /usr/local/bin/php /usr/local/bin/php-ptrace \
     && setcap cap_sys_ptrace=eip /usr/local/bin/php-ptrace
 
-ENTRYPOINT ["php", "reli"]
+# Absolute path on purpose. The wrapper emitted by docker:print-wrapper
+# overrides WORKDIR to the host's $PWD (so bind-mounted input/output paths
+# resolve naturally), and PHP CLI does not search PATH for script
+# arguments — a relative `reli` would fail to open whenever the host CWD
+# is not the reli source tree.
+ENTRYPOINT ["php", "/app/reli"]

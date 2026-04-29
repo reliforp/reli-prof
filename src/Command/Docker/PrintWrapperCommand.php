@@ -122,8 +122,10 @@ final class PrintWrapperCommand extends ReliCommand
 # capability set at exec, so --cap-add=SYS_PTRACE alone would still leave
 # ptrace returning EPERM; the file capability on /usr/local/bin/php-ptrace
 # raises CAP_SYS_PTRACE back into the effective set on each invocation.
-# Overriding the entrypoint also drops the image's `php reli` ENTRYPOINT,
-# so we re-supply the `reli` script path explicitly below.
+# Overriding the entrypoint also drops the image's `php /app/reli`
+# ENTRYPOINT, so we re-supply the absolute script path explicitly below.
+# Absolute path matters because `-w "$PWD"` puts the container CWD at the
+# host's working dir, and PHP CLI does not search PATH for script args.
 {{NAME}}() {
     local tty=
     [ -t 0 ] && [ -t 1 ] && tty=-t
@@ -163,7 +165,7 @@ final class PrintWrapperCommand extends ReliCommand
         -e XDG_CACHE_HOME="${scratch}/cache" \
         -e XDG_RUNTIME_DIR="${scratch}/runtime" \
         ${RELI_DOCKER_EXTRA_ARGS:-} \
-        {{IMAGE}} reli "$@"
+        {{IMAGE}} /app/reli "$@"
 }
 
 reli_assert_scratch_safe() {

@@ -105,22 +105,24 @@ class PrintWrapperCommandTest extends TestCase
     public function testImageOverrideChangesImageReference(): void
     {
         // Default profile is full, which overrides --entrypoint and so has
-        // to re-supply the `reli` script path explicitly after the image.
+        // to re-supply the absolute reli script path after the image.
+        // Absolute (not bare `reli`) so `-w "$PWD"` does not point PHP at
+        // a host CWD that has no `reli` next to it.
         $out = $this->runWrapper(['--image' => 'myreg/reli:custom']);
-        $this->assertStringContainsString('myreg/reli:custom reli "$@"', $out);
+        $this->assertStringContainsString('myreg/reli:custom /app/reli "$@"', $out);
     }
 
     public function testMinimalProfileImageOverridePassesArgsToEntrypoint(): void
     {
-        // Minimal profile keeps the image's `php reli` ENTRYPOINT, so the
+        // Minimal profile keeps the image's `php /app/reli` ENTRYPOINT, so
         // user-supplied args go straight after the image reference with no
-        // extra `reli` token in front.
+        // extra script-path token in front.
         $out = $this->runWrapper([
             '--profile' => 'minimal',
             '--image' => 'myreg/reli:custom',
         ]);
         $this->assertStringContainsString('myreg/reli:custom "$@"', $out);
-        $this->assertStringNotContainsString('myreg/reli:custom reli "$@"', $out);
+        $this->assertStringNotContainsString('myreg/reli:custom /app/reli "$@"', $out);
     }
 
     public function testUnknownProfileReturnsNonZero(): void
