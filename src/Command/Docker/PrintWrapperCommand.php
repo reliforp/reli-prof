@@ -120,8 +120,11 @@ final class PrintWrapperCommand extends ReliCommand
 # --entrypoint selects the setcap'd PHP binary baked into the image
 # (see Dockerfile). When --user is non-root the kernel zeroes the effective
 # capability set at exec, so --cap-add=SYS_PTRACE alone would still leave
-# ptrace returning EPERM; the file capability on /usr/local/bin/php-ptrace
+# ptrace returning EPERM; the file capability on /opt/reli/php-ptrace/php
 # raises CAP_SYS_PTRACE back into the effective set on each invocation.
+# The basename is `php` (not `php-ptrace`) so reli's default --php-regex
+# still matches /proc/<pid>/maps lines for processes started from this
+# binary — important when one wrapper-launched reli attaches to another.
 # Overriding the entrypoint also drops the image's `php /app/reli`
 # ENTRYPOINT, so we re-supply the absolute script path explicitly below.
 # Absolute path matters because `-w "$PWD"` puts the container CWD at the
@@ -152,7 +155,7 @@ final class PrintWrapperCommand extends ReliCommand
     fi
 
     docker run --rm -i ${tty} \
-        --entrypoint /usr/local/bin/php-ptrace \
+        --entrypoint /opt/reli/php-ptrace/php \
         --cap-add=SYS_PTRACE \
         --security-opt=apparmor=unconfined \
         --pid=host \
