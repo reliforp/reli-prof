@@ -17,7 +17,7 @@ use Reli\Lib\Process\MemoryMap\ProcessMemoryArea;
 
 final class MemoryDumpWriter
 {
-    private const MAGIC = "RELIMEM\0";
+    private const MAGIC = "RDUMP\0\0\0";
     private const FORMAT_VERSION = 2;
 
     /**

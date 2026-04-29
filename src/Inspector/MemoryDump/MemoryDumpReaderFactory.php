@@ -29,7 +29,7 @@ use function DI\autowire;
 
 final class MemoryDumpReaderFactory
 {
-    private const MAGIC = "RELIMEM\0";
+    private const MAGIC = "RDUMP\0\0\0";
 
     public function __construct(
         private ContainerBuilder $container_builder,

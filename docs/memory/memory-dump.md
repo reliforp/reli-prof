@@ -1,17 +1,17 @@
 # Memory Dump (`inspector:memory:dump`)
 
 Captures a binary snapshot of a PHP process's memory for offline
-analysis. The dump file (`.relimem` format) can later be analyzed with
+analysis. The dump file (`.rdump` format) can later be analyzed with
 `inspector:memory:analyze` on a different machine or at a different time.
 
 ## Quick start
 
 ```bash
 # Dump a running PHP process
-sudo php ./reli inspector:memory:dump --pid=<pid> --output=snapshot.relimem
+sudo php ./reli inspector:memory:dump --pid=<pid> --output=snapshot.rdump
 
 # Analyze the dump (.rmem is the fastest format; every analyser reads it)
-php ./reli inspector:memory:analyze snapshot.relimem -f binary -o snapshot.rmem
+php ./reli inspector:memory:analyze snapshot.rdump -f binary -o snapshot.rmem
 
 # Browse or report on the graph
 php ./reli rmem:explore snapshot.rmem
@@ -80,19 +80,19 @@ can still resolve class names and function signatures.
 
 ```bash
 # To .rmem (recommended — fastest, consumed by every analyser)
-php ./reli inspector:memory:analyze snapshot.relimem \
+php ./reli inspector:memory:analyze snapshot.rdump \
     -f binary -o snapshot.rmem
 
 # To SQLite (for SQL tooling; inspector:memory:report / inspector:memory:compare accept either)
-php ./reli inspector:memory:analyze snapshot.relimem \
+php ./reli inspector:memory:analyze snapshot.rdump \
     -f sqlite3 -o snapshot.sqlite
 
 # To JSON
-php ./reli inspector:memory:analyze snapshot.relimem \
+php ./reli inspector:memory:analyze snapshot.rdump \
     -f json -o snapshot.json
 
 # With dependency root for binary fallback (when --include-binary was not used)
-php ./reli inspector:memory:analyze snapshot.relimem \
+php ./reli inspector:memory:analyze snapshot.rdump \
     -f binary -o snapshot.rmem \
     -r /path/to/target/root
 ```
@@ -101,7 +101,7 @@ php ./reli inspector:memory:analyze snapshot.relimem \
 
 | | `inspector:memory:dump` | `gcore` |
 |---|---|---|
-| Output format | `.relimem` (analyzer-ready) | ELF core (needs post-processing) |
+| Output format | `.rdump` (analyzer-ready) | ELF core (needs post-processing) |
 | Size | Pagemap-filtered (resident pages only) | All writable VMAs |
 | Speed | Comparable or faster | Comparable |
 | PHP awareness | Captures exactly what the analyzer needs | Captures everything blindly |
@@ -114,4 +114,4 @@ php ./reli inspector:memory:analyze snapshot.relimem \
 - [memory-report.md](memory-report.md) — automated analysis reports
 - [watch-command.md](../monitoring/watch-command.md) — condition-triggered dumps
 - [sidecar.md](../monitoring/sidecar.md) — daemon mode for on-demand dumps
-- [internals/memory-dump-inspect.md](../internals/memory-dump-inspect.md) — `inspector:memory:dump:inspect`, a developer tool that prints the `.relimem` header / memory map / region list (output schema is unstable, intended for debugging the capture pipeline itself)
+- [internals/memory-dump-inspect.md](../internals/memory-dump-inspect.md) — `inspector:memory:dump:inspect`, a developer tool that prints the `.rdump` header / memory map / region list (output schema is unstable, intended for debugging the capture pipeline itself)

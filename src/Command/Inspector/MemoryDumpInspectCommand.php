@@ -28,7 +28,7 @@ final class MemoryDumpInspectCommand extends ReliCommand
         return DockerProfile::Minimal;
     }
 
-    private const MAGIC = "RELIMEM\0";
+    private const MAGIC = "RDUMP\0\0\0";
 
     public function __construct()
     {
@@ -92,7 +92,7 @@ final class MemoryDumpInspectCommand extends ReliCommand
         $region_count = $this->readUint32($fp);
 
         $output->writeln('<info>=== Header ===</info>');
-        $output->writeln("  Magic:            RELIMEM");
+        $output->writeln("  Magic:            RDUMP");
         $output->writeln("  Format Version:   {$format_version}");
         $output->writeln("  PHP Version:      {$php_version}");
         $output->writeln("  PID:              {$pid}");

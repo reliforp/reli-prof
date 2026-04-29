@@ -180,7 +180,7 @@ class MemoryDumpOpcacheIntegrationTest extends BaseTestCase
         $fp = fopen($output_path, 'rb');
         $this->assertNotFalse($fp);
         $magic = fread($fp, 8);
-        $this->assertSame("RELIMEM\0", $magic);
+        $this->assertSame("RDUMP\0\0\0", $magic);
         fclose($fp);
     }
 

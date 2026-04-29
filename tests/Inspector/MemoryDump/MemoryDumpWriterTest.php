@@ -92,7 +92,7 @@ class MemoryDumpWriterTest extends TestCase
 
         // Magic
         $magic = fread($fp, 8);
-        $this->assertSame("RELIMEM\0", $magic);
+        $this->assertSame("RDUMP\0\0\0", $magic);
 
         // Format version
         $result = unpack('Vval', fread($fp, 4));
@@ -220,7 +220,7 @@ class MemoryDumpWriterTest extends TestCase
 
         $fp = fopen($this->tmp_file, 'rb');
         $magic = fread($fp, 8);
-        $this->assertSame("RELIMEM\0", $magic);
+        $this->assertSame("RDUMP\0\0\0", $magic);
         fclose($fp);
     }
 

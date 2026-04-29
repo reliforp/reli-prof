@@ -21,7 +21,7 @@ use Reli\Lib\Process\MemoryReader\MemoryAddressNotInDumpException;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 
 /**
- * Offline `MemoryReaderInterface` backed by a RELIMEM dump file.
+ * Offline `MemoryReaderInterface` backed by an RDUMP dump file.
  *
  * Serves remote memory reads out of the dump's region index with a
  * small cache of open file descriptors. When an address is not present

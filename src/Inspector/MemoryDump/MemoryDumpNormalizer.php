@@ -17,14 +17,14 @@ use Reli\Lib\Process\MemoryMap\ProcessMemoryArea;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryAttribute;
 
 /**
- * Reads a RELIMEM dump, merges overlapping regions (last-writer-wins
+ * Reads an RDUMP dump, merges overlapping regions (last-writer-wins
  * for overlapping byte ranges), and writes a new dump whose region
  * list is strictly disjoint. This lets DumpFileMemoryReader always
  * use the binary-search fast path.
  */
 final class MemoryDumpNormalizer
 {
-    private const MAGIC = "RELIMEM\0";
+    private const MAGIC = "RDUMP\0\0\0";
 
     /**
      * @return array{original_count: int, merged_count: int, total_bytes: int}

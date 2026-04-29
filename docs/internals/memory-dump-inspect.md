@@ -1,6 +1,6 @@
-# `inspector:memory:dump:inspect` — RELIMEM dump introspection
+# `inspector:memory:dump:inspect` — RDUMP dump introspection
 
-Developer / debugging tool. Reads a `.relimem` file produced by
+Developer / debugging tool. Reads a `.rdump` file produced by
 `inspector:memory:dump` (or by `inspector:sidecar`) and prints its
 header, the captured `/proc/<pid>/maps` snapshot, and the list of
 saved memory regions.
@@ -10,7 +10,7 @@ saved memory regions.
 > itself — verifying what got into a dump, comparing two dumps,
 > investigating analyzer failures. Both the CLI shape and the
 > printed layout are **not a stable interface**: they may change
-> without notice as the RELIMEM container format evolves.
+> without notice as the RDUMP container format evolves.
 > Production / scripting consumers should go through
 > `inspector:memory:analyze` (which produces `.rmem` / `.sqlite` /
 > `.json` with versioned schemas) instead of parsing this output.
@@ -18,7 +18,7 @@ saved memory regions.
 ## Usage
 
 ```bash
-$ ./reli inspector:memory:dump:inspect path/to/snapshot.relimem
+$ ./reli inspector:memory:dump:inspect path/to/snapshot.rdump
 ```
 
 The single positional argument is the dump file. There are no
@@ -30,7 +30,7 @@ Three sections, in order: `Header`, `Memory Map`, `Regions`.
 
 ```
 === Header ===
-  Magic:            RELIMEM
+  Magic:            RDUMP
   Format Version:   2
   PHP Version:      v85
   PID:              23388
@@ -55,11 +55,11 @@ Total: 126 regions, 5.0 MiB
 
 ### Header
 
-The fixed-layout prefix of every `.relimem` file:
+The fixed-layout prefix of every `.rdump` file:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `Magic` | `RELIMEM\0` | Container marker; readers reject anything else. |
+| `Magic` | `RDUMP\0\0\0` | Container marker; readers reject anything else. |
 | `Format Version` | uint32 | `1` for early dumps, `2` adds `RSS at dump`. The inspect command reads either; older formats print `(unavailable)` for newer fields. |
 | `PHP Version` | string | Resolved target version (`v74`, `v85`, …). Used by `inspector:memory:analyze` to pick struct layouts. |
 | `PID` | int64 | Target PID at capture time. Cosmetic only — the analyzer doesn't re-attach. |
@@ -105,7 +105,7 @@ Useful sanity checks against this section:
 Implementation: `src/Command/Inspector/MemoryDumpInspectCommand.php`.
 The on-disk container is read with raw `unpack()` — there's no
 typed parser today, so this file is also the closest thing to a
-RELIMEM v2 schema reference. When you change the dump writer,
+RDUMP v2 schema reference. When you change the dump writer,
 update both that command and this page.
 
 ## See also
@@ -113,4 +113,4 @@ update both that command and this page.
 - [../memory/memory-dump.md](../memory/memory-dump.md) — user-facing
   capture flow and `--include-binary` / `--exclude-heap` semantics.
 - [memory-dump-vs-gcore.md](memory-dump-vs-gcore.md) — why a
-  RELIMEM dump and an ELF core file diverge.
+  RDUMP dump and an ELF core file diverge.

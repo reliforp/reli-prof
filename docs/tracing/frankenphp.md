@@ -153,7 +153,7 @@ sudo php ./reli inspector:memory:dump -p "$(
 )" \
     --php-regex='.*/libphp\.so$' \
     --libpthread-regex='.*/libc\.so.*' \
-    -o ./frankenphp.relimem
+    -o ./frankenphp.rdump
 ```
 
 If the chosen worker has not yet served a request and the

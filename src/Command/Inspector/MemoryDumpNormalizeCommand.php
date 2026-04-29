@@ -22,7 +22,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Normalize a RELIMEM dump file by merging overlapping regions into
+ * Normalize an RDUMP dump file by merging overlapping regions into
  * a disjoint set. Older dumps may contain duplicate region entries
  * that force the analyzer into O(n) linear scans; this command
  * rewrites them so binary search always works.
@@ -39,11 +39,11 @@ final class MemoryDumpNormalizeCommand extends ReliCommand
     public function configure(): void
     {
         $this->setName('inspector:memory:normalize-dump')
-            ->setDescription('Rewrite a RELIMEM dump with merged disjoint regions')
+            ->setDescription('Rewrite an RDUMP dump with merged disjoint regions')
             ->addArgument(
                 'input',
                 InputArgument::REQUIRED,
-                'path to the input .relimem dump file',
+                'path to the input .rdump dump file',
             )
             ->addArgument(
                 'output',

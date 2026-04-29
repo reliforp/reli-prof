@@ -65,7 +65,7 @@ class DumpFileMemoryReaderTest extends TestCase
         // in the dump file.
         $fp = fopen($this->tmp_file, 'rb') ?: $this->fail('open failed');
         $magic = fread($fp, 8);
-        $this->assertSame("RELIMEM\0", $magic);
+        $this->assertSame("RDUMP\0\0\0", $magic);
         // format version (4) + php_version (4 len + body) + pid (8) +
         // eg (8) + cg (8) + rss_bytes (8, v2) + memory_map_count (4) +
         // region_count (4)
