@@ -52,6 +52,15 @@ final class DerivedCacheReader
     /**
      * Open and validate a sidecar cache for the given rmem file.
      * Returns null if the cache is missing, invalid, or stale.
+     *
+     * Each unpack(...)[1] in this method is guarded by a preceding
+     * fread + strlen check, so the |false branch is unreachable.
+     * Suppressing PossiblyInvalidArrayAccess at the method level is
+     * cheaper than capturing every unpack() result into a local with
+     * assert($r !== false) — this is the cold cache-validation path,
+     * not a hot loop.
+     *
+     * @psalm-suppress PossiblyInvalidArrayAccess
      */
     public static function open(string $rmemPath): ?self
     {
@@ -219,6 +228,13 @@ final class DerivedCacheReader
     /**
      * Generic chunked loader: fread in chunks and memcpy into FFI buffer.
      * Avoids creating a single PHP string for the entire section.
+     *
+     * `FFI::addr($buf[$elemOffset])` is the documented way to take the
+     * address of an array element for memcpy; the union the stub gives
+     * `CData::offsetGet()` is wider than what ext/ffi actually returns
+     * for `int32_t[]` / `int64_t[]` elements.
+     *
+     * @psalm-suppress PossiblyInvalidArgument
      */
     private function loadFfiSection(string $name, string $type, int $elemSize): ?\FFI\CData
     {

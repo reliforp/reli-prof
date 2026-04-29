@@ -196,9 +196,6 @@ final class CoreDumpReaderFactory
                 $fd = $this->fd_cache[$path];
                 $this->libc_ffi->lseek($fd, $offset, 0); // SEEK_SET = 0
                 $buf = FFIHelper::new("unsigned char[$size]");
-                if (is_null($buf)) {
-                    return null;
-                }
                 /** @var int $read_len */
                 $read_len = $this->libc_ffi->read($fd, $buf, $size);
                 if ($read_len < $size) {
@@ -224,9 +221,6 @@ final class CoreDumpReaderFactory
                                 continue;
                             }
                             $cdata_buffer = FFIHelper::new("unsigned char[$size]");
-                            if (is_null($cdata_buffer)) {
-                                throw new \RuntimeException("failed to allocate memory");
-                            }
                             \FFI::memcpy($cdata_buffer, $data, $size);
                             /** @var \FFI\CArray<int> */
                             return $cdata_buffer;
@@ -265,9 +259,6 @@ final class CoreDumpReaderFactory
                     );
                 }
                 $cdata_buffer = FFIHelper::new("unsigned char[$size]");
-                if (is_null($cdata_buffer)) {
-                    throw new \RuntimeException("failed to allocate memory");
-                }
                 \FFI::memcpy($cdata_buffer, $data, $size);
                 /** @var \FFI\CArray<int> */
                 return $cdata_buffer;

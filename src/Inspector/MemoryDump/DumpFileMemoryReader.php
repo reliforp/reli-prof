@@ -132,9 +132,6 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
         if ($region !== null) {
             $data = $this->readFromRegion($region, $remote_address, $size);
             $cdata_buffer = FFIHelper::new("unsigned char[$size]");
-            if (is_null($cdata_buffer)) {
-                throw new \RuntimeException("failed to allocate memory");
-            }
             \FFI::memcpy($cdata_buffer, $data, $size);
             /** @var \FFI\CArray<int> */
             return $cdata_buffer;
@@ -158,9 +155,6 @@ final class DumpFileMemoryReader implements MemoryReaderInterface
                         continue;
                     }
                     $cdata_buffer = FFIHelper::new("unsigned char[$size]");
-                    if (is_null($cdata_buffer)) {
-                        throw new \RuntimeException("failed to allocate memory");
-                    }
                     \FFI::memcpy($cdata_buffer, $data, $size);
                     /** @var \FFI\CArray<int> */
                     return $cdata_buffer;

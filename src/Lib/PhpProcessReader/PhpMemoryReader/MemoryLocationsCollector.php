@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 
+use PhpCast\Cast;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryLimitErrorDetails;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\Log\Log;
@@ -188,12 +189,16 @@ final class MemoryLocationsCollector
         // allocations falsely trip the guard.
         $walked_chunk_bytes = $walked_chunk_count * ZendMmChunk::SIZE;
         $captured_bytes = $walked_chunk_bytes + $cached_chunks_size + $huge_total_bytes;
-        if ($memory_get_usage_real_size > 0 && $captured_bytes < $memory_get_usage_real_size * 0.5) {
-            $walked_mb = number_format($walked_chunk_bytes / 1024 / 1024, 1);
-            $cached_mb = number_format($cached_chunks_size / 1024 / 1024, 1);
-            $huge_mb = number_format($huge_total_bytes / 1024 / 1024, 1);
-            $captured_mb = number_format($captured_bytes / 1024 / 1024, 1);
-            $real_mb = number_format($memory_get_usage_real_size / 1024 / 1024, 1);
+        if ($memory_get_usage_real_size > 0 && $captured_bytes < $memory_get_usage_real_size / 2) {
+            // Cast to float once per value so the byte→MB division returns
+            // a float without tripping Psalm's strict int/float operand
+            // check (see psalm-058). Cold diagnostic path, called at most
+            // once per analyze run.
+            $walked_mb = number_format(Cast::toFloat($walked_chunk_bytes) / 1024 / 1024, 1);
+            $cached_mb = number_format(Cast::toFloat($cached_chunks_size) / 1024 / 1024, 1);
+            $huge_mb = number_format(Cast::toFloat($huge_total_bytes) / 1024 / 1024, 1);
+            $captured_mb = number_format(Cast::toFloat($captured_bytes) / 1024 / 1024, 1);
+            $real_mb = number_format(Cast::toFloat($memory_get_usage_real_size) / 1024 / 1024, 1);
             fwrite(STDERR, "WARNING: ZendMM chunk walk incomplete — captured {$captured_mb} MB"
                 . " ({$walked_mb} MB in {$walked_chunk_count} chunks"
                 . " + {$cached_mb} MB cached + {$huge_mb} MB huge),"

@@ -778,10 +778,6 @@ final class MemoryDumper
 
         $bytes_needed = $num_pages * 8;
         $buf = FFIHelper::new("char[{$bytes_needed}]");
-        if ($buf === null) {
-            $libc->close($fd);
-            return null;
-        }
 
         $offset = $start_vpn * 8;
         /** @var int $read */
