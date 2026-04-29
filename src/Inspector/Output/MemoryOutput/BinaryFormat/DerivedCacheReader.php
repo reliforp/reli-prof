@@ -247,6 +247,7 @@ final class DerivedCacheReader
      * `CData::offsetGet()` is wider than what ext/ffi actually returns
      * for `int32_t[]` / `int64_t[]` elements.
      *
+     * @return \FFI\CArray<int>|null
      * @psalm-suppress PossiblyInvalidArgument
      */
     private function loadFfiSection(string $name, string $type, int $elemSize): ?\FFI\CData
@@ -264,6 +265,7 @@ final class DerivedCacheReader
             return null;
         }
 
+        /** @var \FFI\CArray<int> */
         $buf = FFIHelper::new("{$type}[{$count}]");
 
         // Read in element-aligned chunks directly into the destination
@@ -282,6 +284,10 @@ final class DerivedCacheReader
             if ($chunk === false || strlen($chunk) !== $bytes) {
                 return null;
             }
+            // FFI::addr($buf[$i]) for an int array returns a pointer to
+            // the element at runtime, but Psalm sees `$buf[$i]` as the
+            // templated `int` element type and rejects the addr() call.
+            /** @psalm-suppress InvalidArgument */
             FFI::memcpy(FFI::addr($buf[$elemOffset]), $chunk, $bytes);
             $elemOffset += $batch;
         }

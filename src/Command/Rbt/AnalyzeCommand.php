@@ -426,8 +426,12 @@ final class AnalyzeCommand extends ReliCommand
             foreach ($entry['frames'] as $depth => $frame) {
                 $lines[] = sprintf('  [%2d] %s', $depth, $formatter->cropFrame($frame, $frame_budget));
             }
-            if (($entry['annotations'] ?? null) !== null && $entry['annotations'] !== []) {
-                foreach ($entry['annotations'] as $key => $value) {
+            // Pull `annotations` into a local so Psalm carries the
+            // `array<string, string>` shape into the foreach (the
+            // `?? null` branch + property access doesn't narrow).
+            $annotations = $entry['annotations'] ?? null;
+            if ($annotations !== null && $annotations !== []) {
+                foreach ($annotations as $key => $value) {
                     $lines[] = sprintf('  # %s = %s', $key, $value);
                 }
             }

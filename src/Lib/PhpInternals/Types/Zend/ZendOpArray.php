@@ -338,9 +338,7 @@ final class ZendOpArray
             if ($ptr === null) {
                 return 0;
             }
-            return Cast::toInt(
-                \Reli\Lib\FFI\FFIHelper::cast('long', $ptr)?->cdata,
-            );
+            return \Reli\Lib\FFI\FFIHelper::castToLong($ptr)->cdata;
         } catch (\Throwable) {
             // Field doesn't exist in PHP < 7.4
             return 0;

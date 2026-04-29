@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Command\Inspector;
 
+use PhpCast\Cast;
 use Reli\Inspector\MemoryDump\MemoryDumpNormalizer;
 use Reli\Command\DockerProfile;
 use Reli\Command\ReliCommand;
@@ -72,7 +73,7 @@ final class MemoryDumpNormalizeCommand extends ReliCommand
             '<info>%d regions → %d merged regions (%.2f MB)</info>',
             $result['original_count'],
             $result['merged_count'],
-            $result['total_bytes'] / 1024.0 / 1024.0,
+            Cast::toFloat($result['total_bytes']) / 1024.0 / 1024.0,
         ));
 
         if ($result['original_count'] === $result['merged_count']) {

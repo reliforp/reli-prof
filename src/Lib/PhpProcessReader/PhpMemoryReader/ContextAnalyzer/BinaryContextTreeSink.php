@@ -564,7 +564,11 @@ final class BinaryContextTreeSink implements ContextTreeSink
             $new_classes[$i] = Format::NULL_STRING_ID;
         }
         // Copy old data
-        if ($this->perNodeSizes !== null && $this->perNodeCapacity > 0) {
+        if (
+            $this->perNodeSizes !== null
+            && $this->perNodeClasses !== null
+            && $this->perNodeCapacity > 0
+        ) {
             \FFI::memcpy($new_sizes, $this->perNodeSizes, $this->perNodeCapacity * 8);
             \FFI::memcpy($new_classes, $this->perNodeClasses, $this->perNodeCapacity * 4);
         }

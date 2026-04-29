@@ -117,7 +117,10 @@ final class FfiIntSet
     {
         $this->capacity = $capacity;
         $this->mask = $capacity - 1;
-        $this->grow_threshold = (int)($capacity * self::MAX_LOAD_FACTOR);
+        // intdiv keeps both operands int, avoids the int/float strict
+        // operand check (psalm-058). Hardcoded 4 mirrors MAX_LOAD_FACTOR
+        // = 0.75 = 3/4.
+        $this->grow_threshold = intdiv($capacity * 3, 4);
         $this->slots = FFIHelper::newInt64Array($capacity);
         // FFI::new uses calloc semantics — slots are zero-initialized
     }

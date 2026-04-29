@@ -163,10 +163,16 @@ final class FFIHelper
      * the same way `\FFI\CArray` does. The `@return` docblock carries
      * the narrowed type for Psalm.
      *
+     * The parameter is intentionally not by-reference: FFI::cast() is
+     * by-ref internally to keep the source buffer alive, but a one-hop
+     * pass-through wrapper does not need to enforce invariance on the
+     * caller — passing a `CInteger` field of an FFI struct should not
+     * trip Psalm's invariant by-ref check.
+     *
      * @param CData|CInteger|CPointer $ptr
      * @return CInteger
      */
-    public static function castToInt(CData &$ptr): CData
+    public static function castToInt(CData $ptr): CData
     {
         /** @var CInteger */
         return self::cast('int', $ptr);
@@ -179,7 +185,7 @@ final class FFIHelper
      * @param CData|CInteger|CPointer $ptr
      * @return CInteger
      */
-    public static function castToLong(CData &$ptr): CData
+    public static function castToLong(CData $ptr): CData
     {
         /** @var CInteger */
         return self::cast('long', $ptr);

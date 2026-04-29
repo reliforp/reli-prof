@@ -318,7 +318,7 @@ final class EmitObjectJob implements CollectorJob
 
             $location = new FfiAllocationMemoryLocation(
                 $data_ptr,
-                (int)$alloc_size,
+                $alloc_size,
                 $is_persistent ? 'FFI\\CData::buffer(persistent)' : 'FFI\\CData::buffer',
             );
             $ctx->memory_locations->add($location);

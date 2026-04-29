@@ -298,7 +298,10 @@ final class RmemExploreCommand extends ReliCommand
         // Fork SCC builder if sidecar doesn't already have SCC
         $sccBuilderPid = null;
         if (extension_loaded('pcntl')) {
-            $rmemPath = realpath($file) ?: $file;
+            // Strict `=== false` rather than `?:` so Psalm doesn't worry
+            // about realpath() returning a (technically) falsy empty string.
+            $resolved = realpath($file);
+            $rmemPath = $resolved !== false ? $resolved : $file;
             $cacheReader = \Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheReader::open($rmemPath);
             $hasScc = $cacheReader !== null
                 && $cacheReader->hasSection(\Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheFormat::SECTION_SCC_NODE_MAP);
@@ -516,6 +519,9 @@ final class RmemExploreCommand extends ReliCommand
         });
 
         $focusBuf = '';
+        // pcntl_signal-installed closure flips $running; Psalm collapses
+        // the variable to the literal `true` it sees at assignment.
+        /** @psalm-suppress RedundantCondition */
         while ($running) {
             pcntl_signal_dispatch();
             $streams = $server->getReadStreams();
@@ -580,6 +586,11 @@ final class RmemExploreCommand extends ReliCommand
             $running = false;
         });
 
+        // `@psalm-suppress` rather than `@var bool` because Psalm
+        // collapses `$running = true` back to the literal `true` even
+        // through a `@var bool` annotation — pcntl_signal-installed
+        // closures flip it through a control flow Psalm cannot see.
+        /** @psalm-suppress RedundantCondition */
         while ($running) {
             pcntl_signal_dispatch();
 
@@ -605,6 +616,7 @@ final class RmemExploreCommand extends ReliCommand
                 if ($line === '') {
                     continue;
                 }
+                /** @var mixed $decoded */
                 $decoded = json_decode($line, true);
                 if (!is_array($decoded)) {
                     $response = ['ok' => false, 'error' => 'Invalid JSON'];
@@ -616,9 +628,16 @@ final class RmemExploreCommand extends ReliCommand
                         $response = $this->forwardUiRequest($request, $uiRequestWrite, $uiResponseRead);
                     } else {
                         $response = $service->handle($request);
-                        // Annotate hello with ui capabilities
-                        if ($action === 'server.hello' && is_array($response['data'] ?? null)) {
-                            $response['data']['serve_control'] = $uiRequestWrite !== null;
+                        // Annotate hello with ui capabilities. Pull
+                        // $response['data'] into a typed local so the
+                        // assignment back lands on a known shape rather
+                        // than on a mixed-array slot.
+                        /** @var mixed $data */
+                        $data = $response['data'] ?? null;
+                        if ($action === 'server.hello' && is_array($data)) {
+                            /** @var array<string, mixed> $data */
+                            $data['serve_control'] = $uiRequestWrite !== null;
+                            $response['data'] = $data;
                         }
                     }
                 }

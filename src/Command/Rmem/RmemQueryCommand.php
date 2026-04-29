@@ -189,6 +189,11 @@ final class RmemQueryCommand extends ReliCommand
         }
     }
 
+    /**
+     * @psalm-suppress PossiblyInvalidArrayAccess each unpack(...)[1]
+     *   call here is gated by a `strlen($data) >= …` check, so the
+     *   |false branch is unreachable.
+     */
     private function checkIntegrity(OutputInterface $output, BinaryReader $reader): int
     {
         $errors = 0;
@@ -624,6 +629,7 @@ final class RmemQueryCommand extends ReliCommand
             if ($response === false) {
                 break;
             }
+            /** @var mixed $decoded */
             $decoded = json_decode($response, true);
             $output->writeln((string)json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
             $output->writeln('');

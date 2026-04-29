@@ -104,7 +104,7 @@ final class TraceAggregator
         $sample_count = 0;
         $matched_samples = 0;
 
-        /** @var list<list<string>> $tail_buffer */
+        /** @var list<array{frames: list<string>, annotations: array<string, string>|null}> $tail_buffer */
         $tail_buffer = [];
 
         foreach ($samples as $sample) {
