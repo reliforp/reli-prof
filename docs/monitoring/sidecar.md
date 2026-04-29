@@ -115,7 +115,7 @@ it keeps the application's dependency graph free of FFI / PCNTL.
 
 - **Composer, full reli-prof** — strongly discouraged for
   application-only deploys. `reliforp/reli-prof`'s `composer.json`
-  declares `php: ^8.5`, `ext-ffi`, `ext-pcntl` as hard requirements
+  declares `php: ^8.4`, `ext-ffi`, `ext-pcntl` as hard requirements
   (they are needed by the `reli` CLI itself, not by the client
   classes), and a typical PHP-FPM application image has none of
   them. `composer require reliforp/reli-prof` therefore fails the

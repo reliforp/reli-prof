@@ -32,13 +32,26 @@ it differently:
   3 <main> /home/sji/work/test/mandelbrot.php:45:ZEND_DO_FCALL
   ```
 
-  The currently executing opcode becomes the first frame of the
-  callstack, so visualisations like flamegraph show opcode usage
-  directly.
+  When the sample lands while a PHP-level opcode is being
+  dispatched, the currently executing opcode is prepended as an
+  extra leaf frame (`<VM>::<OPCODE> <VM>:-1`), so visualisations
+  like flamegraph show opcode usage directly. If the leaf frame is
+  an internal function call (e.g. `usleep`, `preg_match`), the
+  sample is taken inside the C implementation and the extra
+  `<VM>::` frame is omitted — you'll see the internal function
+  itself at index 0:
+
+  ```bash
+  $ sudo php ./reli i:trace --output-format=template:phpspy_with_opcode \
+        -- php -r "for(;;){usleep(10000);}"
+  0 usleep <internal>:-1
+  1 <main> Command line code:1:ZEND_DO_ICALL
+  ```
 
   For informational purposes, the executing opcode is also appended
   to the end of each call frame line (second position onward).
-  Expect function-call opcodes like `ZEND_DO_FCALL` there.
+  Expect function-call opcodes like `ZEND_DO_FCALL` / `ZEND_DO_ICALL`
+  there.
 
 If JIT is enabled on the target, line / opcode information may be
 slightly inaccurate. For JIT-compiled function names specifically,
