@@ -210,7 +210,7 @@ Memory analysis in 0.12 expands in three directions:
   and makes OOM-resistant work on graphs with 6 M+ edges practical.
 
 (#544, #545, #547, #550, #552, #561, #562, #564, #565, #567, #570, #581,
-#582, #590, #629, #637)
+#582, #590, #607, #629, #637)
 
 ## Performance
 
