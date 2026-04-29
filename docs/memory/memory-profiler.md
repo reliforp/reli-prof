@@ -170,7 +170,7 @@ And the output is like below. The target process is [psalm](https://github.com/v
                         "object_properties": {
                             "#node_id": 5,
                             "#type": "ObjectPropertiesContext",
-                            "#count": 24
+                            "#count": 24,
                             "config": {
                                 "#node_id": 6,
                                 "#type": "ObjectContext",

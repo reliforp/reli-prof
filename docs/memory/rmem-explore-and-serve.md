@@ -300,6 +300,7 @@ reli rmem:serve output.rmem
 reli rmem:serve output.rmem --socket=/tmp/my-rmem.sock
 
 # Auto-shutdown after 30 minutes of inactivity
+# (default: 3600s = 1 hour; pass 0 to keep the server up indefinitely)
 reli rmem:serve output.rmem --timeout=1800
 ```
 
