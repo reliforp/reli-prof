@@ -19,7 +19,7 @@ mkdir -p ./traces
 # Attach to every worker matching the regex for ~60s.
 # The daemon writes one .rbt per *reli worker* (-T, default 8) into
 # ./traces/, named worker_<reli-worker-pid>.rbt — not one per target PID.
-sudo timeout 60 reli inspector:daemon \
+timeout 60 reli inspector:daemon \
     -P "^php-fpm" \
     -f rbt -o ./traces/
 
@@ -39,7 +39,7 @@ Dump now (short stop), analyse offline, look at the prioritised report:
 
 ```bash
 # 1. Take a fast binary dump (target stopped only briefly)
-sudo reli inspector:memory:dump --pid=<pid> --output=worker.rdump
+reli inspector:memory:dump --pid=<pid> --output=worker.rdump
 
 # 2. Analyse the dump into a .rmem snapshot
 reli inspector:memory:analyze worker.rdump -f binary -o worker.rmem
@@ -126,7 +126,7 @@ flags do the work:
 
 ```bash
 # Daemon mode: discover workers automatically, skip Caddy / Go threads
-sudo reli inspector:daemon \
+reli inspector:daemon \
     -P frankenphp \
     --target-thread-regex='^php-[0-9a-f]+$' \
     --php-regex='.*/libphp\.so$' \
@@ -148,7 +148,7 @@ ps -L -p "$(pgrep -o frankenphp)" -o tid,comm | awk '$2 ~ /^php-[0-9a-f]+$/'
 # (FrankenPHP names worker threads with a hex suffix; the regex above also
 #  excludes `php-main`, the bootstrap thread.)
 
-sudo reli inspector:trace -p 12345 \
+reli inspector:trace -p 12345 \
     --php-regex='.*/libphp\.so$' \
     --libpthread-regex='.*/libc\.so.*' \
     -o trace.rbt
