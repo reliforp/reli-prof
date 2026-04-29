@@ -288,3 +288,37 @@ php vendor/bin/psalm.phar          # static analysis
 php vendor/bin/phpcs --standard=PSR12 src/  # coding standard
 php vendor/bin/phpunit             # unit tests (excludes target-version group)
 ```
+
+### Psalm conventions
+
+See `docs/internals/psalm-conventions.md` before adding an `(int)` cast,
+an `assert()`, or a `@psalm-suppress`. The traps that bite without
+reading it:
+
+- `psalm-baseline.xml` is empty (`findUnusedBaselineEntry=true`). Use
+  `--set-baseline=psalm-baseline.xml`, **not** `--update-baseline` —
+  the latter only prunes, so a freshly-surfaced error never lands in
+  the baseline and CI fails.
+- Bare `assert()` is for Psalm type-narrowing only — production runs
+  with `zend.assertions=-1` and strips them at compile time. Use
+  `Webmozart\Assert::*` or an explicit `if (...) throw` for runtime
+  invariants whose failure would silently corrupt output.
+- Default cast for non-hot paths is `PhpCast\Cast::toInt()` /
+  `Cast::toFloat()`. Bare `(int)` silently coerces `"abc"` to 0 and
+  `[1,2,3]` to 1 — only OK in hot loops where the per-call dispatch
+  matters and the source is provably typed (FFI int arrays etc.),
+  with a comment at the site explaining why.
+- Allocating an FFI int array? Use `FFIHelper::newInt32Array($n)` etc.,
+  not `FFIHelper::new("int32_t[$n]")`. The typed wrapper preserves
+  `\FFI\CArray<int>` for Psalm; the raw call collapses element reads
+  to the wide `CData|null|scalar` union and forces casts at every
+  use site.
+- `\FFI\CArray<T>` and `\FFI\CInteger` are project-side Psalm stubs in
+  `tools/stubs/ffi/`, not real runtime classes. Putting them in a
+  PHP method **return-type signature** raises `TypeError` at runtime;
+  declare the runtime type as `\FFI\CData` and use `@return \FFI\CArray<T>`
+  in the docblock.
+- `@var \FFI\CArray<int>` (or `\FFI\CArray<int>|null` for nullable
+  ones) on `?\FFI\CData` properties — without it the templated type
+  gets erased on the property assignment and `$this->prop[$i]` falls
+  back to the wide stub union at every read.
