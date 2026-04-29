@@ -840,6 +840,8 @@ final class BinaryReportDataProvider
     /**
      * Build a single node's meta on demand from nodeSizes + locIndex/locRows.
      *
+     * @param \FFI\CArray<int>|null $locIndex
+     * @param \FFI\CArray<\FFI\PhpInternals\LocationRow>|null $locRows
      * @return array{size: int, location_type: ?string, class_name: ?string, string_value_id: ?int}
      */
     private static function buildNodeMeta(

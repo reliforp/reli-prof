@@ -194,6 +194,8 @@ final class DerivedCacheReader
 
     /**
      * Load a section into an FFI int32 array via chunked fread + memcpy.
+     *
+     * @return \FFI\CArray<int>|null
      */
     public function loadInt32Section(string $name): ?\FFI\CData
     {
@@ -202,6 +204,8 @@ final class DerivedCacheReader
 
     /**
      * Load a section into an FFI int64 array via chunked fread + memcpy.
+     *
+     * @return \FFI\CArray<int>|null
      */
     public function loadInt64Section(string $name): ?\FFI\CData
     {

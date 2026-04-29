@@ -533,6 +533,10 @@ final class BinaryContextTreeSink implements ContextTreeSink
         }
     }
 
+    /**
+     * @psalm-assert !null $this->perNodeSizes
+     * @psalm-assert !null $this->perNodeClasses
+     */
     private function ensurePerNodeCapacity(int $node_id): void
     {
         if ($node_id > $this->maxNodeId) {
