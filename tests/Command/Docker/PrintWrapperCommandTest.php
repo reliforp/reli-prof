@@ -59,6 +59,7 @@ class PrintWrapperCommandTest extends TestCase
         $this->assertStringContainsString('full profile', $out);
         $this->assertStringContainsString("reli() {", $out);
         $this->assertStringContainsString('--cap-add=SYS_PTRACE', $out);
+        $this->assertStringContainsString('--entrypoint /usr/local/bin/php-ptrace', $out);
         $this->assertStringContainsString('--pid=host', $out);
         $this->assertStringContainsString('--network=host', $out);
         $this->assertStringContainsString('reli_assert_scratch_safe()', $out);
@@ -80,6 +81,7 @@ class PrintWrapperCommandTest extends TestCase
         $this->assertStringContainsString('--read-only', $out);
         $this->assertStringContainsString('--tmpfs /tmp', $out);
         $this->assertStringNotContainsString('--cap-add=SYS_PTRACE', $out);
+        $this->assertStringNotContainsString('--entrypoint', $out);
         $this->assertStringNotContainsString('--pid=host', $out);
         $this->assertStringNotContainsString('reli_assert_scratch_safe', $out);
     }
@@ -102,8 +104,23 @@ class PrintWrapperCommandTest extends TestCase
 
     public function testImageOverrideChangesImageReference(): void
     {
+        // Default profile is full, which overrides --entrypoint and so has
+        // to re-supply the `reli` script path explicitly after the image.
         $out = $this->runWrapper(['--image' => 'myreg/reli:custom']);
+        $this->assertStringContainsString('myreg/reli:custom reli "$@"', $out);
+    }
+
+    public function testMinimalProfileImageOverridePassesArgsToEntrypoint(): void
+    {
+        // Minimal profile keeps the image's `php reli` ENTRYPOINT, so the
+        // user-supplied args go straight after the image reference with no
+        // extra `reli` token in front.
+        $out = $this->runWrapper([
+            '--profile' => 'minimal',
+            '--image' => 'myreg/reli:custom',
+        ]);
         $this->assertStringContainsString('myreg/reli:custom "$@"', $out);
+        $this->assertStringNotContainsString('myreg/reli:custom reli "$@"', $out);
     }
 
     public function testUnknownProfileReturnsNonZero(): void

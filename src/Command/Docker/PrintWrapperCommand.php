@@ -116,6 +116,14 @@ final class PrintWrapperCommand extends ReliCommand
 # Runs reli in a container with the capabilities needed to attach to host
 # PHP processes (ptrace, pid=host, network=host). Files written by the
 # container to bind-mounted paths are owned by the host user via --user.
+#
+# --entrypoint selects the setcap'd PHP binary baked into the image
+# (see Dockerfile). When --user is non-root the kernel zeroes the effective
+# capability set at exec, so --cap-add=SYS_PTRACE alone would still leave
+# ptrace returning EPERM; the file capability on /usr/local/bin/php-ptrace
+# raises CAP_SYS_PTRACE back into the effective set on each invocation.
+# Overriding the entrypoint also drops the image's `php reli` ENTRYPOINT,
+# so we re-supply the `reli` script path explicitly below.
 {{NAME}}() {
     local tty=
     [ -t 0 ] && [ -t 1 ] && tty=-t
@@ -142,6 +150,7 @@ final class PrintWrapperCommand extends ReliCommand
     fi
 
     docker run --rm -i ${tty} \
+        --entrypoint /usr/local/bin/php-ptrace \
         --cap-add=SYS_PTRACE \
         --security-opt=apparmor=unconfined \
         --pid=host \
@@ -154,7 +163,7 @@ final class PrintWrapperCommand extends ReliCommand
         -e XDG_CACHE_HOME="${scratch}/cache" \
         -e XDG_RUNTIME_DIR="${scratch}/runtime" \
         ${RELI_DOCKER_EXTRA_ARGS:-} \
-        {{IMAGE}} "$@"
+        {{IMAGE}} reli "$@"
 }
 
 reli_assert_scratch_safe() {
