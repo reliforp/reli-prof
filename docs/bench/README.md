@@ -172,7 +172,8 @@ literature cited in the comparison doc.
   measuring baseline; the current scripts load it correctly.
 - **phpspy** is built from upstream HEAD, attached at 1 ms
   sampling.
-- **reli** runs from this repo on PHP 8.5 (per `composer.json`),
+- **reli** runs from this repo on PHP 8.5 (the runner floor in
+  `composer.json` is `^8.4`; these benchmarks were captured on 8.5),
   attached to the PHP 8.4 target via the `-- cmd args` form so
   reli's startup happens before the timed code begins. The 1 ms
   sampling period is set with `--sleep-ns 1000000`.

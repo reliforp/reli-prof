@@ -2,7 +2,7 @@
   <img src="docs/images/logos/banner_bg_white.png" alt="Reli" width="100%">
 </h1>
 
-![PHP (runner): 8.5.0+](https://img.shields.io/badge/php%20%28runner%29-8.5.0%2B-blue.svg)
+![PHP (runner): 8.4.0+](https://img.shields.io/badge/php%20%28runner%29-8.4.0%2B-blue.svg)
 ![PHP (target): 7.0+](https://img.shields.io/badge/php%20%28target%29-7.0%2B-8892BF.svg)
 [![Packagist](https://img.shields.io/packagist/v/reliforp/reli-prof.svg)](https://packagist.org/packages/reliforp/reli-prof)
 [![Github Actions](https://github.com/reliforp/reli-prof/workflows/build/badge.svg)](https://github.com/reliforp/reli-prof/actions)
