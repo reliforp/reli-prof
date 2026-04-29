@@ -9,7 +9,7 @@ on:
 
 jobs:
   release:
-    name: "GIT tag, release & create merge-up PR"
+    name: "GIT tag, release & prepare next milestone"
     runs-on: ubuntu-latest
 
     steps:

@@ -31,6 +31,16 @@ COPY --from=composer /usr/bin/composer /usr/bin/composer
 WORKDIR /app
 COPY . .
 
+# `.git` is in .dockerignore and composer.json has no `version` field, so
+# without help Composer can't infer the root package version and falls back
+# to `1.0.0+no-version-set`. That makes `reli --version` lie. The build arg
+# lets the publish workflow inject the right value (tag for stable builds,
+# `<branch>-dev` alias for floating release-branch builds,
+# `dev-manual-<sha>` for one-off dispatch builds). When unset (local
+# `docker build .`) Composer keeps its usual fallback behaviour.
+ARG COMPOSER_ROOT_VERSION
+ENV COMPOSER_ROOT_VERSION=${COMPOSER_ROOT_VERSION}
+
 RUN composer install --no-dev
 
 ENTRYPOINT ["php", "reli"]
