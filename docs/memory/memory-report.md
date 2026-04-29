@@ -13,7 +13,7 @@ the same file with SQL tools.
 
 ```bash
 # .rmem (recommended)
-sudo ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
+sudo ./reli inspector:memory -p <pid> -f rmem -o snapshot.rmem
 ./reli inspector:memory:report snapshot.rmem
 
 # SQLite (works identically here; useful if you also want SQL access)
@@ -368,12 +368,12 @@ The `inspector:memory:compare` command diffs two memory snapshot files
 
 ```bash
 # Capture baseline (.rmem is the fastest format and is what every analyser reads natively)
-sudo ./reli inspector:memory -p <pid> -f binary -o before.rmem
+sudo ./reli inspector:memory -p <pid> -f rmem -o before.rmem
 
 # ... deploy code change, trigger workload, etc.
 
 # Capture target
-sudo ./reli inspector:memory -p <pid> -f binary -o after.rmem
+sudo ./reli inspector:memory -p <pid> -f rmem -o after.rmem
 
 # Compare two files
 ./reli inspector:memory:compare before.rmem after.rmem

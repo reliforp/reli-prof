@@ -44,7 +44,7 @@ final class MemoryReportCommand extends ReliCommand
         $this->addArgument(
             'db-file',
             InputArgument::REQUIRED,
-            'path to the analysis file (SQLite .db/.sqlite or binary .rmem)'
+            'path to the analysis file (SQLite .db/.sqlite or rmem .rmem)'
         );
         $this->addOption(
             'run-id',
@@ -181,17 +181,17 @@ final class MemoryReportCommand extends ReliCommand
         $output_path = $input->getOption('output');
         $pretty = (bool)$input->getOption('pretty-print');
 
-        // Detect binary (.rmem) vs SQLite by extension or magic bytes
-        $is_binary = $this->isBinaryFormat($db_file);
+        // Detect rmem (.rmem) vs SQLite by extension or magic bytes
+        $is_rmem = $this->isRmemFile($db_file);
 
         $generator = new ReportGenerator();
 
-        if ($is_binary) {
-            // Binary path: no SQLite, no PDO, no mmap_size/prefetch/etc.
+        if ($is_rmem) {
+            // rmem path: no SQLite, no PDO, no mmap_size/prefetch/etc.
             /** @var bool|null $ffi_csr */
             $ffi_csr = $input->getOption('ffi-csr');
 
-            // Prefetch the binary file into kernel page cache too
+            // Prefetch the rmem file into kernel page cache too
             $prefetch = (bool)$input->getOption('prefetch');
             if ($prefetch) {
                 LibcFileReader::prefetchFile($db_file);
@@ -317,9 +317,9 @@ final class MemoryReportCommand extends ReliCommand
     }
 
     /**
-     * Detect binary format by extension (.rmem) or magic bytes ("RMEM").
+     * Detect rmem format by extension (.rmem) or magic bytes ("RMEM").
      */
-    private function isBinaryFormat(string $path): bool
+    private function isRmemFile(string $path): bool
     {
         if (str_ends_with($path, '.rmem')) {
             return true;

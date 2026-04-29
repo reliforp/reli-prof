@@ -39,7 +39,7 @@ $ sudo gcore -o /tmp/myapp 12345
 # Run the memory analyzer against the core file (.rmem is the fastest
 # format and is what every analyser reads natively)
 $ php ./reli inspector:coredump /tmp/myapp.12345 --pid 12345 \
-    -f binary -o snapshot.rmem
+    -f rmem -o snapshot.rmem
 
 # Feed the output into the normal analysis pipeline
 $ php ./reli inspector:memory:report snapshot.rmem

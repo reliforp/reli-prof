@@ -120,7 +120,7 @@ final class MemoryCommand extends ReliCommand
 
         $output_factory = new MemoryOutputFactory();
 
-        if (MemoryOutputFactory::isBinaryFormat($memory_profiler_settings)) {
+        if (MemoryOutputFactory::isRmemFormat($memory_profiler_settings)) {
             [$binary_output, $sink] = $output_factory->createBinaryStreamingSink(
                 $memory_profiler_settings,
             );
@@ -138,7 +138,7 @@ final class MemoryCommand extends ReliCommand
             // RegionBoundaries is set on the sink by collectAll() before the
             // emit loop, so location rows are written with region_id /
             // bin_overhead inline. Compute sums directly from the location
-            // temp file — no SQL DB exists in the binary path.
+            // temp file — no SQL DB exists in the rmem path.
             $region_result = $sink->computeRegionSumsAndOverhead();
 
             $summary = $this->buildSummary(
@@ -155,7 +155,7 @@ final class MemoryCommand extends ReliCommand
             return 0;
         }
 
-        // Non-binary path: for DB formats (sqlite3, mysql, postgresql)
+        // Non-rmem path: for DB formats (sqlite3, mysql, postgresql)
         // write directly to the output DB; for others use a temp SQLite.
         [$pdo_output, $sink, $run_id, $db, $temp_path] = $output_factory->createStreamingSink(
             $memory_profiler_settings,

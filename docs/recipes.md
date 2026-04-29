@@ -42,7 +42,7 @@ Dump now (short stop), analyse offline, look at the prioritised report:
 reli inspector:memory:dump --pid=<pid> --output=worker.rdump
 
 # 2. Analyse the dump into a .rmem snapshot
-reli inspector:memory:analyze worker.rdump -f binary -o worker.rmem
+reli inspector:memory:analyze worker.rdump -f rmem -o worker.rmem
 
 # 3. Read the prioritised findings (dominant classes, cycles, choke points, …)
 reli inspector:memory:report worker.rmem
@@ -110,7 +110,7 @@ Analyse the dump like any other reli memory snapshot:
 
 ```bash
 reli inspector:memory:analyze /tmp/reli-dumps/sidecar-<pid>-<datetime>.dump \
-    -f binary -o crash.rmem
+    -f rmem -o crash.rmem
 reli inspector:memory:report crash.rmem
 ```
 

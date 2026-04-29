@@ -57,9 +57,9 @@ The sidecar **client** (the application-side library) does not require FFI — o
 
 ## `rmem:explore` won't open my file
 
-`rmem:explore`, `rmem:query`, `rmem:serve`, and `rmem:mcp` read **`.rmem` only** (binary memory snapshots produced by `inspector:memory -f binary`, `inspector:memory:dump` + `inspector:memory:analyze -f binary`, or `inspector:coredump -f binary`). Pointing any of them at a SQLite snapshot fails with `Invalid rmem magic: 53514c69` (the hex is `"SQLi"`, the start of the SQLite file header).
+`rmem:explore`, `rmem:query`, `rmem:serve`, and `rmem:mcp` read **`.rmem` only** (binary memory snapshots produced by `inspector:memory -f rmem`, `inspector:memory:dump` + `inspector:memory:analyze -f rmem`, or `inspector:coredump -f rmem`). Pointing any of them at a SQLite snapshot fails with `Invalid rmem magic: 53514c69` (the hex is `"SQLi"`, the start of the SQLite file header).
 
-If your snapshot is a SQLite `.db` / `.sqlite` file, either re-capture with `-f binary -o snapshot.rmem`, or use the SQL-aware analysers instead (`inspector:memory:report`, `inspector:memory:compare`, raw `sqlite3` / `duckdb`). To convert an existing dump, run `inspector:memory:analyze <dump> -f binary -o snapshot.rmem`.
+If your snapshot is a SQLite `.db` / `.sqlite` file, either re-capture with `-f rmem -o snapshot.rmem`, or use the SQL-aware analysers instead (`inspector:memory:report`, `inspector:memory:compare`, raw `sqlite3` / `duckdb`). To convert an existing dump, run `inspector:memory:analyze <dump> -f rmem -o snapshot.rmem`.
 
 See [memory/memory-dump.md](memory/memory-dump.md) and [memory/rmem-explore-and-serve.md](memory/rmem-explore-and-serve.md).
 

@@ -20,7 +20,9 @@ The canonical invocation:
 reli inspector:memory -p <pid_of_target_process>
 ```
 
-By default this writes the analysed snapshot as JSON on stdout — that's what the rest of this document covers. The same command also accepts other output formats, and for any analysis-tool-driven workflow **`-f binary` (the `.rmem` format) is the fastest and is what every analyser (`rmem:explore`, `rmem:serve`, `rmem:mcp`, `inspector:memory:report`, `inspector:memory:compare`) reads natively**. Other accepted formats: `-f sqlite3` (for SQL tooling — see [memory-profiler-database.md](memory-profiler-database.md)), `-f report` (direct findings report — see [memory-report.md](memory-report.md)), `-f mysql` / `-f postgresql` (stream into a remote database).
+By default this writes the analysed snapshot as JSON on stdout — that's what the rest of this document covers. The same command also accepts other output formats, and for any analysis-tool-driven workflow **`-f rmem` (the `.rmem` format) is the fastest and is what every analyser (`rmem:explore`, `rmem:serve`, `rmem:mcp`, `inspector:memory:report`, `inspector:memory:compare`) reads natively**. Other accepted formats: `-f sqlite3` (for SQL tooling — see [memory-profiler-database.md](memory-profiler-database.md)), `-f report` (direct findings report — see [memory-report.md](memory-report.md)), `-f mysql` / `-f postgresql` (stream into a remote database).
+
+When `-f` is omitted, the format is inferred from the `-o` extension: `.rmem` selects `rmem`, `.sqlite3` / `.sqlite` / `.db` select `sqlite3`, anything else (or no `-o`) falls back to `json`. So `inspector:memory -p <pid> -o snap.rmem` is equivalent to passing `-f rmem` explicitly.
 
 You can use this mode to analyze the memory usage of the target process — for finding memory bottlenecks or memory leaks. For example, you can see statistics such as whether strings, arrays or objects are particularly dominant in a script's memory usage, or contextual information such as where certain local variables in a given call frame are referenced from elsewhere, and the actual values held by certain memory areas.
 
@@ -399,7 +401,7 @@ The example of the output is like below.
 If you prefer actionable findings over manual `jq` exploration, use the automatic report feature. Capture once to `.rmem` (the fastest format and what every analyser reads natively), then run the report:
 
 ```bash
-sudo ./reli inspector:memory -p <pid> -f binary -o snapshot.rmem
+sudo ./reli inspector:memory -p <pid> -f rmem -o snapshot.rmem
 ./reli inspector:memory:report snapshot.rmem
 ```
 
