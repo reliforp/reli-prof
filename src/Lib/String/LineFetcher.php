@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Lib\String;
 
+use Webmozart\Assert\Assert;
+
 final class LineFetcher
 {
     /** @return iterable<string> */
@@ -20,7 +22,11 @@ final class LineFetcher
     {
         $line = strtok($string, "\n");
         if ($line === false) {
-            assert($string === "\n");
+            // strtok returning false on the first call is documented only
+            // for the "input is just the delimiter" case; if some other
+            // input were to land here the function would silently yield
+            // an empty string and drop the caller's data.
+            Assert::same($string, "\n");
             yield  '';
             return;
         }
