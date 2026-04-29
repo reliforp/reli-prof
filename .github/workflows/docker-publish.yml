@@ -1,26 +1,44 @@
 name: Publish Docker image
 
-# Triggered by the tag push that laminas/automatic-releases performs after a
-# milestone close (see release-on-milestone-closed.yml). Tags are bare semver
-# strings like `0.12.0`, no `v` prefix.
+# Three trigger shapes, three tag shapes:
+#
+#   1. Tag push (e.g. `0.12.0`, set by laminas/automatic-releases on milestone
+#      close). Stable release. Pushes `:0.12.0`, `:0.12`, and `:latest`.
+#      Pre-release tags like `0.12.0-rc1` skip `:latest` and `:0.12`.
+#
+#   2. Push to a release branch matching `[0-9]+.[0-9]+.x` (e.g. `0.12.x`).
+#      Floating dev image. Pushes `:0.12.x-dev` so users can try
+#      not-yet-tagged fixes from the active release line. Never touches
+#      `:latest`.
+#
+#   3. Manual `workflow_dispatch` for any ref (PR branch, feature branch,
+#      SHA). Pushes a SHA-pinned `:manual-sha-<short>` tag — no floating
+#      tags, so PR / experimental builds never overwrite anything stable.
+#      Use this to share a one-off image of a PR with a reviewer or to
+#      reproduce a specific commit's behaviour.
 #
 # Required repo secrets:
 #   DOCKERHUB_USERNAME — Docker Hub account with push access to reliforp/reli-prof
 #   DOCKERHUB_TOKEN    — PAT scoped to that repo
 #
-# `latest` is moved on every stable tag. Pre-release tags (e.g. 0.12.0-rc1)
-# get only their version-specific tags; metadata-action's semver patterns
-# already exclude them from the `latest` / `MAJOR.MINOR` floating tags.
+# Note on `composer install --no-dev` and version reporting: the Dockerfile
+# bakes the source via `COPY . .` and runs composer at build time, so
+# `InstalledVersions::getPrettyVersion()` reflects whatever ref was checked
+# out. Tag builds report the proper semver; branch / dispatch builds report
+# `dev-<branch>` or a commit hash, which is the correct "this is a dev
+# build" signal — don't try to fake the version.
 
 on:
   push:
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
       - '[0-9]+.[0-9]+.[0-9]+-*'
+    branches:
+      - '[0-9]+.[0-9]+.x'
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Existing git tag to (re)publish (e.g. 0.12.0)"
+      ref:
+        description: "Git ref to build (branch name, tag, or full SHA). For PRs, use the head branch name."
         required: true
 
 jobs:
@@ -33,7 +51,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ github.event.inputs.ref || github.ref }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -52,11 +70,19 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: reliforp/reli-prof
+          # Disable the implicit `:latest` flavor; we add it explicitly
+          # under the right conditions below.
+          flavor: |
+            latest=false
           tags: |
+            # --- Trigger 1: stable tag push -------------------------------
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}.{{minor}}.{{patch}}
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') }}
+            # --- Trigger 2: release-branch dev push -----------------------
+            type=raw,value=${{ github.ref_name }}-dev,enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') }}
+            # --- Trigger 3: manual dispatch (SHA-pinned) ------------------
+            type=sha,prefix=manual-sha-,format=short,enable=${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Build and push
         uses: docker/build-push-action@v7
@@ -73,5 +99,5 @@ jobs:
       - name: Verify version reported by image
         run: |
           docker run --rm --pull=always \
-            "reliforp/reli-prof:${{ github.event.inputs.tag || github.ref_name }}" \
+            "reliforp/reli-prof:${{ steps.meta.outputs.version }}" \
             --version
