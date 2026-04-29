@@ -356,6 +356,7 @@ for the in-app help overlay.
 | `/` | View filter — substring filter on the *visible* rows only (live) |
 | `m` | Match filter — sample-level regex filter (rebuilds aggregations) |
 | `n` | Toggle `no-line` mode (collapse `file:line`) |
+| `c` | Toggle the opcode column (equivalent to `--with-opcode` on `rbt:analyze`) |
 
 #### Misc
 

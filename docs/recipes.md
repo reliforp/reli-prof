@@ -70,10 +70,17 @@ exact moment the application reports it's dying:
 
 ```bash
 # Start the sidecar (foreground; wrap in systemd / supervisor / a
-# Kubernetes sidecar container in real deployments)
-reli inspector:sidecar \
-    --socket=/tmp/reli-sidecar.sock \
-    --output-dir=/tmp/reli-dumps
+# Kubernetes sidecar container in real deployments).
+# The sidecar refuses to bind unless the socket's parent directory
+# is mode 0700 and owned by the current uid. On systemd hosts the
+# default $XDG_RUNTIME_DIR/reli/sidecar.sock already satisfies this,
+# so --socket can be omitted entirely.
+reli inspector:sidecar --output-dir=/tmp/reli-dumps
+# → [sidecar] Listening on /run/user/<uid>/reli/sidecar.sock
+
+# If $XDG_RUNTIME_DIR is unavailable (root shells outside a user
+# session, minimal containers), prepare a 0700 dir you own and pass
+# --socket explicitly — see docs/monitoring/sidecar.md.
 ```
 
 ```php

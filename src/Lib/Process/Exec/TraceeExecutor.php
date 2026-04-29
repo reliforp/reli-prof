@@ -87,9 +87,35 @@ class TraceeExecutor
 
         $this->on_shutdown->register(
             function () use ($pid) {
-                $this->pcntl->waitpid($pid, $status, 0);
+                // The child runs the user-supplied command (commonly an
+                // infinite-loop PHP smoke-test target); a plain blocking
+                // waitpid would hang reli forever after `q`-cancel. Signal
+                // first, escalate to SIGKILL if SIGTERM is ignored, then reap.
+                // Every wait is bounded — even a SIGKILL'd task can stay
+                // unreapable briefly (D state, ptrace-stopped descendants,
+                // etc.) and we never want shutdown to hang on it.
+                if ($this->pcntl->waitpid($pid, $status, \WNOHANG) !== 0) {
+                    return;
+                }
+                $this->pcntl->kill($pid, \SIGTERM);
+                if ($this->waitWithTimeout($pid, 20)) {
+                    return;
+                }
+                $this->pcntl->kill($pid, \SIGKILL);
+                $this->waitWithTimeout($pid, 20);
             }
         );
         return $pid;
+    }
+
+    private function waitWithTimeout(int $pid, int $polls): bool
+    {
+        for ($i = 0; $i < $polls; $i++) {
+            if ($this->pcntl->waitpid($pid, $status, \WNOHANG) !== 0) {
+                return true;
+            }
+            \usleep(50_000);
+        }
+        return false;
     }
 }

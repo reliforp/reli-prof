@@ -45,8 +45,10 @@ psql reli_memory -c "SELECT * FROM location_types_summary ORDER BY memory_usage 
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--output-format` | `-f` | Output format: `json` (default), `sqlite3`, `mysql`, `postgresql` |
-| `--output` | `-o` | Output file path (required for `sqlite3`) |
+| `--output-format` | `-f` | Output format: `json` (default), `binary` (`.rmem`), `sqlite3`, `mysql`, `postgresql`, `report`, `report-json` |
+| `--output` | `-o` | Output file path (required for `binary` / `sqlite3` / `report-json`) |
+
+This page focuses on `sqlite3` / `mysql` / `postgresql`. `binary` (`.rmem`) is the primary storage format — see the note at the top of the page. `report` / `report-json` emit a findings report directly; see [memory-report.md](memory-report.md).
 
 ### Database connection (for `mysql` / `postgresql`)
 

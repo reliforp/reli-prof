@@ -193,13 +193,23 @@ Arguments:
   snapshot-file                          Path to the analysis file (binary .rmem or SQLite .db/.sqlite)
 
 Options:
-  -f, --output-format=FORMAT             Output format: report (text) or report-json [default: report]
-  -o, --output=PATH                      Output file path (default: stdout)
-      --run-id=ID                        Run ID to analyze [default: 1]
-      --pretty-print|--no-pretty-print   Pretty print JSON output (default: on)
-      --full-analysis|--no-full-analysis Run all passes (default: on; --no-full-analysis for large snapshots)
-      --memory-limit=LIMIT               Set PHP memory_limit (e.g. 2G, 512M)
+  -f, --output-format=FORMAT                Output format: report (text) or report-json [default: report]
+  -o, --output=PATH                         Output file path (default: stdout)
+      --run-id=ID                           Run ID to analyze [default: 1]
+      --pretty-print|--no-pretty-print      Pretty print JSON output (default: on)
+      --full-analysis|--no-full-analysis    Run all passes (default: on; --no-full-analysis for large snapshots)
+      --memory-limit=LIMIT                  Set PHP memory_limit (e.g. 2G, 512M)
+      --ffi-csr|--no-ffi-csr                Force FFI CSR graph substrate on/off (default: auto)
+      --link-cache=MODE                     Tree-edge link cache: auto (default) | eager | lazy
+      --substrate-bulk-fetch-chunk=N        Rows per chunked fetchAll when loading the SQLite substrate [default: 200000]
+      --report-workers=N                    Parallel workers for Phase 3 passes (forks via pcntl_fork; falls back to sequential without ext-pcntl) [default: 1]
+      --mmap-size=BYTES                     SQLite mmap_size for the read connection; suffix-aware (K/M/G), 0 disables [default: 2G]
+      --prefetch|--no-prefetch              posix_fadvise(POSIX_FADV_WILLNEED) the DB file before opening so SQLite hits a warm cache (default: on)
+      --no-derived-cache                    Skip the .rmem.derived sidecar cache (subtree sizes, SCC)
+      --rebuild-derived-cache               Ignore an existing .rmem.derived sidecar and recompute + rewrite it
 ```
+
+The perf-tuning flags below the basics matter when reports either OOM or run slowly on large snapshots; see [§ Tips](#tips) for which knobs to reach for first.
 
 ### `inspector:memory` with report format
 
@@ -446,6 +456,8 @@ Options:
       --threshold=PERCENT                Minimum change percentage to report [default: 0]
       --pretty-print|--no-pretty-print   Pretty print JSON output (default: on)
       --full-analysis|--no-full-analysis Run all analysis passes for both snapshots (default: off)
+      --diff-nodes=SIDE                  Show sample nodes present only in one side: baseline-only | target-only (binary .rmem only)
+      --diff-limit=N                     Max samples to show for --diff-nodes [default: 20]
       --memory-limit=LIMIT               Set PHP memory_limit (e.g. 2G, 512M)
 ```
 
