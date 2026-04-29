@@ -147,8 +147,8 @@ final class FfiHashTable
         $this->mask = $capacity - 1;
         $this->growThreshold = intdiv($capacity * 3, 4);
 
-        $this->hashes = FFIHelper::new("int64_t[{$capacity}]");
-        $this->ids = FFIHelper::new("int32_t[{$capacity}]");
+        $this->hashes = FFIHelper::newInt64Array($capacity);
+        $this->ids = FFIHelper::newInt32Array($capacity);
         $this->offsets = FFIHelper::new("uint64_t[{$capacity}]");
         $this->lengths = FFIHelper::new("uint32_t[{$capacity}]");
 

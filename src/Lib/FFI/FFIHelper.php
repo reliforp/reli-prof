@@ -63,6 +63,69 @@ final class FFIHelper
     }
 
     /**
+     * Allocate a fixed-size FFI integer array, typed for Psalm so element
+     * access does not need a per-call `(int)` cast. The underlying C type
+     * (`int8_t` / `int32_t` / `int64_t` etc.) determines the storage but
+     * not the PHP-visible element type — every fixed-width integer field
+     * surfaces in PHP as a plain `int` via FFI's automatic conversion, so
+     * `\FFI\CArray<int>` is a faithful PHP-side type.
+     *
+     * The PHP return-type declaration is `\FFI\CData` — the runtime class
+     * is `\FFI\CData` regardless of the C type, and `\FFI\CArray` only
+     * exists as a project-side Psalm stub. The `@return` docblock carries
+     * the templated type for Psalm so callers see int-typed elements.
+     *
+     * Hot-path callers (BinaryMemoryOutput's CSR build, FfiIntSet's
+     * open-addressing slots) use these instead of `FFIHelper::new(...)`
+     * to keep the array element type from collapsing to the wider
+     * `CData|int|float|bool|null|string` union the upstream stub gives
+     * `CData::offsetGet()`.
+     *
+     * @return \FFI\CArray<int>
+     */
+    public static function newInt8Array(int $count): \FFI\CData
+    {
+        /** @var \FFI\CArray<int> */
+        return self::new("int8_t[{$count}]");
+    }
+
+    /**
+     * @return \FFI\CArray<int>
+     */
+    public static function newInt16Array(int $count): \FFI\CData
+    {
+        /** @var \FFI\CArray<int> */
+        return self::new("int16_t[{$count}]");
+    }
+
+    /**
+     * @return \FFI\CArray<int>
+     */
+    public static function newInt32Array(int $count): \FFI\CData
+    {
+        /** @var \FFI\CArray<int> */
+        return self::new("int32_t[{$count}]");
+    }
+
+    /**
+     * @return \FFI\CArray<int>
+     */
+    public static function newInt64Array(int $count): \FFI\CData
+    {
+        /** @var \FFI\CArray<int> */
+        return self::new("int64_t[{$count}]");
+    }
+
+    /**
+     * @return \FFI\CArray<int>
+     */
+    public static function newUint8Array(int $count): \FFI\CData
+    {
+        /** @var \FFI\CArray<int> */
+        return self::new("uint8_t[{$count}]");
+    }
+
+    /**
      * Cast a C pointer to its integer address value.
      *
      * WARNING: Do NOT pass a void* CData to this method. PHP FFI internally

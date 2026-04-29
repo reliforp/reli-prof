@@ -283,7 +283,7 @@ final class BinaryReportDataProvider
             return self::getDedupCandidateStatsFallback($reader, $limit);
         }
         $expected = $nodeSizesSlots * 8;
-        $nodeSizes = FFIHelper::new("int64_t[{$nodeSizesSlots}]");
+        $nodeSizes = FFIHelper::newInt64Array($nodeSizesSlots);
         $sizePtr = $reader->getSectionPointer('node_sizes');
         if ($sizePtr !== null) {
             // Zero-copy from mmap
@@ -376,7 +376,7 @@ final class BinaryReportDataProvider
         /** @var \FFI\CData|null $locIndex int32[nodeSizesSlots], -1 = no location */
         $locIndex = null;
         if ($locRows !== null && $nodeSizesSlots > 0) {
-            $locIndex = FFIHelper::new("int32_t[{$nodeSizesSlots}]");
+            $locIndex = FFIHelper::newInt32Array($nodeSizesSlots);
             FFI::memset($locIndex, 0xFF, $nodeSizesSlots * 4); // fill with -1
             for ($i = 0; $i < $locCount; $i++) {
                 $nid = $locRows[$i]->node_id;

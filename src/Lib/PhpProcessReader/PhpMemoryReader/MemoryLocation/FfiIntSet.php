@@ -34,6 +34,7 @@ use Reli\Lib\FFI\FFIHelper;
  */
 final class FfiIntSet
 {
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $slots;
     private int $capacity;
     private int $mask;
@@ -63,7 +64,7 @@ final class FfiIntSet
 
         $slot = $this->hash($key) & $this->mask;
         while (true) {
-            $stored = (int)$this->slots[$slot];
+            $stored = $this->slots[$slot];
             if ($stored === 0) {
                 $this->slots[$slot] = $key;
                 $this->count++;
@@ -83,7 +84,7 @@ final class FfiIntSet
         }
         $slot = $this->hash($key) & $this->mask;
         while (true) {
-            $stored = (int)$this->slots[$slot];
+            $stored = $this->slots[$slot];
             if ($stored === 0) {
                 return false;
             }
@@ -118,7 +119,7 @@ final class FfiIntSet
         $this->capacity = $capacity;
         $this->mask = $capacity - 1;
         $this->grow_threshold = (int)($capacity * self::MAX_LOAD_FACTOR);
-        $this->slots = FFIHelper::new("int64_t[{$capacity}]");
+        $this->slots = FFIHelper::newInt64Array($capacity);
         // FFI::new uses calloc semantics — slots are zero-initialized
     }
 
@@ -131,7 +132,7 @@ final class FfiIntSet
         $this->count = 0;
 
         for ($i = 0; $i < $old_cap; $i++) {
-            $key = (int)$old_slots[$i];
+            $key = $old_slots[$i];
             if ($key !== 0) {
                 $this->add($key);
             }
