@@ -1,9 +1,9 @@
 # Analyzing `.rbt` traces — `rbt:analyze` and `rbt:explore`
 
-Once you've captured a binary trace into a `.rbt` file (capture first
-with [capturing-traces.md](capturing-traces.md); format details live in
-[binary-trace-format.md](binary-trace-format.md)), reli ships two
-commands for poking at it without leaving the terminal:
+Once you've captured a binary trace into a `.rbt` file, reli ships two
+commands for poking at it without leaving the terminal. For capture
+commands and options, see [capturing-traces.md](capturing-traces.md);
+for the on-disk format, see [binary-trace-format.md](binary-trace-format.md).
 
 | Command | Use it for |
 |---|---|
