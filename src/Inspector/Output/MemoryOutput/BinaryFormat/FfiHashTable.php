@@ -31,15 +31,16 @@ use Reli\Lib\FFI\FFIHelper;
  * Memory: ~28 bytes/slot × capacity (with load factor overhead, effectively
  * ~32 bytes per stored entry). At 10M entries: ~320 MB vs ~4.6 GB for
  * nested PHP arrays.
- *
- * @psalm-suppress InaccessibleMethod
- * @psalm-suppress InvalidCast
  */
 final class FfiHashTable
 {
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $hashes;   // int64_t[capacity]
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $ids;      // int32_t[capacity]
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $offsets;  // uint64_t[capacity]
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $lengths;  // uint32_t[capacity]
 
     private int $capacity;
@@ -74,7 +75,7 @@ final class FfiHashTable
         $slot = $h & $this->mask;
 
         while (true) {
-            if ((int)$this->hashes[$slot] === 0) {
+            if ($this->hashes[$slot] === 0) {
                 // Empty slot — insert here
                 $this->hashes[$slot] = $h;
                 $this->ids[$slot] = $id;
@@ -102,12 +103,12 @@ final class FfiHashTable
         $matches = [];
 
         while (true) {
-            $stored = (int)$this->hashes[$slot];
+            $stored = $this->hashes[$slot];
             if ($stored === 0) {
                 return $matches; // empty slot → end of probe chain
             }
             if ($stored === $h) {
-                $matches[] = [(int)$this->ids[$slot], (int)$this->offsets[$slot], (int)$this->lengths[$slot]];
+                $matches[] = [$this->ids[$slot], $this->offsets[$slot], $this->lengths[$slot]];
             }
             $slot = ($slot + 1) & $this->mask;
         }
@@ -122,8 +123,8 @@ final class FfiHashTable
     public function iterateAll(): \Generator
     {
         for ($i = 0; $i < $this->capacity; $i++) {
-            if ((int)$this->hashes[$i] !== 0) {
-                yield [(int)$this->ids[$i], (int)$this->offsets[$i], (int)$this->lengths[$i]];
+            if ($this->hashes[$i] !== 0) {
+                yield [$this->ids[$i], $this->offsets[$i], $this->lengths[$i]];
             }
         }
     }
@@ -149,8 +150,8 @@ final class FfiHashTable
 
         $this->hashes = FFIHelper::newInt64Array($capacity);
         $this->ids = FFIHelper::newInt32Array($capacity);
-        $this->offsets = FFIHelper::new("uint64_t[{$capacity}]");
-        $this->lengths = FFIHelper::new("uint32_t[{$capacity}]");
+        $this->offsets = FFIHelper::newUint64Array($capacity);
+        $this->lengths = FFIHelper::newUint32Array($capacity);
 
         // hashes are zero-initialized by FFI::new (calloc semantics)
     }
@@ -167,9 +168,9 @@ final class FfiHashTable
         $this->count = 0;
 
         for ($i = 0; $i < $oldCap; $i++) {
-            $h = (int)$oldHashes[$i];
+            $h = $oldHashes[$i];
             if ($h !== 0) {
-                $this->insertRaw($h, (int)$oldIds[$i], (int)$oldOffsets[$i], (int)$oldLengths[$i]);
+                $this->insertRaw($h, $oldIds[$i], $oldOffsets[$i], $oldLengths[$i]);
             }
         }
     }
@@ -180,7 +181,7 @@ final class FfiHashTable
     private function insertRaw(int $sanitizedHash, int $id, int $diskOffset, int $len): void
     {
         $slot = $sanitizedHash & $this->mask;
-        while ((int)$this->hashes[$slot] !== 0) {
+        while ($this->hashes[$slot] !== 0) {
             $slot = ($slot + 1) & $this->mask;
         }
         $this->hashes[$slot] = $sanitizedHash;

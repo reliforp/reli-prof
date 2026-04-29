@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput;
 
-use PhpCast\Cast;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\DiskBackedStringDict;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Writer;

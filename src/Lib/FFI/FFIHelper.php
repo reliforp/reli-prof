@@ -126,6 +126,33 @@ final class FFIHelper
     }
 
     /**
+     * @return \FFI\CArray<int>
+     */
+    public static function newUint16Array(int $count): \FFI\CData
+    {
+        /** @var \FFI\CArray<int> */
+        return self::new("uint16_t[{$count}]");
+    }
+
+    /**
+     * @return \FFI\CArray<int>
+     */
+    public static function newUint32Array(int $count): \FFI\CData
+    {
+        /** @var \FFI\CArray<int> */
+        return self::new("uint32_t[{$count}]");
+    }
+
+    /**
+     * @return \FFI\CArray<int>
+     */
+    public static function newUint64Array(int $count): \FFI\CData
+    {
+        /** @var \FFI\CArray<int> */
+        return self::new("uint64_t[{$count}]");
+    }
+
+    /**
      * Cast a C pointer to its integer address value.
      *
      * WARNING: Do NOT pass a void* CData to this method. PHP FFI internally

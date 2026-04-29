@@ -215,9 +215,6 @@
       <code><![CDATA[$this->perNodeClasses]]></code>
       <code><![CDATA[$this->perNodeSizes]]></code>
     </PossiblyNullReference>
-    <PropertyTypeCoercion>
-      <code><![CDATA[$new_classes]]></code>
-    </PropertyTypeCoercion>
   </file>
   <file src="src/Lib/PhpProcessReader/PhpMemoryReader/MemoryLocation/FfiIntSet.php">
     <InvalidOperand>

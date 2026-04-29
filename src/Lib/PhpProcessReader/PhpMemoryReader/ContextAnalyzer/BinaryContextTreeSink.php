@@ -554,7 +554,7 @@ final class BinaryContextTreeSink implements ContextTreeSink
         // match and silently leaves every per-node class id as NULL on
         // disk — see `docs/internals/memory-report-t2-3-investigation.md`
         // for the failure trail this caused on the binary report path.
-        $new_classes = \Reli\Lib\FFI\FFIHelper::new("uint32_t[{$new_cap}]");
+        $new_classes = \Reli\Lib\FFI\FFIHelper::newUint32Array($new_cap);
         // Initialize new class slots to NULL_STRING_ID
         for ($i = 0; $i < $new_cap; $i++) {
             $new_classes[$i] = Format::NULL_STRING_ID;
