@@ -95,7 +95,9 @@ final class BinaryContextTreeSink implements ContextTreeSink
 
     // Per-node size/class accumulators for on-disk sections.
     // FFI int64/int32 arrays, grown as needed.
+    /** @var \FFI\CArray<int>|null */
     private ?\FFI\CData $perNodeSizes = null;
+    /** @var \FFI\CArray<int>|null */
     private ?\FFI\CData $perNodeClasses = null;
     private int $perNodeCapacity = 0;
     private int $maxNodeId = -1;
@@ -283,16 +285,14 @@ final class BinaryContextTreeSink implements ContextTreeSink
             }
 
             // Accumulate per-node sizes and classes for on-disk sections.
-            // `(int)` on the FFI int64_t/int32_t reads here is deliberate —
-            // emitNode() is called per location during analysis, so a
-            // PhpCast\Cast::toInt() method dispatch on every iteration
-            // would show up. Element type is provably int at runtime;
-            // the InvalidCast entries are kept in psalm-baseline.xml.
+            // perNodeSizes / perNodeClasses are typed \FFI\CArray<int> via
+            // their property docblocks, so the array reads return int with
+            // no per-iteration Cast::toInt() dispatch.
             $this->ensurePerNodeCapacity($node_id);
-            $this->perNodeSizes[$node_id] = (int)$this->perNodeSizes[$node_id] + $location->size;
+            $this->perNodeSizes[$node_id] = $this->perNodeSizes[$node_id] + $location->size;
             if (
                 $class_id !== Format::NULL_STRING_ID
-                && (int)$this->perNodeClasses[$node_id] === (int)Format::NULL_STRING_ID
+                && $this->perNodeClasses[$node_id] === Format::NULL_STRING_ID
             ) {
                 $this->perNodeClasses[$node_id] = $class_id;
             }
@@ -533,6 +533,10 @@ final class BinaryContextTreeSink implements ContextTreeSink
         }
     }
 
+    /**
+     * @psalm-assert !null $this->perNodeSizes
+     * @psalm-assert !null $this->perNodeClasses
+     */
     private function ensurePerNodeCapacity(int $node_id): void
     {
         if ($node_id > $this->maxNodeId) {
@@ -545,7 +549,7 @@ final class BinaryContextTreeSink implements ContextTreeSink
         while ($new_cap <= $node_id) {
             $new_cap *= 2;
         }
-        $new_sizes = \Reli\Lib\FFI\FFIHelper::new("int64_t[{$new_cap}]");
+        $new_sizes = \Reli\Lib\FFI\FFIHelper::newInt64Array($new_cap);
         // Class slots hold string-dict IDs (unsigned 32-bit, with
         // Format::NULL_STRING_ID = 0xFFFFFFFF reserved for "unset").
         // `uint32_t` is the right type for that representation: a
@@ -554,7 +558,7 @@ final class BinaryContextTreeSink implements ContextTreeSink
         // match and silently leaves every per-node class id as NULL on
         // disk — see `docs/internals/memory-report-t2-3-investigation.md`
         // for the failure trail this caused on the binary report path.
-        $new_classes = \Reli\Lib\FFI\FFIHelper::new("uint32_t[{$new_cap}]");
+        $new_classes = \Reli\Lib\FFI\FFIHelper::newUint32Array($new_cap);
         // Initialize new class slots to NULL_STRING_ID
         for ($i = 0; $i < $new_cap; $i++) {
             $new_classes[$i] = Format::NULL_STRING_ID;
@@ -611,7 +615,7 @@ final class BinaryContextTreeSink implements ContextTreeSink
         }
 
         $slots = $this->maxNodeId + 1;
-        $map = \Reli\Lib\FFI\FFIHelper::new("int32_t[{$slots}]");
+        $map = \Reli\Lib\FFI\FFIHelper::newInt32Array($slots);
         for ($i = 0; $i < $slots; $i++) {
             $map[$i] = -1;
         }

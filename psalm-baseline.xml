@@ -63,24 +63,16 @@
     </PossiblyNullArgument>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/BinaryFormat/DerivedCacheReader.php">
-    <RedundantConditionGivenDocblockType>
-      <code><![CDATA[is_resource($this->fh)]]></code>
-    </RedundantConditionGivenDocblockType>
+    <LessSpecificReturnStatement>
+      <code><![CDATA[$this->loadFfiSection($name, 'int32_t', 4)]]></code>
+      <code><![CDATA[$this->loadFfiSection($name, 'int64_t', 8)]]></code>
+    </LessSpecificReturnStatement>
+    <MoreSpecificReturnType>
+      <code><![CDATA[\FFI\CArray<int>|null]]></code>
+      <code><![CDATA[\FFI\CArray<int>|null]]></code>
+    </MoreSpecificReturnType>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/BinaryFormat/DerivedCacheWriter.php">
-    <InvalidOperand>
-      <code><![CDATA[getmypid()]]></code>
-    </InvalidOperand>
-    <InvalidPropertyAssignmentValue>
-      <code><![CDATA[$this->fh]]></code>
-      <code><![CDATA[$this->fh]]></code>
-    </InvalidPropertyAssignmentValue>
-    <MixedAssignment>
-      <code><![CDATA[$this->fh]]></code>
-    </MixedAssignment>
-    <PossiblyFalseOperand>
-      <code><![CDATA[getmypid()]]></code>
-    </PossiblyFalseOperand>
     <PossiblyInvalidArgument>
       <code><![CDATA[$data[$elemOffset]]]></code>
     </PossiblyInvalidArgument>
@@ -88,36 +80,9 @@
       <code><![CDATA[unpack('P', $rmemHeader, 16)[1]]]></code>
       <code><![CDATA[unpack('V', $rmemHeader, 12)[1]]]></code>
     </PossiblyInvalidArrayAccess>
-  </file>
-  <file src="src/Inspector/Output/MemoryOutput/BinaryMemoryOutput.php">
-    <InvalidCast>
-      <code><![CDATA[$allDeg[$i]]]></code>
-      <code><![CDATA[$allDeg[$parent_idx]]]></code>
-      <code><![CDATA[$allPos[$parent_idx]]]></code>
-      <code><![CDATA[$allRowPtr[$i]]]></code>
-      <code><![CDATA[$allRowPtr[$i]]]></code>
-      <code><![CDATA[$nontreeDeg[$i]]]></code>
-      <code><![CDATA[$nontreeDeg[$parent_idx]]]></code>
-      <code><![CDATA[$nontreePos[$parent_idx]]]></code>
-      <code><![CDATA[$nontreeRowPtr[$i]]]></code>
-      <code><![CDATA[$nontreeRowPtr[$i]]]></code>
-      <code><![CDATA[$treeDeg[$i]]]></code>
-      <code><![CDATA[$treeDeg[$parent_idx]]]></code>
-      <code><![CDATA[$treePos[$parent_idx]]]></code>
-      <code><![CDATA[$treeRowPtr[$i]]]></code>
-      <code><![CDATA[$treeRowPtr[$i]]]></code>
-    </InvalidCast>
-    <MixedArgument>
-      <code><![CDATA[$nodeSlots]]></code>
-      <code><![CDATA[$nodeSlots * 4]]></code>
-    </MixedArgument>
-    <MixedOperand>
-      <code><![CDATA[$nodeSlots]]></code>
-    </MixedOperand>
-    <PossiblyUndefinedVariable>
-      <code><![CDATA[$nodeSlots]]></code>
-      <code><![CDATA[$nodeSlots]]></code>
-    </PossiblyUndefinedVariable>
+    <RiskyTruthyFalsyComparison>
+      <code><![CDATA[getmypid()]]></code>
+    </RiskyTruthyFalsyComparison>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/Comparison/Formatter/TextComparisonFormatter.php">
     <TypeDoesNotContainType>
@@ -125,28 +90,14 @@
     </TypeDoesNotContainType>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/Report/BinaryReportDataProvider.php">
-    <InvalidPropertyFetch>
-      <code><![CDATA[$locRows[$li]->class_id]]></code>
-      <code><![CDATA[$locRows[$li]->location_type_id]]></code>
-      <code><![CDATA[$locRows[$li]->string_value_id]]></code>
-    </InvalidPropertyFetch>
+    <ArgumentTypeCoercion>
+      <code><![CDATA[$locIndex]]></code>
+      <code><![CDATA[$locIndex]]></code>
+    </ArgumentTypeCoercion>
     <LessSpecificReturnStatement>
       <code><![CDATA[self::getDedupCandidateStatsFallback($reader, $limit)]]></code>
       <code><![CDATA[self::getDedupCandidateStatsFallback($reader, $limit)]]></code>
     </LessSpecificReturnStatement>
-    <MixedArgument>
-      <code><![CDATA[$classId]]></code>
-      <code><![CDATA[$locRows[$li]->location_type_id]]></code>
-    </MixedArgument>
-    <MixedAssignment>
-      <code><![CDATA[$classId]]></code>
-      <code><![CDATA[$meta['string_value_id']]]></code>
-      <code><![CDATA[$svId]]></code>
-    </MixedAssignment>
-    <MixedReturnTypeCoercion>
-      <code><![CDATA[$meta]]></code>
-      <code><![CDATA[array{size: int, location_type: ?string, class_name: ?string, string_value_id: ?int}]]></code>
-    </MixedReturnTypeCoercion>
     <MoreSpecificReturnType>
       <code><![CDATA[list<array{
      *     link_name: string,
@@ -160,24 +111,6 @@
      *     examples: array<string, mixed>
      * }>]]></code>
     </MoreSpecificReturnType>
-    <PossiblyNullArgument>
-      <code><![CDATA[$classId]]></code>
-      <code><![CDATA[$locRows[$li]->location_type_id]]></code>
-    </PossiblyNullArgument>
-    <PossiblyNullPropertyFetch>
-      <code><![CDATA[$locRows[$li]->class_id]]></code>
-      <code><![CDATA[$locRows[$li]->location_type_id]]></code>
-      <code><![CDATA[$locRows[$li]->string_value_id]]></code>
-    </PossiblyNullPropertyFetch>
-    <RedundantCondition>
-      <code><![CDATA[$cnt <= 50]]></code>
-      <code><![CDATA[$info['ref_count'] <= 50]]></code>
-    </RedundantCondition>
-    <UndefinedPropertyFetch>
-      <code><![CDATA[$locRows[$li]->class_id]]></code>
-      <code><![CDATA[$locRows[$li]->location_type_id]]></code>
-      <code><![CDATA[$locRows[$li]->string_value_id]]></code>
-    </UndefinedPropertyFetch>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/Report/Substrate/FfiCsrGraphSubstrate.php">
     <DocblockTypeContradiction>
@@ -185,25 +118,19 @@
       <code><![CDATA[$link_id === null]]></code>
     </DocblockTypeContradiction>
     <MixedArgument>
-      <code><![CDATA[$ntColIdxData]]></code>
-      <code><![CDATA[$ntRowPtrData]]></code>
+      <code><![CDATA[$ci]]></code>
+      <code><![CDATA[$ci]]></code>
     </MixedArgument>
     <PropertyTypeCoercion>
       <code><![CDATA[$profiles]]></code>
     </PropertyTypeCoercion>
   </file>
-  <file src="src/Lib/ByteStream/CDataByteReader.php">
-    <RedundantConditionGivenDocblockType>
-      <code><![CDATA[assert(is_int($value))]]></code>
-      <code><![CDATA[is_int($value)]]></code>
-    </RedundantConditionGivenDocblockType>
-  </file>
   <file src="src/Lib/PhpInternals/Types/Zend/ZendOp.php">
-    <MixedAssignment>
-      <code><![CDATA[$this->op1]]></code>
-      <code><![CDATA[$this->op2]]></code>
-      <code><![CDATA[$this->result]]></code>
-    </MixedAssignment>
+    <PropertyTypeCoercion>
+      <code><![CDATA[$this->casted_cdata->casted->op1]]></code>
+      <code><![CDATA[$this->casted_cdata->casted->op2]]></code>
+      <code><![CDATA[$this->casted_cdata->casted->result]]></code>
+    </PropertyTypeCoercion>
   </file>
   <file src="src/Lib/PhpInternals/Types/Zend/ZendOpArray.php">
     <RedundantCondition>
@@ -227,42 +154,13 @@
     </RedundantCast>
   </file>
   <file src="src/Lib/PhpProcessReader/PhpMemoryReader/ContextAnalyzer/BinaryContextTreeSink.php">
-    <InvalidCast>
-      <code><![CDATA[$this->perNodeClasses[$node_id]]]></code>
-      <code><![CDATA[$this->perNodeSizes[$node_id]]]></code>
-    </InvalidCast>
     <PossiblyNullArgument>
       <code><![CDATA[$this->perNodeClasses]]></code>
     </PossiblyNullArgument>
-    <PossiblyNullArrayAccess>
-      <code><![CDATA[$this->perNodeClasses[$node_id]]]></code>
-      <code><![CDATA[$this->perNodeSizes[$node_id]]]></code>
-    </PossiblyNullArrayAccess>
-    <PossiblyNullReference>
-      <code><![CDATA[$this->perNodeClasses]]></code>
-      <code><![CDATA[$this->perNodeSizes]]></code>
-    </PossiblyNullReference>
-    <RedundantCast>
-      <code><![CDATA[(int)Format::NULL_STRING_ID]]></code>
-    </RedundantCast>
   </file>
   <file src="src/Lib/PhpProcessReader/PhpMemoryReader/MemoryLocation/FfiIntSet.php">
-    <InvalidCast>
-      <code><![CDATA[$old_slots[$i]]]></code>
-      <code><![CDATA[$this->slots[$slot]]]></code>
-      <code><![CDATA[$this->slots[$slot]]]></code>
-    </InvalidCast>
     <InvalidOperand>
       <code><![CDATA[$capacity * self::MAX_LOAD_FACTOR]]></code>
-    </InvalidOperand>
-  </file>
-  <file src="src/Lib/PhpProcessReader/PhpMemoryReader/MemoryLocationsCollector.php">
-    <InvalidOperand>
-      <code><![CDATA[Cast::toFloat($cached_chunks_size) / 1024]]></code>
-      <code><![CDATA[Cast::toFloat($captured_bytes) / 1024]]></code>
-      <code><![CDATA[Cast::toFloat($huge_total_bytes) / 1024]]></code>
-      <code><![CDATA[Cast::toFloat($memory_get_usage_real_size) / 1024]]></code>
-      <code><![CDATA[Cast::toFloat($walked_chunk_bytes) / 1024]]></code>
     </InvalidOperand>
   </file>
   <file src="src/Rbt/Analyze/TraceAggregator.php">
@@ -274,40 +172,18 @@
     <ArgumentTypeCoercion>
       <code><![CDATA[$lines]]></code>
       <code><![CDATA[$lines]]></code>
+      <code><![CDATA[$this->childRows[$i]]]></code>
+      <code><![CDATA[$this->parentRows[$i]]]></code>
+      <code><![CDATA[$this->rows[$i]]]></code>
     </ArgumentTypeCoercion>
     <InvalidArrayOffset>
       <code><![CDATA[$help[$i - 1]]]></code>
-      <code><![CDATA[$row['_class']]]></code>
-      <code><![CDATA[$row['_scc_id']]]></code>
-      <code><![CDATA[$row['_scc_nodes']]]></code>
-      <code><![CDATA[$row['_type']]]></code>
     </InvalidArrayOffset>
-    <InvalidOperand>
-      <code><![CDATA[$cols * 0.3]]></code>
-    </InvalidOperand>
-    <InvalidPropertyAssignmentValue>
-      <code><![CDATA[$results]]></code>
-      <code><![CDATA[$this->rows]]></code>
-      <code><![CDATA[$this->rows]]></code>
-      <code><![CDATA[$this->rows]]></code>
-      <code><![CDATA[$this->rows]]></code>
-    </InvalidPropertyAssignmentValue>
     <MixedArgument>
-      <code><![CDATA[$className]]></code>
-      <code><![CDATA[$prevNodeId]]></code>
-      <code><![CDATA[$row['_scc_nodes']]]></code>
       <code><![CDATA[$text]]></code>
-      <code><![CDATA[$typeName]]></code>
     </MixedArgument>
     <MixedArgumentTypeCoercion>
-      <code><![CDATA[$parts]]></code>
       <code><![CDATA[$response]]></code>
-      <code><![CDATA[[
-                'id' => $row['_scc_id'] ?? 0,
-                'nodes' => $row['_scc_nodes'],
-                'node_count' => count($row['_scc_nodes']),
-                'total_size' => $row['retained'],
-            ]]]></code>
       <code><![CDATA[array_slice($lines, 1)]]></code>
     </MixedArgumentTypeCoercion>
     <MixedArrayAccess>
@@ -315,25 +191,13 @@
       <code><![CDATA[$b['total_size']]]></code>
     </MixedArrayAccess>
     <MixedAssignment>
-      <code><![CDATA[$className]]></code>
       <code><![CDATA[$header]]></code>
-      <code><![CDATA[$parts[]]]></code>
-      <code><![CDATA[$prevNodeId]]></code>
       <code><![CDATA[$text]]></code>
-      <code><![CDATA[$this->focusLabel]]></code>
-      <code><![CDATA[$this->focusNodeId]]></code>
-      <code><![CDATA[$this->listModeParam]]></code>
-      <code><![CDATA[$this->listModeParam]]></code>
-      <code><![CDATA[$this->selected]]></code>
-      <code><![CDATA[$this->topRow]]></code>
-      <code><![CDATA[$typeName]]></code>
     </MixedAssignment>
     <MixedOperand>
       <code><![CDATA[$header]]></code>
       <code><![CDATA[$header]]></code>
       <code><![CDATA[$lines[$lastIdx]]]></code>
-      <code><![CDATA[self::$SPINNER[$this->spinnerFrame]]]></code>
-      <code><![CDATA[self::$SPINNER[$this->spinnerFrame]]]></code>
     </MixedOperand>
     <PossiblyFalseOperand>
       <code><![CDATA[$idx]]></code>

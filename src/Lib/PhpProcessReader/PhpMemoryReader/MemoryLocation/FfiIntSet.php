@@ -25,15 +25,15 @@ use Reli\Lib\FFI\FFIHelper;
  * Uses 0 as empty sentinel (no valid memory address is 0).
  * Linear probing with 75% max load factor, grows 2x.
  *
- * The `(int)` casts on `$this->slots[...]` are deliberate: add()/has()
- * are called per memory location during analysis (millions of ops),
- * and the FFI int64_t[] element type is provably int at runtime.
- * PhpCast\Cast::toInt() would be safer in principle but its per-call
- * method dispatch is measurable here. The resulting InvalidCast entries
- * stay in psalm-baseline.xml on purpose.
+ * `$slots` is allocated through `FFIHelper::newInt64Array()`, whose
+ * docblock preserves `\FFI\CArray<int>` for Psalm. Element reads are
+ * therefore typed as int without per-call `Cast::toInt()` dispatch or
+ * hot-path `(int)` casts — important because add()/has() run per
+ * memory location during analysis (millions of ops).
  */
 final class FfiIntSet
 {
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $slots;
     private int $capacity;
     private int $mask;
@@ -63,7 +63,7 @@ final class FfiIntSet
 
         $slot = $this->hash($key) & $this->mask;
         while (true) {
-            $stored = (int)$this->slots[$slot];
+            $stored = $this->slots[$slot];
             if ($stored === 0) {
                 $this->slots[$slot] = $key;
                 $this->count++;
@@ -83,7 +83,7 @@ final class FfiIntSet
         }
         $slot = $this->hash($key) & $this->mask;
         while (true) {
-            $stored = (int)$this->slots[$slot];
+            $stored = $this->slots[$slot];
             if ($stored === 0) {
                 return false;
             }
@@ -118,7 +118,7 @@ final class FfiIntSet
         $this->capacity = $capacity;
         $this->mask = $capacity - 1;
         $this->grow_threshold = (int)($capacity * self::MAX_LOAD_FACTOR);
-        $this->slots = FFIHelper::new("int64_t[{$capacity}]");
+        $this->slots = FFIHelper::newInt64Array($capacity);
         // FFI::new uses calloc semantics — slots are zero-initialized
     }
 
@@ -131,7 +131,7 @@ final class FfiIntSet
         $this->count = 0;
 
         for ($i = 0; $i < $old_cap; $i++) {
-            $key = (int)$old_slots[$i];
+            $key = $old_slots[$i];
             if ($key !== 0) {
                 $this->add($key);
             }

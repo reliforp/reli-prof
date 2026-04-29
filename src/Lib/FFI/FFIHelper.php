@@ -63,6 +63,129 @@ final class FFIHelper
     }
 
     /**
+     * Allocate a fixed-size FFI integer array, typed for Psalm so element
+     * access does not need a per-call `(int)` cast. The underlying C type
+     * (`int8_t` / `int32_t` / `int64_t` etc.) determines the storage but
+     * not the PHP-visible element type — every fixed-width integer field
+     * surfaces in PHP as a plain `int` via FFI's automatic conversion, so
+     * `\FFI\CArray<int>` is a faithful PHP-side type.
+     *
+     * The PHP return-type declaration is `\FFI\CData` — the runtime class
+     * is `\FFI\CData` regardless of the C type, and `\FFI\CArray` only
+     * exists as a project-side Psalm stub. The `@return` docblock carries
+     * the templated type for Psalm so callers see int-typed elements.
+     *
+     * Hot-path callers (BinaryMemoryOutput's CSR build, FfiIntSet's
+     * open-addressing slots) use these instead of `FFIHelper::new(...)`
+     * to keep the array element type from collapsing to the wider
+     * `CData|int|float|bool|null|string` union the upstream stub gives
+     * `CData::offsetGet()`.
+     *
+     * @return \FFI\CArray<int>
+     */
+    public static function newInt8Array(int $count): \FFI\CData
+    {
+        /** @var \FFI\CArray<int> */
+        return self::new("int8_t[{$count}]");
+    }
+
+    /**
+     * @return \FFI\CArray<int>
+     */
+    public static function newInt16Array(int $count): \FFI\CData
+    {
+        /** @var \FFI\CArray<int> */
+        return self::new("int16_t[{$count}]");
+    }
+
+    /**
+     * @return \FFI\CArray<int>
+     */
+    public static function newInt32Array(int $count): \FFI\CData
+    {
+        /** @var \FFI\CArray<int> */
+        return self::new("int32_t[{$count}]");
+    }
+
+    /**
+     * @return \FFI\CArray<int>
+     */
+    public static function newInt64Array(int $count): \FFI\CData
+    {
+        /** @var \FFI\CArray<int> */
+        return self::new("int64_t[{$count}]");
+    }
+
+    /**
+     * @return \FFI\CArray<int>
+     */
+    public static function newUint8Array(int $count): \FFI\CData
+    {
+        /** @var \FFI\CArray<int> */
+        return self::new("uint8_t[{$count}]");
+    }
+
+    /**
+     * @return \FFI\CArray<int>
+     */
+    public static function newUint16Array(int $count): \FFI\CData
+    {
+        /** @var \FFI\CArray<int> */
+        return self::new("uint16_t[{$count}]");
+    }
+
+    /**
+     * @return \FFI\CArray<int>
+     */
+    public static function newUint32Array(int $count): \FFI\CData
+    {
+        /** @var \FFI\CArray<int> */
+        return self::new("uint32_t[{$count}]");
+    }
+
+    /**
+     * @return \FFI\CArray<int>
+     */
+    public static function newUint64Array(int $count): \FFI\CData
+    {
+        /** @var \FFI\CArray<int> */
+        return self::new("uint64_t[{$count}]");
+    }
+
+    /**
+     * Cast a CData pointer to an `int*` (a `\FFI\CInteger`-shaped view).
+     * Typed wrapper around `cast('int', …)` so callers reading `->cdata`
+     * get a plain int back instead of mixed.
+     *
+     * The PHP-level return type stays `\FFI\CData` because `\FFI\CInteger`
+     * is a project-side Psalm stub (see tools/stubs/ffi/scalar.php), not
+     * a runtime class — declaring it on the signature raises TypeError
+     * the same way `\FFI\CArray` does. The `@return` docblock carries
+     * the narrowed type for Psalm.
+     *
+     * @param CData|CInteger|CPointer $ptr
+     * @return CInteger
+     */
+    public static function castToInt(CData &$ptr): CData
+    {
+        /** @var CInteger */
+        return self::cast('int', $ptr);
+    }
+
+    /**
+     * Cast a CData pointer to a `long*` view. Same role as castToInt
+     * but for the wider integer width some stubbed structs declare.
+     *
+     * @param CData|CInteger|CPointer $ptr
+     * @return CInteger
+     */
+    public static function castToLong(CData &$ptr): CData
+    {
+        /** @var CInteger */
+        return self::cast('long', $ptr);
+    }
+
+    /**
      * Cast a C pointer to its integer address value.
      *
      * WARNING: Do NOT pass a void* CData to this method. PHP FFI internally
