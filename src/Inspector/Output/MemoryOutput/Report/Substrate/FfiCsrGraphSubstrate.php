@@ -109,7 +109,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     // Direct-indexed nodeToIndex: nodeToIndexDirect[node_id + 1] = CSR index
     // (offset by 1 to handle -1 sentinel at slot 0)
     // If node_ids are too sparse, falls back to PHP array.
-    /** @var \FFI\CArray<int> */
+    /** @var \FFI\CArray<int>|null */
     private ?\FFI\CData $nodeToIndexDirect = null;
     private int $directIndexOffset = 1; // node_id + offset → array index
     private int $directIndexSize = 0;   // size of nodeToIndexDirect array
@@ -144,9 +144,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private array $linkDict = [];
     /** @var array<string, int> link_name → link_id */
     private array $linkDictReverse = [];
-    /** @var \FFI\CArray<int> */
+    /** @var \FFI\CArray<int>|null */
     private ?\FFI\CData $treeLinkIds = null;     // int32_t[nodeCount], -1 = no tree edge
-    /** @var \FFI\CArray<int> */
+    /** @var \FFI\CArray<int>|null */
     private ?\FFI\CData $treeParentIdx = null;   // int32_t[nodeCount], -1 = no tree parent
 
     // Per-node context type ("PhpReferenceContext", etc.). Same shape
@@ -155,7 +155,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private array $nodeTypeDict = [];
     /** @var array<string, int> type name → type_id */
     private array $nodeTypeDictReverse = [];
-    /** @var \FFI\CArray<int> */
+    /** @var \FFI\CArray<int>|null */
     private ?\FFI\CData $nodeTypeIds = null;     // int16_t[nodeCount], -1 = unknown
 
     private bool $subtreeSizesComputed = false;
@@ -165,11 +165,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     // canonIdxFfi[csrIdx] = canonical csrIdx (self for unique nodes).
     // origOffsets + origData form a CSR: originals of canon c are
     // origData[origOffsets[c]..origOffsets[c+1]].
-    /** @var \FFI\CArray<int> */
+    /** @var \FFI\CArray<int>|null */
     private ?\FFI\CData $canonIdxFfi = null;
-    /** @var \FFI\CArray<int> */
+    /** @var \FFI\CArray<int>|null */
     private ?\FFI\CData $origOffsets = null;
-    /** @var \FFI\CArray<int> */
+    /** @var \FFI\CArray<int>|null */
     private ?\FFI\CData $origData = null;
 
     /**
@@ -860,7 +860,13 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
         unset($strongTreeDeg, $stPos);
 
-        // Read nontree CSR
+        // Read nontree CSR. Hoist the data variables out of the guard so
+        // the later `if (nontreeEdgeCount > 0)` block can use them without
+        // tripping a definitely-defined check; nontreeEdgeCount > 0
+        // implies hasSection() was true, so the empty defaults never reach
+        // the FFI::memcpy calls below.
+        $ntRowPtrData = '';
+        $ntColIdxData = '';
         $nontreeEdgeCount = 0;
         if ($reader->hasSection('ntcsr_rowptr')) {
             $ntRowPtrData = $reader->getSectionData('ntcsr_rowptr');
