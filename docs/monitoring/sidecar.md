@@ -492,7 +492,7 @@ Binary memory dump in the same format as `inspector:memory:dump`. Can be analyze
 
 ```bash
 reli inspector:memory:analyze /tmp/dumps/sidecar-1234-20260403-120000-after-fixtures.dump \
-  -f binary -o result.rmem
+  -f rmem -o result.rmem
 ```
 
 `-f sqlite3 -o result.db` is also supported (`inspector:memory:report`
@@ -737,7 +737,7 @@ jobs:
           mkdir -p /tmp/analyzed
           for f in /tmp/dumps/sidecar-*.dump; do
             reli inspector:memory:analyze "$f" \
-              -f binary \
+              -f rmem \
               -o "/tmp/analyzed/$(basename "$f" .dump).rmem"
           done
 

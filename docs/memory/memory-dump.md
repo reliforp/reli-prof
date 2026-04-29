@@ -11,7 +11,7 @@ analysis. The dump file (`.rdump` format) can later be analyzed with
 sudo php ./reli inspector:memory:dump --pid=<pid> --output=snapshot.rdump
 
 # Analyze the dump (.rmem is the fastest format; every analyser reads it)
-php ./reli inspector:memory:analyze snapshot.rdump -f binary -o snapshot.rmem
+php ./reli inspector:memory:analyze snapshot.rdump -f rmem -o snapshot.rmem
 
 # Browse or report on the graph
 php ./reli rmem:explore snapshot.rmem
@@ -84,7 +84,7 @@ can still resolve class names and function signatures.
 ```bash
 # To .rmem (recommended — fastest, consumed by every analyser)
 php ./reli inspector:memory:analyze snapshot.rdump \
-    -f binary -o snapshot.rmem
+    -f rmem -o snapshot.rmem
 
 # To SQLite (for SQL tooling; inspector:memory:report / inspector:memory:compare accept either)
 php ./reli inspector:memory:analyze snapshot.rdump \
@@ -96,7 +96,7 @@ php ./reli inspector:memory:analyze snapshot.rdump \
 
 # With dependency root for binary fallback (when --include-binary was not used)
 php ./reli inspector:memory:analyze snapshot.rdump \
-    -f binary -o snapshot.rmem \
+    -f rmem -o snapshot.rmem \
     -r /path/to/target/root
 ```
 

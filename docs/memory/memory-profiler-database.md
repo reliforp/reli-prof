@@ -1,7 +1,7 @@
 # Database Output for Memory Profiler
 
 > [!NOTE]
-> **`.rmem` (`-f binary`) is the primary storage format** — it's the fastest and is what `rmem:explore` / `rmem:query` / `rmem:serve` / `rmem:mcp` read natively. `inspector:memory:report` / `inspector:memory:compare` also prefer it. Reach for the SQL-database outputs documented on this page when you specifically need ad-hoc SQL querying, JOIN-based analysis against your own tables, or ingestion into an existing data-warehouse pipeline. (`inspector:memory:report` and `inspector:memory:compare` accept SQLite too, so you can use the database outputs alongside the normal analysers.)
+> **`.rmem` (`-f rmem`) is the primary storage format** — it's the fastest and is what `rmem:explore` / `rmem:query` / `rmem:serve` / `rmem:mcp` read natively. `inspector:memory:report` / `inspector:memory:compare` also prefer it. Reach for the SQL-database outputs documented on this page when you specifically need ad-hoc SQL querying, JOIN-based analysis against your own tables, or ingestion into an existing data-warehouse pipeline. (`inspector:memory:report` and `inspector:memory:compare` accept SQLite too, so you can use the database outputs alongside the normal analysers.)
 
 The memory profiler supports outputting analysis results to a relational database. This is useful for analyzing large memory snapshots without `jq`, and enables ad-hoc querying with SQL.
 

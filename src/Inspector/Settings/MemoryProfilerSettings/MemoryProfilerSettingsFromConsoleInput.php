@@ -42,14 +42,15 @@ final class MemoryProfilerSettingsFromConsoleInput
             'output-format',
             'f',
             InputOption::VALUE_REQUIRED,
-            'output format (json, sqlite3, binary, mysql, postgresql, report, report-json)',
-            'json',
+            'output format (json, sqlite3, rmem, mysql, postgresql, report, report-json).'
+            . ' Default: when -o ends with .rmem, rmem is selected;'
+            . ' when -o ends with .sqlite3/.sqlite/.db, sqlite3 is selected; otherwise json.',
         );
         $command->addOption(
             'output',
             'o',
             InputOption::VALUE_REQUIRED,
-            'output file path (required for sqlite3 format)',
+            'output file path (required for sqlite3 / rmem formats)',
         );
         $command->addOption(
             'db-host',
@@ -136,8 +137,13 @@ final class MemoryProfilerSettingsFromConsoleInput
                 $memory_limit_error_max_depth,
             );
         }
-        $output_format = Cast::toString($input->getOption('output-format'));
+        $output_format = NullableCast::toString($input->getOption('output-format'));
         $output_path = NullableCast::toString($input->getOption('output'));
+
+        if ($output_format === null) {
+            $output_format = self::detectFormatFromPath($output_path) ?? 'json';
+        }
+
         $db_host = Cast::toString($input->getOption('db-host'));
         $db_port = NullableCast::toInt($input->getOption('db-port'));
         $db_name = NullableCast::toString($input->getOption('db-name'));
@@ -156,5 +162,24 @@ final class MemoryProfilerSettingsFromConsoleInput
             $db_user,
             $db_password,
         );
+    }
+
+    private static function detectFormatFromPath(?string $output_path): ?string
+    {
+        if ($output_path === null) {
+            return null;
+        }
+        $lower = strtolower($output_path);
+        if (str_ends_with($lower, '.rmem')) {
+            return 'rmem';
+        }
+        if (
+            str_ends_with($lower, '.sqlite3')
+            || str_ends_with($lower, '.sqlite')
+            || str_ends_with($lower, '.db')
+        ) {
+            return 'sqlite3';
+        }
+        return null;
     }
 }

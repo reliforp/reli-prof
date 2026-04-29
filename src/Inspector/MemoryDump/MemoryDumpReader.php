@@ -45,7 +45,7 @@ final class MemoryDumpReader
     public function read(
         MemoryProfilerSettings $memory_profiler_settings
     ): void {
-        if (MemoryOutputFactory::isBinaryFormat($memory_profiler_settings)) {
+        if (MemoryOutputFactory::isRmemFormat($memory_profiler_settings)) {
             $this->readBinary($memory_profiler_settings);
         } else {
             $this->readPdo($memory_profiler_settings);

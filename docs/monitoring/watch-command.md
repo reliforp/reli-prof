@@ -258,7 +258,7 @@ reli inspector:watch -p <pid> --memory-usage=256M --action=memory-dump \
 
 # 2. Analyse offline (any time later, on any host):
 reli inspector:memory:analyze /tmp/reli-dumps/watch-<pid>-<timestamp>.rdump \
-  -f binary -o snapshot.rmem
+  -f rmem -o snapshot.rmem
 reli inspector:memory:report snapshot.rmem
 # or: reli rmem:explore snapshot.rmem
 ```

@@ -101,29 +101,29 @@ final class MemoryOutputFactory
                 $region_boundaries,
                 $settings->output_path,
             ),
-            'binary' => new BinaryMemoryOutput(
+            'rmem' => new BinaryMemoryOutput(
                 $settings->output_path ?? throw new \RuntimeException(
-                    '--output is required when using binary format'
+                    '--output is required when using rmem format'
                 ),
                 $region_boundaries,
             ),
             default => throw new \RuntimeException(
                 "unsupported output format: {$settings->output_format}"
-                . " (supported: json, sqlite3, binary, mysql, postgresql, report, report-json)"
+                . " (supported: json, sqlite3, rmem, mysql, postgresql, report, report-json)"
             ),
         };
     }
 
     /**
-     * Check if the given output format is the binary (.rmem) format.
+     * Check if the given output format is the rmem (.rmem) format.
      */
-    public static function isBinaryFormat(MemoryProfilerSettings $settings): bool
+    public static function isRmemFormat(MemoryProfilerSettings $settings): bool
     {
-        return $settings->output_format === 'binary';
+        return $settings->output_format === 'rmem';
     }
 
     /**
-     * Create a binary streaming sink.
+     * Create an rmem streaming sink.
      *
      * @return array{BinaryMemoryOutput, BinaryContextTreeSink}
      */
@@ -132,7 +132,7 @@ final class MemoryOutputFactory
         ?RegionBoundaries $region_boundaries = null,
     ): array {
         $output_path = $settings->output_path ?? throw new \RuntimeException(
-            '--output is required when using binary format'
+            '--output is required when using rmem format'
         );
         $binary_output = new BinaryMemoryOutput($output_path, $region_boundaries);
         $sink = $binary_output->createStreamingSink();

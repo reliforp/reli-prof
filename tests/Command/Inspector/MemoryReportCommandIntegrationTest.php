@@ -359,7 +359,7 @@ class MemoryReportCommandIntegrationTest extends BaseTestCase
         $binary_analyze_command = $this->createContainer()->make(MemoryAnalyzeCommand::class);
         $binary_analyze_input = new ArrayInput([
             'dump-file' => $dump_path,
-            '--output-format' => 'binary',
+            '--output-format' => 'rmem',
             '--output' => $rmem_path,
         ]);
         $binary_analyze_input->setInteractive(false);

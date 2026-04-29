@@ -124,7 +124,7 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
         $writer->writeSection(Format::SECTION_SUMMARY, $summary_data, $summary_count);
 
         // Section 7: runs metadata
-        $runs_data = pack('V', 1) // run_count = 1 (binary format is always single-run)
+        $runs_data = pack('V', 1) // run_count = 1 (rmem format is always single-run)
             . $this->packString(gmdate('Y-m-d\TH:i:s\Z'));
         $writer->writeSection(Format::SECTION_RUNS, $runs_data, 1);
 

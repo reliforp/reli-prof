@@ -46,11 +46,11 @@ A memory graph is reli's PHP heap reconstruction — values (objects, arrays, st
 
 | I want to... | Use | More |
 |---|---|---|
-| Dump now (short stop), analyse offline **(recommended)** | `inspector:memory:dump -p <pid> -o dump.rdump` → `inspector:memory:analyze dump.rdump -f binary -o snap.rmem` | [memory/memory-dump.md](memory/memory-dump.md) |
-| One-shot live capture (longer stop, one command) | `inspector:memory -p <pid> -f binary -o snap.rmem` | [memory/memory-profiler.md](memory/memory-profiler.md) |
+| Dump now (short stop), analyse offline **(recommended)** | `inspector:memory:dump -p <pid> -o dump.rdump` → `inspector:memory:analyze dump.rdump -f rmem -o snap.rmem` | [memory/memory-dump.md](memory/memory-dump.md) |
+| One-shot live capture (longer stop, one command) | `inspector:memory -p <pid> -f rmem -o snap.rmem` | [memory/memory-profiler.md](memory/memory-profiler.md) |
 | From a core file (crashed / post-mortem) | `inspector:coredump` | [memory/coredump.md](memory/coredump.md) |
 
-Tip: **`-f binary` (`.rmem`) is the fastest format** and what the analysers below prefer. `-f sqlite3` is also accepted by `inspector:memory:report` / `inspector:memory:compare` (handy if you already have SQLite tooling), `-f json` gives `jq`-friendly output, and `-f report` prints a findings report directly.
+Tip: **`-f rmem` (`.rmem`) is the fastest format** and what the analysers below prefer. `-f sqlite3` is also accepted by `inspector:memory:report` / `inspector:memory:compare` (handy if you already have SQLite tooling), `-f json` gives `jq`-friendly output, and `-f report` prints a findings report directly.
 
 ## Analyse memory graphs
 

@@ -120,7 +120,7 @@ final class MemoryCommand extends ReliCommand
 
         $output_factory = new MemoryOutputFactory();
 
-        if (MemoryOutputFactory::isBinaryFormat($memory_profiler_settings)) {
+        if (MemoryOutputFactory::isRmemFormat($memory_profiler_settings)) {
             [$binary_output, $sink] = $output_factory->createBinaryStreamingSink(
                 $memory_profiler_settings,
             );

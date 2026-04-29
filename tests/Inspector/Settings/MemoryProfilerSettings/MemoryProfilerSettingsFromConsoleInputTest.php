@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Settings\MemoryProfilerSettings;
 
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Reli\BaseTestCase;
 use Symfony\Component\Console\Input\InputInterface;
@@ -88,6 +89,42 @@ class MemoryProfilerSettingsFromConsoleInputTest extends BaseTestCase
             MemoryProfilerSettingsException::MEMORY_LIMIT_ERROR_MAX_DEPTH_IS_NOT_POSITIVE_INTEGER
         );
         (new MemoryProfilerSettingsFromConsoleInput())->createSettings($input);
+    }
+
+    /**
+     * @return iterable<string, array{0: string|null, 1: string|null, 2: string}>
+     */
+    public static function formatDetectionCases(): iterable
+    {
+        yield 'no -f and no -o falls back to json' => [null, null, 'json'];
+        yield '.rmem extension picks rmem' => [null, '/tmp/snap.rmem', 'rmem'];
+        yield '.RMEM uppercase still picks rmem' => [null, '/tmp/SNAP.RMEM', 'rmem'];
+        yield '.sqlite3 picks sqlite3' => [null, '/tmp/snap.sqlite3', 'sqlite3'];
+        yield '.sqlite picks sqlite3' => [null, '/tmp/snap.sqlite', 'sqlite3'];
+        yield '.db picks sqlite3' => [null, '/tmp/snap.db', 'sqlite3'];
+        yield '.json extension does NOT auto-pick (falls back to json default)'
+            => [null, '/tmp/snap.json', 'json'];
+        yield 'unknown extension falls back to json' => [null, '/tmp/snap.bin', 'json'];
+        yield 'explicit -f wins over .rmem extension' => ['json', '/tmp/snap.rmem', 'json'];
+        yield 'explicit -f rmem' => ['rmem', '/tmp/snap.rmem', 'rmem'];
+    }
+
+    #[DataProvider('formatDetectionCases')]
+    public function testFormatDetection(?string $format, ?string $path, string $expected): void
+    {
+        $input = $this->createBaseMock();
+        $input->expects()->getOption('stop-process')->andReturns(true)->zeroOrMoreTimes();
+        $input->expects()->getOption('pretty-print')->andReturns(false)->zeroOrMoreTimes();
+        $input->expects()->getOption('memory-limit-error-file')->andReturns(null)->atLeast()->once();
+        $input->expects()->getOption('memory-limit-error-line')->andReturns(null)->zeroOrMoreTimes();
+        $input->expects()->getOption('memory-limit-error-max-depth')->andReturns(512)->zeroOrMoreTimes();
+        $input->expects()->getOption('output-format')->andReturns($format)->atLeast()->once();
+        $input->expects()->getOption('output')->andReturns($path)->atLeast()->once();
+
+        $settings = (new MemoryProfilerSettingsFromConsoleInput())->createSettings($input);
+
+        $this->assertSame($expected, $settings->output_format);
+        $this->assertSame($path, $settings->output_path);
     }
 
     public function testFromConsoleInputLineNotInteger(): void

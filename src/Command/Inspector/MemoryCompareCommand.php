@@ -118,7 +118,7 @@ final class MemoryCompareCommand extends ReliCommand
             'diff-nodes',
             null,
             InputOption::VALUE_REQUIRED,
-            'show sample nodes present only in one side: "baseline-only" or "target-only" (binary .rmem only)',
+            'show sample nodes present only in one side: "baseline-only" or "target-only" (rmem files only)',
         );
         $this->addOption(
             'diff-limit',
@@ -194,7 +194,7 @@ final class MemoryCompareCommand extends ReliCommand
             $output->write($formatted);
         }
 
-        // Node diff for binary files
+        // Node diff for rmem files
         /** @var string|null $diff_nodes */
         $diff_nodes = $input->getOption('diff-nodes');
         if ($diff_nodes !== null) {
@@ -222,8 +222,8 @@ final class MemoryCompareCommand extends ReliCommand
         string $side,
         int $limit,
     ): void {
-        if (!$this->isBinaryFile($baseline_file) || !$this->isBinaryFile($target_file)) {
-            $output->writeln('<error>--diff-nodes requires binary (.rmem) files</error>');
+        if (!$this->isRmemFile($baseline_file) || !$this->isRmemFile($target_file)) {
+            $output->writeln('<error>--diff-nodes requires rmem (.rmem) files</error>');
             return;
         }
 
@@ -352,7 +352,7 @@ final class MemoryCompareCommand extends ReliCommand
 
     private function createProvider(string $path, int $run_id): ComparisonDataProvider
     {
-        if (str_ends_with($path, '.rmem') || $this->isBinaryFile($path)) {
+        if (str_ends_with($path, '.rmem') || $this->isRmemFile($path)) {
             return new BinaryComparisonDataProvider($path);
         }
         $db = new \PDO("sqlite:{$path}");
@@ -362,7 +362,7 @@ final class MemoryCompareCommand extends ReliCommand
         return new PdoComparisonDataProvider($db, $run_id);
     }
 
-    private function isBinaryFile(string $path): bool
+    private function isRmemFile(string $path): bool
     {
         $fp = fopen($path, 'rb');
         if ($fp === false) {
