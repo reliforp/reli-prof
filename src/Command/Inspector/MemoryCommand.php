@@ -63,7 +63,7 @@ final class MemoryCommand extends ReliCommand
     public function configure(): void
     {
         $this->setName('inspector:memory')
-            ->setDescription('get memory usage from an outer process')
+            ->setDescription('get memory usage from a target process')
         ;
         $this->memory_profiler_settings_from_console_input->setOptions($this);
         $this->target_process_settings_from_console_input->setOptions($this);

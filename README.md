@@ -117,7 +117,7 @@ Under the hood, reli:
 
 - Parses the ELF binary of the PHP interpreter.
 - Reads the target's memory map from `/proc/<pid>/maps`.
-- Reads memory of the outer process through `ptrace(2)` and `process_vm_readv(2)` via FFI.
+- Reads memory of the target process through `ptrace(2)` and `process_vm_readv(2)` via FFI.
 - Analyses the internal data structures of the PHP VM (aka Zend Engine).
 
 This keeps target-side overhead low in our benchmarks: 1.00–1.06× baseline at typical sampling rates, with profiler CPU spent in the separate reli process. See [docs/bench/RESULTS.md](docs/bench/RESULTS.md) for the numbers.

@@ -94,7 +94,7 @@ When the application hits `memory_limit`, you get a `.dump` file plus a
 Analyse the dump like any other reli memory snapshot:
 
 ```bash
-reli inspector:memory:analyze /tmp/reli-dumps/sidecar-<pid>-<ts>.dump \
+reli inspector:memory:analyze /tmp/reli-dumps/sidecar-<pid>-<datetime>.dump \
     -f binary -o crash.rmem
 reli inspector:memory:report crash.rmem
 ```

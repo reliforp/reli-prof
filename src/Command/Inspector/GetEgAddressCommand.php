@@ -58,7 +58,7 @@ final class GetEgAddressCommand extends ReliCommand
     public function configure(): void
     {
         $this->setName('inspector:eg_address')
-            ->setDescription('get EG address from an outer process or thread')
+            ->setDescription('get EG address from a target process or thread')
         ;
         $this->target_process_settings_from_console_input->setOptions($this);
         $this->target_php_settings_from_console_input->setOptions($this);
