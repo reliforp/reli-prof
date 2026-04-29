@@ -171,3 +171,14 @@ for the full list.
 - XDG Base Directory Specification for config / state paths (#505)
 - Automated Docker Hub image publishing for tag pushes, release-branch dev
   builds, and manual one-off builds (#729)
+
+## Acknowledgements
+
+Most of 0.12.0 took shape over a six-week intensive push using Claude
+Code, layered on top of reli's pre-existing foundations — the
+FFI-based memory reading, ELF parsing, ZendMM walking, and TSRM /
+TLS resolution that have been the project's craft work since long
+before AI coding assistants were a thing. The bulk of the new code
+that 0.12.0 added on top of those foundations — DWARF parsing from
+scratch among many other pieces — landed with substantial Claude
+help. A separate write-up on the experience is in progress.
