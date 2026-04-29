@@ -33,7 +33,7 @@ count_phpspy_stacks() {
 }
 
 echo "# priming reli cache..." >&2
-"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 10000000 -F rbt \
+"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 10000000 -f rbt \
     -o /tmp/cpur-prime.rbt -- /usr/bin/php8.4 -n -r 'usleep(500000);' >/dev/null 2>&1 || true
 
 echo "profiler,rate_hz,depth,target_wall,samples,expected"
@@ -63,7 +63,7 @@ for spec in "${DEPTHS[@]}"; do
 
         # reli
         "$RELI_PHP" "$RELI" inspector:trace --sleep-ns "$sleep_ns" \
-            -F rbt -o /tmp/cpur-reli.rbt \
+            -f rbt -o /tmp/cpur-reli.rbt \
             -- /usr/bin/php8.4 -n "${SCRIPTS_DIR}/depth.php" "$depth" "$iters" "$work" \
             2>/tmp/cpur-tgt.err >/dev/null
         wall=$(grep -oE 'in [0-9]+\.[0-9]+s' /tmp/cpur-tgt.err | tail -1 | awk '{print $2}' | tr -d 's')

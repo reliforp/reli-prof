@@ -23,7 +23,7 @@ A taste of what reli looks like in use.
 Capture to `.rbt` in one terminal while running `rbt:analyze` through `watch(1)` in another for a live-refreshing "top of the hot frames" view — the data streams in as samples are taken.
 
 ```bash
-# Terminal A — capture (`-F rbt` is implied by the .rbt extension)
+# Terminal A — capture (`-f rbt` is implied by the .rbt extension)
 $ reli inspector:trace -p <pid> -o trace.rbt
 
 # Terminal B — live analysis, refreshed every 0.2 seconds

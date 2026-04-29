@@ -94,7 +94,7 @@ done
 
 # External samplers at long targets — target JIT-on, reli's PHP without JIT.
 echo "# priming reli cache (no own-JIT)..." >&2
-"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 10000000 -F rbt -o /tmp/bench-reli-prime.rbt \
+"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 10000000 -f rbt -o /tmp/bench-reli-prime.rbt \
     -- /usr/bin/php8.4 -n $JIT_FLAGS -r 'usleep(500000);' >/dev/null 2>&1 || true
 
 for b in "${LONG_BENCHES[@]}"; do
@@ -115,7 +115,7 @@ for b in "${LONG_BENCHES[@]}"; do
         echo "phpspy-1khz-jit,${bname},${i},${secs:-NA}"
 
         # reli — target JIT on; reli's own PHP runs default (no JIT for reli's process).
-        "$RELI_PHP" "$RELI" inspector:trace --sleep-ns "$RELI_SLEEP_NS" -F rbt \
+        "$RELI_PHP" "$RELI" inspector:trace --sleep-ns "$RELI_SLEEP_NS" -f rbt \
             -o /tmp/bench-reli.rbt \
             -- /usr/bin/php8.4 -n $JIT_FLAGS "${SCRIPTS_DIR}/${script}" $args 2>/tmp/bench-tgt.err
         secs=$(grep -oE 'in [0-9]+\.[0-9]+s' /tmp/bench-tgt.err | tail -1 | awk '{print $2}' | tr -d 's')
@@ -123,7 +123,7 @@ for b in "${LONG_BENCHES[@]}"; do
 
         # reli with reli's *own* PHP JIT also on. PHP 8.5 has opcache built in.
         "$RELI_PHP" $RELI_JIT_FLAGS "$RELI" inspector:trace --sleep-ns "$RELI_SLEEP_NS" \
-            -F rbt -o /tmp/bench-reli.rbt \
+            -f rbt -o /tmp/bench-reli.rbt \
             -- /usr/bin/php8.4 -n $JIT_FLAGS "${SCRIPTS_DIR}/${script}" $args 2>/tmp/bench-tgt.err
         secs=$(grep -oE 'in [0-9]+\.[0-9]+s' /tmp/bench-tgt.err | tail -1 | awk '{print $2}' | tr -d 's')
         echo "reli-1khz-relijit,${bname},${i},${secs:-NA}"

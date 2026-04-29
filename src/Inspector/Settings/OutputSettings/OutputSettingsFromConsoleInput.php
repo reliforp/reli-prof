@@ -32,7 +32,7 @@ final class OutputSettingsFromConsoleInput
         $command
             ->addOption(
                 'output-format',
-                'F',
+                'f',
                 InputOption::VALUE_OPTIONAL,
                 'output format (template:phpspy|template:phpspy_with_opcode|template:json_lines|rbt|rbt-bundled).'
                 . ' Default: when -o ends with .rbt, rbt is selected; otherwise the configured template (phpspy).'

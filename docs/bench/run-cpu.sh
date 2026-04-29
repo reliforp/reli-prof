@@ -61,7 +61,7 @@ echo "profiler,depth,run,target_wall,sampler_user,sampler_sys,sampler_rss_kb"
 
 # Prime reli cache so the analysis-of-binary cost is amortised.
 echo "# priming reli cache..." >&2
-"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 10000000 -F rbt \
+"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 10000000 -f rbt \
     -o /tmp/cpubench-prime.rbt \
     -- /usr/bin/php8.4 -n -r 'usleep(500000);' >/dev/null 2>&1 || true
 
@@ -121,7 +121,7 @@ for spec in "${DEPTHS[@]}"; do
         # `time -v` wraps reli; reli wraps the target.
         /usr/bin/time -v -o /tmp/cpubench-time.txt \
             "$RELI_PHP" "$RELI" inspector:trace --sleep-ns "$RELI_SLEEP_NS" \
-            -F rbt -o /tmp/cpubench-reli.rbt \
+            -f rbt -o /tmp/cpubench-reli.rbt \
             -- /usr/bin/php8.4 -n "${SCRIPTS_DIR}/depth.php" "$depth" "$iters" "$work" \
             2>/tmp/cpubench-tgt.err >/dev/null
         wall=$(parse_target_wall /tmp/cpubench-tgt.err)

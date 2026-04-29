@@ -59,7 +59,7 @@ done
 
 # External samplers.
 echo "# priming reli cache..." >&2
-"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 10000000 -F rbt -o /tmp/bench-reli-prime.rbt \
+"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 10000000 -f rbt -o /tmp/bench-reli-prime.rbt \
     -- /usr/bin/php8.4 -n -r 'usleep(500000);' >/dev/null 2>&1 || true
 
 for b in "${BENCHES[@]}"; do
@@ -80,7 +80,7 @@ for b in "${BENCHES[@]}"; do
         echo "phpspy-1khz,${bname},${i},${secs:-NA}"
 
         # reli: launch target itself
-        "$RELI_PHP" "$RELI" inspector:trace --sleep-ns "$RELI_SLEEP_NS" -F rbt \
+        "$RELI_PHP" "$RELI" inspector:trace --sleep-ns "$RELI_SLEEP_NS" -f rbt \
             -o /tmp/bench-reli.rbt \
             -- /usr/bin/php8.4 -n "${SCRIPTS_DIR}/${script}" $args 2>/tmp/bench-tgt.err
         secs=$(grep -oE 'in [0-9]+\.[0-9]+s' /tmp/bench-tgt.err | tail -1 | awk '{print $2}' | tr -d 's')

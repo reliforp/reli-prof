@@ -36,7 +36,7 @@ reli inspector:trace -p <pid> \
   --trace-var='memory::memory_get_peak_usage'
 
 # Binary (rbt) output — annotations ride on SAMPLE_ANNOTATION events
-# (-F rbt is implied by the .rbt extension on -o)
+# (-f rbt is implied by the .rbt extension on -o)
 reli inspector:trace -p <pid> -o trace.rbt \
   --trace-var='global::$counter'
 ```
@@ -79,7 +79,7 @@ For `local::` and `func_static::`, the function name is **required**; use
 
 ## Annotations in each output format
 
-### phpspy text (`-F template:phpspy`, default)
+### phpspy text (`-f template:phpspy`, default)
 
 Annotations appear as `# <spec> = <value>` comment lines **after** the frame
 list, before the blank-line separator:
@@ -120,12 +120,12 @@ and non-ASCII bytes can never break the line-oriented format:
 | unknown type | `(unknown)` |
 | spec not resolved | the annotation line is **omitted** for that sample |
 
-### phpspy with opcode (`-F template:phpspy_with_opcode`)
+### phpspy with opcode (`-f template:phpspy_with_opcode`)
 
 Same shape as plain phpspy, with annotations after the frame list. The
 opcode column on frame lines is unaffected.
 
-### rbt binary (`-F rbt` / `-F rbt-bundled`)
+### rbt binary (`-f rbt` / `-f rbt-bundled`)
 
 Annotations are emitted as `SAMPLE_ANNOTATION` (event type `0x0B`)
 directly following each sample event. Keys and values are interned via
@@ -158,7 +158,7 @@ practical consequences:
   values that are stable over the scales you care about, or use
   `--trace-var-every` to cut the read rate.
 
-### JSON Lines (`-F template:json_lines`)
+### JSON Lines (`-f template:json_lines`)
 
 The `json_lines` template is currently **unchanged** when `--trace-var` is
 set — its JSON shape is stable for `jq`-based consumers. Annotations in
@@ -259,15 +259,15 @@ the loop.
 
 ```bash
 # Per-worker rbt (annotations never leave the worker; zero IPC overhead)
-reli inspector:daemon -P 'php-fpm' -F rbt \
+reli inspector:daemon -P 'php-fpm' -f rbt \
   --trace-var='local::App\Svc::run()$req_id'
 
 # Bundled rbt (annotations ride on PID_SAMPLE + SAMPLE_ANNOTATION)
-reli inspector:daemon -P 'php-fpm' -F rbt-bundled \
+reli inspector:daemon -P 'php-fpm' -f rbt-bundled \
   --trace-var='global::$request_uri'
 
 # Template text (annotations flow over IPC to the controller)
-reli inspector:daemon -P 'php-fpm' -F template:phpspy \
+reli inspector:daemon -P 'php-fpm' -f template:phpspy \
   --trace-var='global::$request_uri'
 ```
 

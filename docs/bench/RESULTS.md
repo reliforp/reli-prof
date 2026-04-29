@@ -544,7 +544,7 @@ reli's `.rbt` is a compact binary trace format designed for
 sampling-shaped data; converters to speedscope / pprof / folded
 / callgrind / flamegraph / phpspy text run on demand off the hot
 path. The size numbers in the CPU section and these tables are
-for `-F rbt`; other reli output formats shift more formatting
+for `-f rbt`; other reli output formats shift more formatting
 work onto the PHP-side hot path and produce larger files (target
 wall time is unaffected by the choice of output format).
 

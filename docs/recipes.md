@@ -21,7 +21,7 @@ mkdir -p ./traces
 # ./traces/, named worker_<reli-worker-pid>.rbt — not one per target PID.
 sudo timeout 60 reli inspector:daemon \
     -P "^php-fpm" \
-    -F rbt -o ./traces/
+    -f rbt -o ./traces/
 
 # List what was written, then browse / report on one of them
 ls ./traces/
@@ -116,7 +116,7 @@ sudo reli inspector:daemon \
     --target-thread-regex='^php-[0-9a-f]+$' \
     --php-regex='.*/libphp\.so$' \
     --libpthread-regex='.*/libc\.so.*' \
-    -F rbt -o ./traces/
+    -f rbt -o ./traces/
 ```
 
 For attaching to a single worker (`inspector:trace`), pass the PHP

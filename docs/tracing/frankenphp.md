@@ -39,7 +39,7 @@ sudo php ./reli inspector:daemon \
     --target-thread-regex='^php-[0-9a-f]+$' \
     --php-regex='.*/libphp\.so$' \
     --libpthread-regex='.*/libc\.so.*' \
-    -F rbt -o ./traces/
+    -f rbt -o ./traces/
 ```
 
 The same flags work with `inspector:top` for a live view and with
