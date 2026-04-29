@@ -45,9 +45,9 @@ the top of the emitted wrapper. At the time of writing:
 
 - `cache:clear`
 - `converter:*` (callgrind, flamegraph, folded, phpspy, pprof, rbt, speedscope)
-- `inspector:memory:compare`, `inspector:memory:dump:inspect`,
-  `inspector:memory:normalize-dump`, `inspector:memory:report`,
-  `inspector:optimize-memory-db`
+- `inspector:memory:analyze`, `inspector:memory:compare`,
+  `inspector:memory:dump:inspect`, `inspector:memory:normalize-dump`,
+  `inspector:memory:report`, `inspector:optimize-memory-db`
 - `rbt:analyze`, `rbt:explore`, `rbt:recover`
 - `rmem:*` (explore, live, mcp, query, serve, viz)
 
