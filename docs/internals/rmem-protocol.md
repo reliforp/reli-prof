@@ -113,27 +113,45 @@ the same port create a single live bus that every surface reads
 from and writes to:
 
 ```
-             focus pipe          SSE                 POST /api/navigate
-    ┌──────────────────────▶ bridge child ────▶ Browsers (any tab) ─────────┐
-    │                        (HTTP/SSE)                                     │
-    │                              ▲                                        │
-    │                              │ POST /api/navigate  ┌──────────────────┘
-    │                              │                     │
-    │                              │                 MCP ──▶ AI agents
-    │                              │                 (--bridge URL)
-    │                              │
-    │              navigate pipe (child → TUI)
-    TUI ◀─────────────────────────┘
-    (rmem:explore --http-bridge)
+    ┌──── focus pipe (TUI → child) ──────────┐
+    │                                        ▼
+    TUI  ◀── navigate pipe (child → TUI) ── bridge child  ──SSE──▶ Browsers (any tab)
+    (rmem:explore                           (HTTP/SSE)                    │
+     --http-bridge)                               ▲                       │
+                                                  │ POST /api/navigate    │
+                                                  ├───────────────────────┘
+                                                  │
+                                                  │ POST /api/navigate
+                                                  │
+                                            MCP server ◀── tool calls ── AI agents
+                                            (--bridge URL)
 ```
 
-- TUI cursor with **follow mode on** (`f`) → every browser re-rings
-  the focused node and the AI can query it by id.
-- **Browser click or Pack-zoom** → `POST /api/navigate` →
-  re-broadcast as SSE to every other browser **and** handed to the
-  TUI over the reverse pipe so the sandwich view jumps there.
+The bridge child is the hub. Three peer surfaces connect to it:
+
+- **TUI**, via two anonymous pipes — focus pipe (TUI → child) when
+  follow mode is on, and navigate pipe (child → TUI) for events
+  flowing back from the network.
+- **Browsers**, via HTTP — `GET /api/events` for the SSE stream, and
+  `POST /api/navigate` / `POST /api/highlight_set` to push focus
+  back into the bus.
+- **MCP server**, via the same HTTP `POST /api/navigate` endpoint
+  that browsers use. AI agents do not talk to the bridge directly —
+  they call `rmem_broadcast_focus` / `rmem_highlight_set` tools on
+  the MCP server, and the MCP server (started with `--bridge URL`)
+  translates each tool call into a POST.
+
+Concrete flows:
+
+- TUI cursor with **follow mode on** (`f`) → focus pipe → bridge
+  child → SSE → every browser; the AI can also pull the current
+  focus via `rmem_get_focus`.
+- **Browser click or Pack-zoom** → `POST /api/navigate` → bridge
+  child → SSE to every other browser **and** navigate pipe → TUI,
+  so the sandwich view jumps there.
 - **AI** calls `rmem_broadcast_focus(node_id)` / `rmem_highlight_set(ids)`
-  via MCP → browsers plus the TUI react instantly.
+  via MCP → MCP server → `POST /api/navigate` → bridge child → all
+  browsers and the TUI react instantly.
 
 Out-of-subgraph focus events carry the full ancestor chain
 (`path_node_ids`); the browser falls back to the nearest visible
