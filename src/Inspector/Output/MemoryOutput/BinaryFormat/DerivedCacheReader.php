@@ -105,7 +105,7 @@ final class DerivedCacheReader
         }
 
         // Parse TOC
-        fseek($fh, (int)$tocOffset);
+        fseek($fh, $tocOffset);
         $tocBytes = fread($fh, $sectionCount * DerivedCacheFormat::TOC_ENTRY_SIZE);
         if ($tocBytes === false || strlen($tocBytes) < $sectionCount * DerivedCacheFormat::TOC_ENTRY_SIZE) {
             fclose($fh);
@@ -125,9 +125,9 @@ final class DerivedCacheReader
             $pos += 8;
 
             $reader->toc[$name] = [
-                'offset' => (int)$offset,
-                'length' => (int)$length,
-                'element_count' => (int)$elementCount,
+                'offset' => $offset,
+                'length' => $length,
+                'element_count' => $elementCount,
             ];
         }
 
@@ -158,7 +158,7 @@ final class DerivedCacheReader
         $rmemTocSize = $rmemSectionCount * 40;
         $rmemTocData = '';
         if ($rmemTocSize > 0) {
-            fseek($rmemFh, (int)$rmemTocOffset);
+            fseek($rmemFh, $rmemTocOffset);
             $rmemTocData = fread($rmemFh, $rmemTocSize);
             if ($rmemTocData === false) {
                 $rmemTocData = '';

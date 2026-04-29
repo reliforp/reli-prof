@@ -165,7 +165,7 @@ final class DerivedCacheWriter
         // Read the full TOC
         $tocData = '';
         if ($tocSize > 0) {
-            fseek($rmemFh, (int)$tocOffset);
+            fseek($rmemFh, $tocOffset);
             $tocData = fread($rmemFh, $tocSize);
             if ($tocData === false) {
                 $tocData = '';

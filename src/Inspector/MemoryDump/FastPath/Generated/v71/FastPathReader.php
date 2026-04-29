@@ -9,7 +9,7 @@ namespace Reli\Inspector\MemoryDump\FastPath\Generated\v71;
 use Reli\Inspector\MemoryDump\FastPath\FastPathReader as FastPathReaderInterface;
 use Reli\Inspector\MemoryDump\FastPath\RegionByteProvider;
 
-/** @psalm-suppress PossiblyInvalidArrayAccess, MixedReturnStatement, MixedInferredReturnType */
+/** @psalm-suppress PossiblyInvalidArrayAccess */
 final class FastPathReader implements FastPathReaderInterface
 {
     public function __construct(
@@ -361,36 +361,43 @@ final class FastPathReader implements FastPathReaderInterface
     {
         return 16;
     }
+
     #[\Override]
     public function bucketSize(): int
     {
         return 32;
     }
+
     #[\Override]
     public function arraySize(): int
     {
         return 56;
     }
+
     #[\Override]
     public function stringHeaderSize(): int
     {
         return 24;
     }
+
     #[\Override]
     public function stringValOffset(): int
     {
         return 24;
     }
+
     #[\Override]
     public function objectHeaderSize(): int
     {
         return 56;
     }
+
     #[\Override]
     public function packedElementSize(): int
     {
         return 32;
     }
+
     #[\Override]
     public function isArrayUninitialized(int $flags): bool
     {

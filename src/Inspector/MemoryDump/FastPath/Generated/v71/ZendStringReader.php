@@ -6,8 +6,6 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\MemoryDump\FastPath\Generated\v71;
 
-/** @psalm-suppress PossiblyInvalidArrayAccess, MixedReturnStatement, MixedInferredReturnType */
-
 function zendstring_gc_refcount(string $buf, int $off): int
 {
     return ord($buf[$off + 0]) | (ord($buf[$off + 0 + 1]) << 8) | (ord($buf[$off + 0 + 2]) << 16) | (ord($buf[$off + 0 + 3]) << 24);
@@ -18,11 +16,13 @@ function zendstring_gc_type_info(string $buf, int $off): int
     return ord($buf[$off + 4]) | (ord($buf[$off + 4 + 1]) << 8) | (ord($buf[$off + 4 + 2]) << 16) | (ord($buf[$off + 4 + 3]) << 24);
 }
 
+/** @psalm-suppress PossiblyInvalidArrayAccess */
 function zendstring_h(string $buf, int $off): int
 {
     return unpack('P', $buf, $off + 8)[1];
 }
 
+/** @psalm-suppress PossiblyInvalidArrayAccess */
 function zendstring_len(string $buf, int $off): int
 {
     return unpack('P', $buf, $off + 16)[1];

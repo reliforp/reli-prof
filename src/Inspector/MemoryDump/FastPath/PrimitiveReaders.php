@@ -43,26 +43,26 @@ final class PrimitiveReaders
             | (ord($buf[$off + 3]) << 24);
     }
 
+    /** @psalm-suppress PossiblyInvalidArrayAccess caller guarantees buffer length */
     public static function u64le(string $buf, int $off): int
     {
-        /** @var array{1: int} */
-        $r = unpack('P', $buf, $off);
-        return $r[1];
+        return unpack('P', $buf, $off)[1];
     }
 
-    /** Alias for u64le — semantic marker for pointer fields. */
+    /**
+     * Alias for u64le — semantic marker for pointer fields.
+     *
+     * @psalm-suppress PossiblyInvalidArrayAccess caller guarantees buffer length
+     */
     public static function ptr(string $buf, int $off): int
     {
-        /** @var array{1: int} */
-        $r = unpack('P', $buf, $off);
-        return $r[1];
+        return unpack('P', $buf, $off)[1];
     }
 
+    /** @psalm-suppress PossiblyInvalidArrayAccess caller guarantees buffer length */
     public static function i32le(string $buf, int $off): int
     {
-        /** @var array{1: int} */
-        $r = unpack('l', $buf, $off);
-        return $r[1];
+        return unpack('l', $buf, $off)[1];
     }
 
     public static function slice(string $buf, int $off, int $len): string

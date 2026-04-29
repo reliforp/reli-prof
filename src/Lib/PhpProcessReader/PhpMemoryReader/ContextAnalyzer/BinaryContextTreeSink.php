@@ -406,7 +406,7 @@ final class BinaryContextTreeSink implements ContextTreeSink
             }
             $rid = unpack('V', $raw)[1];
 
-            if ((int)$rid === $null_id) {
+            if ($rid === $null_id) {
                 // Read address + size for classifyRegion
                 fseek($fh, $pos + $addr_offset);
                 $addr_raw = fread($fh, 8);
@@ -418,7 +418,7 @@ final class BinaryContextTreeSink implements ContextTreeSink
                 $address = unpack('P', $addr_raw)[1];
                 $size = unpack('P', $size_raw)[1];
 
-                $loc = new MemoryLocation((int)$address, (int)$size);
+                $loc = new MemoryLocation($address, $size);
                 $region = $this->region_boundaries->classifyRegion($loc);
                 $region_id = $this->stringDict->intern($region);
                 $bin_overhead = $this->region_boundaries->computeBinOverhead($loc);

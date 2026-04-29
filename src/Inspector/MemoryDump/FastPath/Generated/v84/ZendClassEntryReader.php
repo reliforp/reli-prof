@@ -6,13 +6,13 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\MemoryDump\FastPath\Generated\v84;
 
-/** @psalm-suppress PossiblyInvalidArrayAccess, MixedReturnStatement, MixedInferredReturnType */
-
+/** @psalm-suppress PossiblyInvalidArrayAccess */
 function zendclassentry_name(string $buf, int $off): int
 {
     return unpack('P', $buf, $off + 8)[1];
 }
 
+/** @psalm-suppress PossiblyInvalidArrayAccess */
 function zendclassentry_default_properties_count(string $buf, int $off): int
 {
     return unpack('l', $buf, $off + 32)[1];

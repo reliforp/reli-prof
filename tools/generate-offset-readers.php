@@ -485,7 +485,11 @@ function generateFastPathReaderClass(string $version, array $all_offsets): strin
     $lines[] = 'use Reli\Inspector\MemoryDump\FastPath\FastPathReader as FastPathReaderInterface;';
     $lines[] = 'use Reli\Inspector\MemoryDump\FastPath\RegionByteProvider;';
     $lines[] = '';
-    $lines[] = '/** @psalm-suppress PossiblyInvalidArrayAccess, MixedReturnStatement, MixedInferredReturnType */';
+    // PossiblyInvalidArrayAccess on unpack(...)[1]: regionFor($address, $size)
+    // guarantees the buffer covers the field about to be read; the |false
+    // branch of unpack() (buffer-too-short) is therefore unreachable here.
+    // See tools/stubs/php/unpack.php for the format-aware return type.
+    $lines[] = '/** @psalm-suppress PossiblyInvalidArrayAccess */';
     $lines[] = 'final class FastPathReader implements FastPathReaderInterface';
     $lines[] = '{';
     $lines[] = '    public function __construct(';
@@ -558,35 +562,41 @@ function generateFastPathReaderClass(string $version, array $all_offsets): strin
     $lines[] = '    }';
     $lines[] = '';
 
-    // Size methods
-    $lines[] = '    #[\Override]';
-    $lines[] = "    public function zvalSize(): int { return {$zval_size}; }";
-    $lines[] = '    #[\Override]';
-    $lines[] = "    public function bucketSize(): int { return {$bucket_size}; }";
-    $lines[] = '    #[\Override]';
-    $lines[] = "    public function arraySize(): int { return {$arr_size}; }";
+    // Size methods (PSR-12 wants multi-line braces even for one-line bodies).
     $str_val_off = $str['OFFSET_VAL_OFFSET'] ?? 24;
-    $lines[] = '    #[\Override]';
-    $lines[] = "    public function stringHeaderSize(): int { return {$str_val_off}; }";
-    $lines[] = '    #[\Override]';
-    $lines[] = "    public function stringValOffset(): int { return {$str_val_off}; }";
-    $lines[] = '    #[\Override]';
-    $lines[] = "    public function objectHeaderSize(): int { return {$obj_size}; }";
     // Packed array element size: v82+ uses zval (arPacked), older uses Bucket
     $has_ar_packed = in_array($version, ['v82', 'v83', 'v84', 'v85'], true);
     $packed_elem_size = $has_ar_packed ? $zval_size : $bucket_size;
-    $lines[] = '    #[\Override]';
-    $lines[] = "    public function packedElementSize(): int { return {$packed_elem_size}; }";
+
+    $size_methods = [
+        'zvalSize' => $zval_size,
+        'bucketSize' => $bucket_size,
+        'arraySize' => $arr_size,
+        'stringHeaderSize' => $str_val_off,
+        'stringValOffset' => $str_val_off,
+        'objectHeaderSize' => $obj_size,
+        'packedElementSize' => $packed_elem_size,
+    ];
+    foreach ($size_methods as $name => $value) {
+        $lines[] = '    #[\Override]';
+        $lines[] = "    public function {$name}(): int";
+        $lines[] = '    {';
+        $lines[] = "        return {$value};";
+        $lines[] = '    }';
+        $lines[] = '';
+    }
 
     // isArrayUninitialized: v70-v73 use HASH_FLAG_INITIALIZED (bit3=1 means initialized)
     // v74+ use HASH_FLAG_UNINITIALIZED (bit3=1 means uninitialized)
     $flag_inverted = in_array($version, ['v70', 'v71', 'v72', 'v73'], true);
+    $body = $flag_inverted
+        ? 'return !($flags & (1 << 3));'
+        : 'return (bool)($flags & (1 << 3));';
     $lines[] = '    #[\Override]';
-    if ($flag_inverted) {
-        $lines[] = '    public function isArrayUninitialized(int $flags): bool { return !($flags & (1 << 3)); }';
-    } else {
-        $lines[] = '    public function isArrayUninitialized(int $flags): bool { return (bool)($flags & (1 << 3)); }';
-    }
+    $lines[] = '    public function isArrayUninitialized(int $flags): bool';
+    $lines[] = '    {';
+    $lines[] = "        {$body}";
+    $lines[] = '    }';
 
     $lines[] = '}';
     $lines[] = '';
@@ -634,8 +644,12 @@ function generateReaderFunctions(string $version, string $class_name, array $con
     $lines[] = '';
     $lines[] = "namespace {$ns};";
     $lines[] = '';
-    $lines[] = '/** @psalm-suppress PossiblyInvalidArrayAccess, MixedReturnStatement, MixedInferredReturnType */';
-    $lines[] = '';
+
+    // Functions that decode via unpack() get a per-function @psalm-suppress
+    // for PossiblyInvalidArrayAccess. The |false branch of unpack() requires
+    // a buffer-too-short condition that the caller's pre-validation rules
+    // out; encoding that invariant statically would require dependent types.
+    $unpack_read_types = ['u64le', 'ptr', 'i32le'];
 
     foreach ($methods as $const_name => $info) {
         $func_name = $prefix . '_' . strtolower($const_name);
@@ -647,6 +661,9 @@ function generateReaderFunctions(string $version, string $class_name, array $con
 
         $body = inlineReadExpr($read_type, '$buf', "\$off + {$offset}");
 
+        if (in_array($read_type, $unpack_read_types, true)) {
+            $lines[] = '/** @psalm-suppress PossiblyInvalidArrayAccess */';
+        }
         $lines[] = "function {$func_name}(string \$buf, int \$off): int";
         $lines[] = '{';
         $lines[] = "    return {$body};";

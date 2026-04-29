@@ -67,9 +67,9 @@ final class BinaryReportDataProvider
                 $off = $i * Format::LOCATION_ROW_SIZE;
                 $node_id = unpack('V', $data, $off)[1];
                 $type_id = unpack('V', $data, $off + 4)[1];
-                $type = $dict->lookup((int)$type_id);
+                $type = $dict->lookup($type_id);
                 if ($type === $location_type_name) {
-                    $result[(int)$node_id] = true;
+                    $result[$node_id] = true;
                 }
             }
         }
@@ -123,12 +123,12 @@ final class BinaryReportDataProvider
             for ($i = 0; $i < $count; $i++) {
                 $off = $i * Format::LOCATION_ROW_SIZE;
                 $type_id = unpack('V', $data, $off + 4)[1];
-                $type = $dict->lookup((int)$type_id);
+                $type = $dict->lookup($type_id);
                 if ($type === 'ZendStringMemoryLocation') {
                     $candidates[] = [
-                        'node_id' => (int)unpack('V', $data, $off)[1],
-                        'size' => (int)unpack('P', $data, $off + 20)[1],
-                        'string_value_id' => (int)unpack('V', $data, $off + 28)[1],
+                        'node_id' => unpack('V', $data, $off)[1],
+                        'size' => unpack('P', $data, $off + 20)[1],
+                        'string_value_id' => unpack('V', $data, $off + 28)[1],
                     ];
                 }
             }
@@ -578,8 +578,8 @@ final class BinaryReportDataProvider
             $value_id = unpack('V', $data, $offset)[1];
             $offset += 4;
 
-            $key = $dict->lookup((int)$key_id);
-            $value = $dict->lookup((int)$value_id);
+            $key = $dict->lookup($key_id);
+            $value = $dict->lookup($value_id);
             if ($key !== null && $value !== null) {
                 $flat[$key] = is_numeric($value)
                     ? (str_contains($value, '.') ? (float)$value : (int)$value)
@@ -608,7 +608,7 @@ final class BinaryReportDataProvider
         }
         $len = unpack('V', $runs_data, $offset)[1];
         $offset += 4;
-        $captured_at = substr($runs_data, $offset, (int)$len);
+        $captured_at = substr($runs_data, $offset, $len);
         return $captured_at !== '' ? $captured_at : null;
     }
 
@@ -763,20 +763,20 @@ final class BinaryReportDataProvider
             for ($i = 0; $i < $loc_count; $i++) {
                 $off = $i * Format::LOCATION_ROW_SIZE;
                 $node_id = unpack('V', $data, $off)[1];
-                if (!isset($defs_for_child[(int)$node_id])) {
+                if (!isset($defs_for_child[$node_id])) {
                     continue;
                 }
                 // string_value_id offset: node_id u32 + type_id u32 +
                 // class_id u32 + address u64 + size u64 = 28
                 $sv_id = unpack('V', $data, $off + 28)[1];
-                if ((int)$sv_id === Format::NULL_STRING_ID) {
+                if ($sv_id === Format::NULL_STRING_ID) {
                     continue;
                 }
-                $name = $dict->lookup((int)$sv_id);
+                $name = $dict->lookup($sv_id);
                 if ($name === null || $name === '') {
                     continue;
                 }
-                foreach ($defs_for_child[(int)$node_id] as $def_id) {
+                foreach ($defs_for_child[$node_id] as $def_id) {
                     $canonical_names[$def_id] = $name;
                 }
             }

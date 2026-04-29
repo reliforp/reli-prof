@@ -6,8 +6,6 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\MemoryDump\FastPath\Generated\v80;
 
-/** @psalm-suppress PossiblyInvalidArrayAccess, MixedReturnStatement, MixedInferredReturnType */
-
 function zendobject_gc_refcount(string $buf, int $off): int
 {
     return ord($buf[$off + 0]) | (ord($buf[$off + 0 + 1]) << 8) | (ord($buf[$off + 0 + 2]) << 16) | (ord($buf[$off + 0 + 3]) << 24);
@@ -23,21 +21,25 @@ function zendobject_handle(string $buf, int $off): int
     return ord($buf[$off + 8]) | (ord($buf[$off + 8 + 1]) << 8) | (ord($buf[$off + 8 + 2]) << 16) | (ord($buf[$off + 8 + 3]) << 24);
 }
 
+/** @psalm-suppress PossiblyInvalidArrayAccess */
 function zendobject_ce(string $buf, int $off): int
 {
     return unpack('P', $buf, $off + 16)[1];
 }
 
+/** @psalm-suppress PossiblyInvalidArrayAccess */
 function zendobject_handlers(string $buf, int $off): int
 {
     return unpack('P', $buf, $off + 24)[1];
 }
 
+/** @psalm-suppress PossiblyInvalidArrayAccess */
 function zendobject_properties_table(string $buf, int $off): int
 {
     return unpack('P', $buf, $off + 40)[1];
 }
 
+/** @psalm-suppress PossiblyInvalidArrayAccess */
 function zendobject_properties(string $buf, int $off): int
 {
     return unpack('P', $buf, $off + 32)[1];

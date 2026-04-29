@@ -6,8 +6,6 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\MemoryDump\FastPath\Generated\v84;
 
-/** @psalm-suppress PossiblyInvalidArrayAccess, MixedReturnStatement, MixedInferredReturnType */
-
 function zendarray_gc_refcount(string $buf, int $off): int
 {
     return ord($buf[$off + 0]) | (ord($buf[$off + 0 + 1]) << 8) | (ord($buf[$off + 0 + 2]) << 16) | (ord($buf[$off + 0 + 3]) << 24);
@@ -28,6 +26,7 @@ function zendarray_n_table_mask(string $buf, int $off): int
     return ord($buf[$off + 12]) | (ord($buf[$off + 12 + 1]) << 8) | (ord($buf[$off + 12 + 2]) << 16) | (ord($buf[$off + 12 + 3]) << 24);
 }
 
+/** @psalm-suppress PossiblyInvalidArrayAccess */
 function zendarray_ar_data(string $buf, int $off): int
 {
     return unpack('P', $buf, $off + 16)[1];
