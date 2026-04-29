@@ -47,13 +47,16 @@ that the dump may contain inconsistent state.
 ## Options
 
 ```
---pid, -p           Target process PID (required)
---output, -o        Output file path (required)
+--pid, -p           Target process PID (or pass a `cmd` after `--` to spawn one)
+--output, -o        Output file path
 --stop-process      Stop the target during dump (default: on)
 --no-stop-process   Don't stop the target
 --include-binary    Include read-only binary segments (self-contained dump)
 --exclude-heap      Exclude [heap] and anonymous mmap regions (see below)
 ```
+
+`./reli inspector:memory:dump --help` is the source of truth for the
+full flag list and defaults.
 
 ## `--exclude-heap`
 

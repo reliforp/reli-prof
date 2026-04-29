@@ -48,6 +48,40 @@ a different shape from the time-axis question.
 > JIT — pair it with `opcache.jit=disable` on PHP 8.x. See
 > [`bench/RESULTS.md`](bench/RESULTS.md#notes--quirks-observed-during-the-runs).
 
+## Decision guide
+
+If the table above has too many columns to scan, this is the
+short version. Each line answers a "what do I want?" with the
+tool we'd reach for first; the rest of the page is the long
+version of the same question.
+
+- *Lowest target overhead, no extension required, OSS* →
+  **reli** or **phpspy**. reli for ZTS / native traces / JIT name
+  resolution / memory-graph analysis / unfamiliar production
+  process; phpspy for the lightest pure-C sampler at typical depths
+  and rates.
+- *Production-grade SaaS APM with always-on continuous profiling* →
+  **Datadog** or **Blackfire** (both use the same underlying
+  sampler today; pick by UI / pricing / surrounding ecosystem).
+- *Production-grade SaaS APM with PHP-focused framework
+  integration* →
+  **Tideways** (a PHP-specialised APM) or **New Relic** (broader
+  multi-language APM; PHP agent is OSS if that matters to you).
+- *Free, production-friendly stack sampler outside a SaaS* →
+  **Excimer** (Apache-2.0, runs at MediaWiki scale).
+- *Development-time deep dive on a single request* →
+  **xhprof** (longxinH), **Xdebug profile**, **SPX**, or
+  **Tideways Callgraph**.
+- *"Which function is allocating the most memory?"* →
+  **Datadog allocations** (production) or **php-memprof** (dev).
+- *"Where is a leak coming from, by function?"* → **php-memprof**.
+- *"What objects exist in memory right now?"* → **reli**
+  (actively maintained); **php-meminfo** is an older alternative
+  (last release v1.1.1, 2021).
+
+The categories, side-by-side numbers, line-level resolution
+breakdown, and per-tool detail follow.
+
 ## Time profiling
 
 ### Categories
@@ -469,32 +503,6 @@ and may not reflect current implementation details.
 | Blackfire classic Probe | commercial | no |
 | Blackfire Continuous Profiler — collection layer | uses Datadog's `datadog-profiling.so` | yes (collection layer is Datadog's `dd-trace-php`); the surrounding Blackfire agent / backend / UI are commercial |
 | All vendor SaaS backends (Datadog, New Relic, Tideways, Blackfire) | commercial | no |
-
-## Decision guide
-
-- *Lowest target overhead, no extension required, OSS* →
-  **reli** or **phpspy**. reli for ZTS / native traces / JIT name
-  resolution / memory-graph analysis / unfamiliar production
-  process; phpspy for the lightest pure-C sampler at typical depths
-  and rates.
-- *Production-grade SaaS APM with always-on continuous profiling* →
-  **Datadog** or **Blackfire** (both use the same underlying
-  sampler today; pick by UI / pricing / surrounding ecosystem).
-- *Production-grade SaaS APM with PHP-focused framework
-  integration* →
-  **Tideways** (a PHP-specialised APM) or **New Relic** (broader
-  multi-language APM; PHP agent is OSS if that matters to you).
-- *Free, production-friendly stack sampler outside a SaaS* →
-  **Excimer** (Apache-2.0, runs at MediaWiki scale).
-- *Development-time deep dive on a single request* →
-  **xhprof** (longxinH), **Xdebug profile**, **SPX**, or
-  **Tideways Callgraph**.
-- *"Which function is allocating the most memory?"* →
-  **Datadog allocations** (production) or **php-memprof** (dev).
-- *"Where is a leak coming from, by function?"* → **php-memprof**.
-- *"What objects exist in memory right now?"* → **reli**
-  (actively maintained); **php-meminfo** is an older alternative
-  (last release v1.1.1, 2021).
 
 <details>
 <summary>A note on reli being implemented in PHP</summary>

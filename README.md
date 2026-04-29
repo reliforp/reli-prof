@@ -62,15 +62,16 @@ Advanced capture (opcodes / native frames / JIT): [docs/tracing/advanced-capture
 Render the heap as a standalone HTML file — Circle Pack, Treemap, Sunburst, 3D Force — or serve it live with a shared focus bus that `rmem:explore` (TUI), browsers, and an MCP client all follow in sync.
 
 ```bash
-# Capture a snapshot first (one-shot; or use inspector:memory:dump + inspector:memory:analyze in production — see docs/memory/memory-dump.md)
-$ reli inspector:memory -p <pid> -f binary -o snapshot.rmem
+# Recommended for production: short stop, then offline analysis.
+$ reli inspector:memory:dump -p <pid> -o snapshot.rdump
+$ reli inspector:memory:analyze snapshot.rdump -f binary -o snapshot.rmem
 
 # Standalone HTML
 $ reli rmem:viz snapshot.rmem
 # wrote snapshot.rmem.viz.html
 
 # Live (HTTP/SSE) with follow-from-TUI
-$ reli rmem:explore snapshot.rmem --http-bridge 8080
+$ reli rmem:explore snapshot.rmem --http-bridge=8080
 # press `f` in the TUI, then open http://127.0.0.1:8080/
 ```
 
@@ -87,7 +88,9 @@ Full tour (views, palettes, focus bus, mouse, MCP): [docs/memory/rmem-explore-an
 Capture a snapshot and get a prioritised report back — dominant classes, cycles, choke points, deduplication candidates — each with severity, hypothesis, and next steps.
 
 ```bash
-$ reli inspector:memory -p <pid> -f binary -o snapshot.rmem
+# Recommended for production: short stop, then offline analysis.
+$ reli inspector:memory:dump -p <pid> -o snapshot.rdump
+$ reli inspector:memory:analyze snapshot.rdump -f binary -o snapshot.rmem
 $ reli inspector:memory:report snapshot.rmem
 ```
 

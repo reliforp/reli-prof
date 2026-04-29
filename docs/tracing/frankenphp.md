@@ -56,8 +56,8 @@ already carries PHP executor globals. For FrankenPHP, pass a
 # List PHP worker threads by name (hex-only — see note below)
 ps -L -p "$(pgrep -o frankenphp)" -o tid,comm |
     awk '$2 ~ /^php-[0-9a-f]+$/'
-#   12345 php-0
-#   12346 php-1
+#   12345 php-1abc34de
+#   12346 php-2bcd45ef
 
 sudo php ./reli inspector:trace -p 12345 \
     --php-regex='.*/libphp\.so$' \
