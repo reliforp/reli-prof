@@ -59,7 +59,7 @@ class PrintWrapperCommandTest extends TestCase
         $this->assertStringContainsString('full profile', $out);
         $this->assertStringContainsString("reli() {", $out);
         $this->assertStringContainsString('--cap-add=SYS_PTRACE', $out);
-        $this->assertStringContainsString('--entrypoint /usr/local/bin/php-ptrace', $out);
+        $this->assertStringContainsString('--entrypoint /opt/reli/php-ptrace/php', $out);
         $this->assertStringContainsString('--pid=host', $out);
         $this->assertStringContainsString('--network=host', $out);
         $this->assertStringContainsString('reli_assert_scratch_safe()', $out);

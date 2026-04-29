@@ -45,7 +45,7 @@ RUN if [ -n "${COMPOSER_ROOT_VERSION}" ]; then \
         composer install --no-dev; \
     fi
 
-# Build a setcap'd shadow copy of the PHP binary at /usr/local/bin/php-ptrace.
+# Build a setcap'd shadow copy of the PHP binary at /opt/reli/php-ptrace/php.
 # Wrappers that actually need ptrace (docker:print-wrapper --profile=full)
 # override the container entrypoint to invoke this binary; that copy carries
 # cap_sys_ptrace=eip, so ptrace works under `--user <non-root>` even though
@@ -58,15 +58,27 @@ RUN if [ -n "${COMPOSER_ROOT_VERSION}" ]; then \
 # every `docker run reliforp/reli-prof <cmd>` invocation to require
 # `--cap-add=SYS_PTRACE`, even for offline-only commands like rbt:analyze
 # / inspector:memory:report / converter:* that never touch a live process.
-# A separate php-ptrace binary keeps the default ENTRYPOINT path usable
+# A separate ptrace-enabled binary keeps the default ENTRYPOINT path usable
 # without extra caps and confines the regression to the wrapper-emitted
 # command line, which already passes --cap-add=SYS_PTRACE.
+#
+# Why the basename stays `php` and the variant goes in the directory: when
+# reli attaches to a process started from this binary, it filters
+# /proc/<pid>/maps lines through TargetPhpSettings::PHP_REGEX_DEFAULT, which
+# is anchored on `(php|php-fpm)` (with optional version) or `libphp*.so`.
+# A binary literally named `php-ptrace` does not match — dogfooding (reli
+# attached to wrapper-launched reli) then fails inside fingerprint creation
+# with "regex matched nothing". Putting the file at `/opt/reli/php-ptrace/php`
+# keeps the basename `php` (default regex hits) while still labelling the
+# variant in the directory name, so `ps` / `--entrypoint` output reads as
+# `/opt/reli/php-ptrace/php` and the role is obvious.
 #
 # Why `cp` and not `ln`: file capabilities are stored as xattrs on the
 # inode, so a hardlink would silently apply the cap to /usr/local/bin/php
 # as well, defeating the split. A real copy gives us a separate inode.
-RUN cp -p /usr/local/bin/php /usr/local/bin/php-ptrace \
-    && setcap cap_sys_ptrace=eip /usr/local/bin/php-ptrace
+RUN mkdir -p /opt/reli/php-ptrace \
+    && cp -p /usr/local/bin/php /opt/reli/php-ptrace/php \
+    && setcap cap_sys_ptrace=eip /opt/reli/php-ptrace/php
 
 # Absolute path on purpose. The wrapper emitted by docker:print-wrapper
 # overrides WORKDIR to the host's $PWD (so bind-mounted input/output paths
