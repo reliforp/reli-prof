@@ -65,7 +65,6 @@ class WatchCommandTest extends TestCase
         $this->assertTrue($def->hasOption('action-exec-command'));
         $this->assertTrue($def->hasOption('action-output-dir'));
         $this->assertTrue($def->hasOption('log-file'));
-        $this->assertTrue($def->hasOption('memory-output-format'));
     }
 
     public function testHasRateLimitOptions(): void
@@ -106,8 +105,5 @@ class WatchCommandTest extends TestCase
 
         $output_dir = $def->getOption('action-output-dir');
         $this->assertNull($output_dir->getDefault());
-
-        $format = $def->getOption('memory-output-format');
-        $this->assertSame('json', $format->getDefault());
     }
 }

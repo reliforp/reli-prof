@@ -56,7 +56,6 @@ class PhpWatchEntryPointRunTest extends TestCase
                 actions: [],
                 action_exec_command: null,
                 log_file: null,
-                memory_output_format: null,
             ),
             trace_loop_settings: new TraceLoopSettings(
                 sleep_nano_seconds: 1000,

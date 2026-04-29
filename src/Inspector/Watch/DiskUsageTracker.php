@@ -29,7 +29,7 @@ final class DiskUsageTracker
     private function scanExistingFiles(string $dir): void
     {
         $dir = rtrim($dir, '/');
-        foreach (['watch-*.dump', 'sidecar-*.dump'] as $glob) {
+        foreach (['watch-*.rdump', 'sidecar-*.dump'] as $glob) {
             $files = glob($dir . '/' . $glob);
             if ($files === false) {
                 continue;

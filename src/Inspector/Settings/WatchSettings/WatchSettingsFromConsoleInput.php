@@ -137,13 +137,6 @@ final class WatchSettingsFromConsoleInput
                 InputOption::VALUE_REQUIRED,
                 'path to log file for log action',
             )
-            ->addOption(
-                'memory-output-format',
-                null,
-                InputOption::VALUE_REQUIRED,
-                'output format for memory-dump action (json, sqlite3)',
-                'json',
-            )
             // Rate limiting options
             ->addOption(
                 'poll-interval',
@@ -222,7 +215,7 @@ final class WatchSettingsFromConsoleInput
                 'memory-limit',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'set PHP memory_limit for analysis (e.g. 2G, 512M)',
+                'set PHP memory_limit for the watch process (e.g. 2G, 512M)',
             )
         ;
     }
@@ -332,7 +325,6 @@ final class WatchSettingsFromConsoleInput
             log_file: self::resolveAbsolutePathOrNull(
                 NullableCast::toString($input->getOption('log-file'))
             ),
-            memory_output_format: NullableCast::toString($input->getOption('memory-output-format')),
             include_binary: (bool)$input->getOption('include-binary'),
             memory_limit: NullableCast::toString($input->getOption('memory-limit')),
             cpu_usage_percent: $cpu_usage_percent,

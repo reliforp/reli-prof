@@ -249,13 +249,21 @@ reli inspector:watch -p <pid> \
 
 ### Memory Dump (`--action=memory-dump`)
 
-Captures a binary memory dump (same format as `inspector:memory:dump`) for offline analysis via `inspector:memory:analyze`.
+Captures a binary memory dump (same `.rdump` format as `inspector:memory:dump`) when the trigger fires. The action only writes the raw dump — the watch loop deliberately does **not** run analysis inline (to keep the per-trigger stop time short and to keep cooldown / rate-limit semantics meaningful). Run `inspector:memory:analyze` later to produce a `.rmem` snapshot consumable by `rmem:explore`, `inspector:memory:report`, etc.
 
 ```bash
-reli inspector:watch -p <pid> --memory-usage=256M --action=memory-dump
+# 1. Watch fires and writes raw dumps:
+reli inspector:watch -p <pid> --memory-usage=256M --action=memory-dump \
+  --action-output-dir=/tmp/reli-dumps
+
+# 2. Analyse offline (any time later, on any host):
+reli inspector:memory:analyze /tmp/reli-dumps/watch-<pid>-<timestamp>.rdump \
+  -f binary -o snapshot.rmem
+reli inspector:memory:report snapshot.rmem
+# or: reli rmem:explore snapshot.rmem
 ```
 
-Output files: `<output-dir>/watch-<pid>-<timestamp>.dump`
+Output files: `<action-output-dir>/watch-<pid>-<timestamp>.rdump`.
 
 ### Trace Snapshot (`--action=trace-once`)
 
@@ -354,7 +362,7 @@ Maximum trigger fires per hour (sliding window). Default: 10.
 
 ### Disk Size Limit (`--max-dump-size=<size>`)
 
-Maximum cumulative size of dump files. Default: 1G. Scans existing `watch-*.dump` files in the output directory on startup, so the limit persists across restarts.
+Maximum cumulative size of dump files. Default: 1G. Scans existing `watch-*.rdump` files in the output directory on startup, so the limit persists across restarts.
 
 ```bash
 --max-dump-size=2G --action-output-dir=/var/log/reli/dumps

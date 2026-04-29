@@ -40,7 +40,6 @@ class WatchSettingsTest extends TestCase
             actions: ['trace', 'log'],
             action_exec_command: 'echo test',
             log_file: '/tmp/watch.log',
-            memory_output_format: 'sqlite3',
         );
 
         $this->assertSame(500, $settings->poll_interval_ms);
@@ -61,7 +60,6 @@ class WatchSettingsTest extends TestCase
         $this->assertSame(['trace', 'log'], $settings->actions);
         $this->assertSame('echo test', $settings->action_exec_command);
         $this->assertSame('/tmp/watch.log', $settings->log_file);
-        $this->assertSame('sqlite3', $settings->memory_output_format);
     }
 
     public function testDefaults(): void

@@ -50,7 +50,6 @@ final class WatchSettings
         public array $actions,
         public ?string $action_exec_command,
         public ?string $log_file,
-        public ?string $memory_output_format,
         public bool $include_binary = false,
         public ?string $memory_limit = null,
         // CPU trigger configs (all optional, added after existing params)
