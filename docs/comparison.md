@@ -15,6 +15,11 @@ and reproducer scripts in [`bench/`](bench/).
 > Blackfire Profiler) come from public docs; everything else is
 > source-verified. Benchmark numbers cited here are summary
 > figures from `bench/RESULTS.md`.
+>
+> *Last reviewed*: 2026-04. Tool versions move; this page pins
+> claims to versions where it can (e.g. php-meminfo v1.1.1,
+> `dd-trace-php` 0.99+, New Relic agent 10.18.0.8) so it can be
+> refreshed deliberately. Re-check before citing.
 
 ## At a glance
 
