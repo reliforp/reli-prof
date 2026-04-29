@@ -1,0 +1,77 @@
+name: Publish Docker image
+
+# Triggered by the tag push that laminas/automatic-releases performs after a
+# milestone close (see release-on-milestone-closed.yml). Tags are bare semver
+# strings like `0.12.0`, no `v` prefix.
+#
+# Required repo secrets:
+#   DOCKERHUB_USERNAME — Docker Hub account with push access to reliforp/reli-prof
+#   DOCKERHUB_TOKEN    — PAT scoped to that repo
+#
+# `latest` is moved on every stable tag. Pre-release tags (e.g. 0.12.0-rc1)
+# get only their version-specific tags; metadata-action's semver patterns
+# already exclude them from the `latest` / `MAJOR.MINOR` floating tags.
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing git tag to (re)publish (e.g. 0.12.0)"
+        required: true
+
+jobs:
+  publish:
+    name: Build and push reliforp/reli-prof
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: reliforp/reli-prof
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}.{{minor}}.{{patch}}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=docker-publish
+          cache-to: type=gha,mode=max,scope=docker-publish
+
+      - name: Verify version reported by image
+        run: |
+          docker run --rm --pull=always \
+            "reliforp/reli-prof:${{ github.event.inputs.tag || github.ref_name }}" \
+            --version
