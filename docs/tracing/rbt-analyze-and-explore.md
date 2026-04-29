@@ -260,17 +260,35 @@ After that you're in a sandwich-style explorer modelled loosely on
 [speedscope](https://www.speedscope.app/)'s sandwich view.
 
 ### Screenshots
+
 #### Panes view
 ![panes view](../images/rbt-explore-panes.png)
 
 #### Flame view
 ![flame view](../images/rbt-explore-flame.png)
 
-#### Callers tree view
-![callers tree view](../images/rbt-explore-callers-tree.png)
+#### Callers / callees tree views
 
-#### Callees tree view
-![callees tree view](../images/rbt-explore-callees-tree.png)
+Click either thumbnail for the full-size image.
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <a href="../images/rbt-explore-callers-tree.png">
+        <img src="../images/rbt-explore-callers-tree.png" alt="callers tree view">
+      </a>
+      <br>
+      <sub><b>Callers tree</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <a href="../images/rbt-explore-callees-tree.png">
+        <img src="../images/rbt-explore-callees-tree.png" alt="callees tree view">
+      </a>
+      <br>
+      <sub><b>Callees tree</b></sub>
+    </td>
+  </tr>
+</table>
 
 ### Layout at a glance
 
