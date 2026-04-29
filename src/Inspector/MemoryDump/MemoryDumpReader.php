@@ -204,7 +204,7 @@ final class MemoryDumpReader
     }
 
     /**
-     * Build the summary array shared by both PDO and binary paths.
+     * Build the summary array shared by both PDO and rmem paths.
      *
      * @param array<string, mixed> $summary_base
      * @return array<int, array<string, mixed>>
