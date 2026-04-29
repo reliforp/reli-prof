@@ -39,12 +39,12 @@ final class DerivedCacheWriter
     private int $pos;
     private bool $failed = false;
 
+    /** @param resource $fh */
     private function __construct(
         string $finalPath,
         string $tempPath,
         int $rmemMtime,
         int $rmemSize,
-        /** @var resource */
         mixed $fh,
     ) {
         $this->finalPath = $finalPath;
@@ -81,7 +81,10 @@ final class DerivedCacheWriter
         }
 
         $finalPath = $rmemPath . '.derived';
-        $tempPath = $finalPath . '.tmp.' . getmypid();
+        // getmypid() === false would mean "process info unavailable";
+        // we have no recovery here so fall back to 0 (still produces a
+        // valid path, and any open failure shows up at @fopen below).
+        $tempPath = $finalPath . '.tmp.' . (getmypid() ?: 0);
 
         $fh = @fopen($tempPath, 'wb');
         if ($fh === false) {
@@ -223,8 +226,12 @@ final class DerivedCacheWriter
             return false;
         }
 
-        fclose($this->fh);
+        // Move the handle out of the property before fclose() so Psalm
+        // doesn't see `$this->fh` transit through `closed-resource` (its
+        // declared type is `resource|null`).
+        $fh = $this->fh;
         $this->fh = null;
+        fclose($fh);
 
         // Stale-writer guard: re-stat rmem
         clearstatcache(true, $rmemPath);
@@ -257,8 +264,9 @@ final class DerivedCacheWriter
     private function cleanup(): void
     {
         if ($this->fh !== null) {
-            fclose($this->fh);
+            $fh = $this->fh;
             $this->fh = null;
+            fclose($fh);
         }
         @unlink($this->tempPath);
     }
