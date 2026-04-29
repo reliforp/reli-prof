@@ -259,37 +259,55 @@ final class ZendClassEntry implements LazyDereferencable, PointedTypeResolverAwa
         ZendTypeReader $type_reader,
         int $map_ptr_base,
     ): iterable {
-        if ($this->default_static_members_count === 0 or is_null($this->static_members_table)) {
+        if ($this->default_static_members_count === 0) {
             return;
         }
 
         if (!isset($this->static_properties_table_cache)) {
             $property_count = $this->default_static_members_count;
             $table_size = $property_count * $type_reader->sizeOf(Zval::getCTypeName());
-            $raw_ptr = $this->static_members_table->address;
-            if ($map_ptr_base !== 0) {
-                // PHP 8.2+: MAP_PTR offset resolution
-                $table_address = $type_reader->resolveMapPtr(
-                    $map_ptr_base,
-                    $raw_ptr,
-                    $dereferencer,
-                );
-            } elseif (
-                !$type_reader->isPhpVersionLowerThan(
-                    \Reli\Lib\PhpInternals\ZendTypeReader::V74,
-                )
-            ) {
-                // PHP 7.4-8.1: static_members_table__ptr is zval**
-                // (double pointer), deref once
-                $ptr = new Pointer(RawInt64::class, $raw_ptr, 8);
-                $table_address = $dereferencer->deref($ptr)->value;
-            } else {
-                // PHP 7.0-7.3: static_members_table__ptr is zval*
-                // (direct pointer to table)
-                $table_address = $raw_ptr;
+            // Try the runtime static_members_table first. PHP 7.4+
+            // allocates this lazily — until a static of this class is
+            // read or written for the first time, the C struct's
+            // `static_members_table__ptr` field can be NULL outright
+            // (untouched user-defined class), or it can be non-NULL
+            // but with a MAP_PTR / single-deref slot that resolves to
+            // 0. In both cases we fall through to the class entry's
+            // default_static_members_table, which holds the
+            // compile-time defaults that PHP would copy from on first
+            // access — so values match what an in-process
+            // `ClassName::$prop` read would see before any
+            // modification.
+            $table_address = 0;
+            if (!is_null($this->static_members_table)) {
+                $raw_ptr = $this->static_members_table->address;
+                if ($map_ptr_base !== 0) {
+                    // PHP 8.2+: MAP_PTR offset resolution
+                    $table_address = $type_reader->resolveMapPtr(
+                        $map_ptr_base,
+                        $raw_ptr,
+                        $dereferencer,
+                    );
+                } elseif (
+                    !$type_reader->isPhpVersionLowerThan(
+                        \Reli\Lib\PhpInternals\ZendTypeReader::V74,
+                    )
+                ) {
+                    // PHP 7.4-8.1: static_members_table__ptr is zval**
+                    // (double pointer), deref once
+                    $ptr = new Pointer(RawInt64::class, $raw_ptr, 8);
+                    $table_address = $dereferencer->deref($ptr)->value;
+                } else {
+                    // PHP 7.0-7.3: static_members_table__ptr is zval*
+                    // (direct pointer to table)
+                    $table_address = $raw_ptr;
+                }
             }
             if ($table_address === 0) {
-                return;
+                if ($this->default_static_members_table === null) {
+                    return;
+                }
+                $table_address = $this->default_static_members_table->address;
             }
             $properties_table_pointer = new Pointer(
                 ZvalArray::class,

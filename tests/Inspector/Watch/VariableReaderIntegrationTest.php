@@ -411,6 +411,115 @@ class VariableReaderIntegrationTest extends BaseTestCase
     }
 
     /**
+     * In PHP 7.4+ the runtime static_members_table for a class is
+     * allocated lazily — it stays unset until any static property of
+     * the class is read or written for the first time. A class declared
+     * but whose statics are never touched therefore has a NULL runtime
+     * pointer (zero MAP_PTR slot on PHP 8.2+, zero double-deref on
+     * 7.4-8.1) even though the class itself is registered in
+     * EG(class_table) and the compile-time defaults are sitting in
+     * default_static_members_table. The reader falls back to the
+     * defaults table in that case.
+     */
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testReadStaticPropertyOfUntouchedClass(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        $memory_reader = new MemoryReader();
+        $zend_type_reader_creator = new ZendTypeReaderCreator();
+
+        // Deliberately do NOT touch UntouchedCache::$* anywhere. The
+        // class is declared at file scope (so it is in
+        // EG(class_table) by the time the script is paused) but no
+        // static of it is read or written, leaving the runtime
+        // static_members_table slot zero on PHP 7.4+.
+        $target_script = <<<'CODE'
+            <?php
+            class UntouchedCache {
+                public static $size = 42;
+                public static $name = "default";
+                public static $items = array(1, 2, 3);
+            }
+            fputs(STDOUT, "ready\n");
+            fgets(STDIN);
+            CODE;
+
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes,
+        );
+
+        $s = fgets($pipes[1]);
+        $this->assertSame("ready\n", $s);
+
+        $process_specifier = new ProcessSpecifier($pid);
+        $target_php_settings = new TargetPhpSettings(
+            php_version: $php_version,
+        );
+
+        $php_globals_finder = $this->createGlobalsFinder(
+            $memory_reader,
+            $zend_type_reader_creator,
+        );
+        $eg_address = $php_globals_finder->findExecutorGlobals(
+            $process_specifier,
+            $target_php_settings,
+        );
+        $cg_address = $php_globals_finder->findCompilerGlobals(
+            $process_specifier,
+            $target_php_settings,
+        );
+
+        $variable_reader = new VariableReader(
+            $memory_reader,
+            $zend_type_reader_creator,
+        );
+
+        $specs = [
+            VariableSpec::parse('static::UntouchedCache::$size'),
+            VariableSpec::parse('static::UntouchedCache::$name'),
+            VariableSpec::parse('static::UntouchedCache::$items'),
+        ];
+        $results = $variable_reader->readVariables(
+            $specs,
+            $process_specifier,
+            $target_php_settings,
+            $eg_address,
+            $cg_address,
+        );
+
+        $key_size = 'static::UntouchedCache::$size';
+        $this->assertArrayHasKey($key_size, $results);
+        $this->assertSame(
+            VariableValue::TYPE_LONG,
+            $results[$key_size]->type,
+        );
+        $this->assertSame(42, $results[$key_size]->scalar_value);
+
+        $key_name = 'static::UntouchedCache::$name';
+        $this->assertArrayHasKey($key_name, $results);
+        $this->assertSame(
+            VariableValue::TYPE_STRING,
+            $results[$key_name]->type,
+        );
+        $this->assertSame(
+            'default',
+            $results[$key_name]->scalar_value,
+        );
+
+        $key_items = 'static::UntouchedCache::$items';
+        $this->assertArrayHasKey($key_items, $results);
+        $this->assertSame(
+            VariableValue::TYPE_ARRAY,
+            $results[$key_items]->type,
+        );
+        $this->assertSame(3, $results[$key_items]->array_count);
+    }
+
+    /**
      * Nested array and object property access tests.
      * Note: $GLOBALS entries use IS_INDIRECT in PHP 8.1+,
      * and nested hash table traversal for sub-keys requires
