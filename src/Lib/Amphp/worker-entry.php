@@ -18,22 +18,27 @@ use Reli\Lib\Amphp\MessageProtocolInterface;
 use Reli\Lib\Log\Log;
 use Reli\Lib\Log\StateCollector\StateCollector;
 use Psr\Log\LoggerInterface;
-use Webmozart\Assert\Assert;
 
 return function (Channel $channel) use ($argv): void {
     // Worker is spawned by reli's parent with exactly 4 argv entries; a
     // mismatch means either the launcher contract changed or the worker
     // was invoked manually. Without this guard, the destructuring below
     // silently leaves entries as null and the container build then fails
-    // with an opaque error far from the actual cause.
-    Assert::count($argv, 4);
+    // with an opaque error far from the actual cause. Use an explicit
+    // throw rather than Webmozart Assert because the latter does not
+    // carry @psalm-assert annotations that narrow $argv to non-null.
+    if ($argv === null || count($argv) !== 4) {
+        throw new \RuntimeException(
+            'worker-entry.php expected 4 argv entries, got '
+            . ($argv === null ? 'null' : (string)count($argv))
+        );
+    }
     /**
      * @var class-string<WorkerEntryPointInterface> $entry_class
      * @var class-string<MessageProtocolInterface> $protocol_class
      * @var string $di_config
      */
     [, $entry_class, $protocol_class, $di_config] = $argv;
-    assert(is_string($di_config));
     $container = (new ContainerBuilder())->addDefinitions($di_config)->build();
     /** @var LoggerInterface $logger */
     $logger = $container->make(LoggerInterface::class);
