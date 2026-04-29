@@ -39,7 +39,7 @@
     "phpunit/phpunit": "13.1.7",
     "squizlabs/php_codesniffer": "4.0.1",
     "mockery/mockery": "1.6.12",
-    "jetbrains/phpstorm-stubs": "2025.3",
+    "jetbrains/phpstorm-stubs": "2026.1",
     "php-coveralls/php-coveralls": "2.9.1",
     "psalm/phar": "^6.0",
     "brianium/paratest": "^7.22",
