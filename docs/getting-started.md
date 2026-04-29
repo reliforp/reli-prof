@@ -76,9 +76,21 @@ Then, still in the same shell:
 reli --version
 ```
 
-Append the `eval "$(...)"` line to your `~/.bashrc` / `~/.zshrc` to
-keep it. The wrapper baked-in image tag matches the version of reli
-the `docker run` invocation pulled, so there's no `:latest` drift.
+To keep it across shells, **don't** paste the `eval "$(docker run ...)"`
+line into your `~/.bashrc` / `~/.zshrc` directly — that re-runs
+`docker run` on every shell start (slow, and breaks shell startup
+if the Docker daemon is down). Save the wrapper to a file once and
+source that instead:
+
+```bash
+mkdir -p ~/.local/share/reli
+docker run --rm reliforp/reli-prof docker:print-wrapper > ~/.local/share/reli/wrapper.sh
+echo 'source ~/.local/share/reli/wrapper.sh' >> ~/.bashrc   # or ~/.zshrc
+```
+
+The wrapper's baked-in image tag matches the version of reli the
+`docker run` invocation pulled, so there's no `:latest` drift —
+re-run the first command above to upgrade.
 
 The wrapper runs each `reli` invocation as a container with
 `--cap-add=SYS_PTRACE --pid=host --network=host`, which gives reli
@@ -159,7 +171,7 @@ php ./your-script.php
 
 # Terminal B: attach and capture for ~10 s, then Ctrl-C
 # (-F rbt is implied by the .rbt extension on -o)
-# Use -n (newest) to avoid passing multiple PIDs when several commands match.
+# pgrep -n picks the newest match — avoids passing multiple PIDs when several commands match.
 reli inspector:trace -p "$(pgrep -nf your-script.php)" -o trace.rbt
 ```
 

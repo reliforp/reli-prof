@@ -120,10 +120,14 @@ sudo reli inspector:daemon \
 ```
 
 For attaching to a single worker (`inspector:trace`), pass the PHP
-worker **TID** rather than the FrankenPHP parent PID:
+worker **TID** rather than the FrankenPHP parent PID. The pattern
+below intentionally excludes `php-main` — that's the bootstrap
+thread, not a worker, and attaching to it produces empty traces /
+"failed to find ZendMM main chunk" on memory commands. See
+[tracing/frankenphp.md](tracing/frankenphp.md) for the full story.
 
 ```bash
-ps -L -p "$(pgrep -o frankenphp)" -o tid,comm | awk '$2 ~ /^php-/'
+ps -L -p "$(pgrep -o frankenphp)" -o tid,comm | awk '$2 ~ /^php-[0-9a-f]+$/'
 #   12345 php-0
 #   12346 php-1
 
