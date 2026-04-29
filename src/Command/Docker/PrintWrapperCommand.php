@@ -148,6 +148,16 @@ final class PrintWrapperCommand extends ReliCommand
         return 2
     fi
     mkdir -m 0700 -p "$scratch" || return $?
+    # Pre-create the XDG_* sub-paths the docker run below points at.
+    # `inspector:sidecar` (and any other consumer that resolves a default
+    # path under $XDG_RUNTIME_DIR) checks `is_dir(parent)` before binding;
+    # without this `runtime/` mkdir the default sidecar socket path fails
+    # immediately with "XDG_RUNTIME_DIR is not set or not a directory".
+    # `state/` and `cache/` are auto-created on demand by other commands,
+    # but we make them up front for symmetry so the XDG_* triple inside
+    # the container always points at real directories.
+    mkdir -m 0700 -p "$scratch/runtime" "$scratch/state" "$scratch/cache" \
+        || return $?
     local reason
     if ! reason=$(reli_assert_scratch_safe "$scratch"); then
         echo "{{NAME}}: scratch dir $scratch failed safety check: $reason" >&2

@@ -64,6 +64,14 @@ class PrintWrapperCommandTest extends TestCase
         $this->assertStringContainsString('--network=host', $out);
         $this->assertStringContainsString('reli_assert_scratch_safe()', $out);
         $this->assertStringContainsString('reliforp/reli-prof:', $out);
+        // XDG sub-paths the wrapper points -e env vars at must be
+        // created up front so e.g. `inspector:sidecar`'s default
+        // socket-path resolver finds $XDG_RUNTIME_DIR pointing at a
+        // real directory.
+        $this->assertStringContainsString(
+            'mkdir -m 0700 -p "$scratch/runtime" "$scratch/state" "$scratch/cache"',
+            $out,
+        );
     }
 
     public function testFullProfileIsDefault(): void
