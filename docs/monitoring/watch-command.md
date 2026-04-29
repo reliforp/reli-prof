@@ -472,14 +472,23 @@ spec:
 
 ## Performance
 
-Measured polling overhead (PHP 8.4, median):
+At the default `--poll-interval=1000` (1 second), polling overhead is negligible
+for any trigger combination. Roughly in increasing order of cost:
+**memory / RSS triggers ≪ function / depth triggers < variable watch**.
+
+<details>
+<summary>Measured polling overhead (PHP 8.4, median)</summary>
 
 | Configuration | Latency | Max polls/sec |
 |---------------|---------|---------------|
-| Tier 1 only (memory triggers) | ~680μs | ~1,470 |
-| Tier 1 + Tier 2 (+ function/depth) | ~750μs | ~1,330 |
-| Tier 1 + 2 + 3 (+ variable watch) | ~2,170μs | ~460 |
+| Memory triggers only | ~680μs | ~1,470 |
+| + function / depth | ~750μs | ~1,330 |
+| + variable watch | ~2,170μs | ~460 |
 
-Trigger evaluation itself is < 1μs. The cost is dominated by `process_vm_readv` calls for reading target process memory.
+Trigger evaluation itself is < 1μs; cost is dominated by `process_vm_readv`
+calls. Even the heaviest configuration uses ~0.2% of a 1s polling interval.
 
-At the default `--poll-interval=1000` (1 second), even the heaviest configuration uses only ~0.2% of the polling interval.
+See [docs/internals/watch-command-architecture.md](../internals/watch-command-architecture.md#tiers-adaptive-polling-cost)
+for the per-tier breakdown.
+
+</details>
