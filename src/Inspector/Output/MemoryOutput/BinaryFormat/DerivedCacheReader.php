@@ -265,6 +265,7 @@ final class DerivedCacheReader
             return null;
         }
 
+        /** @var \FFI\CArray<int> */
         $buf = FFIHelper::new("{$type}[{$count}]");
 
         // Read in element-aligned chunks directly into the destination

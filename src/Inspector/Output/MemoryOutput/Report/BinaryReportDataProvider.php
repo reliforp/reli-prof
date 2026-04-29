@@ -373,7 +373,7 @@ final class BinaryReportDataProvider
         // the first-non-null logic in the original loadNodeMeta.
         $locCount = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
         $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
-        /** @var \FFI\CData|null $locIndex int32[nodeSizesSlots], -1 = no location */
+        /** @var \FFI\CArray<int>|null $locIndex int32[nodeSizesSlots], -1 = no location */
         $locIndex = null;
         if ($locRows !== null && $nodeSizesSlots > 0) {
             $locIndex = FFIHelper::newInt32Array($nodeSizesSlots);
@@ -880,7 +880,17 @@ final class BinaryReportDataProvider
      * Fallback for getDedupCandidateStats when node_sizes section is missing.
      * Uses the original loadNodeMeta approach.
      *
-     * @return list<array<string, mixed>>
+     * @return list<array{
+     *     link_name: string,
+     *     size: int,
+     *     cnt: int,
+     *     total_waste: int,
+     *     sample_parent_node_id: int,
+     *     sample_child_node_id: int,
+     *     sample_location_type: ?string,
+     *     sample_child_node_ids: list<int>,
+     *     examples: array<string, mixed>
+     * }>
      * @psalm-suppress MixedAssignment
      * @psalm-suppress PossiblyInvalidArrayAccess
      */

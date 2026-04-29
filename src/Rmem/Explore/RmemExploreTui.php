@@ -1184,7 +1184,14 @@ final class RmemExploreTui
         $this->listMode = 'normal';
         $this->rows = [];
 
-        usort($profiles, fn ($a, $b) => $b['total_size'] <=> $a['total_size']);
+        usort(
+            $profiles,
+            /**
+             * @param array{id: int, nodes: list<int>, node_count: int, total_size: int, signature: string} $a
+             * @param array{id: int, nodes: list<int>, node_count: int, total_size: int, signature: string} $b
+             */
+            static fn (array $a, array $b): int => $b['total_size'] <=> $a['total_size']
+        );
 
         foreach ($profiles as $profile) {
             $sig = $profile['signature'] ?? '';
@@ -1836,6 +1843,7 @@ final class RmemExploreTui
         $mainW = $cols - $sidebarW;
         $this->bannerFocusId = $focusId;
 
+        /** @var list<string> $lines */
         $lines = [];
         $lines[] = $this->renderHeader($cols);
 

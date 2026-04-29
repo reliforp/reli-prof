@@ -910,7 +910,14 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
         }
 
-        // Count: nontree edges
+        // Count: nontree edges. Hoist $ntOffsets / $ntEdges to typed
+        // null defaults so the later `isset()` re-entry block keeps the
+        // \FFI\CArray<int> shape — without this the variables get
+        // re-narrowed to plain CData on the second use.
+        /** @var \FFI\CArray<int>|null */
+        $ntOffsets = null;
+        /** @var \FFI\CArray<int>|null */
+        $ntEdges = null;
         $allCount = 0;
         $strongAllCount = 0;
         if ($nontreeEdgeCount > 0) {
@@ -998,8 +1005,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             }
         }
 
-        // Fill: nontree edges
-        if ($nontreeEdgeCount > 0 && isset($ntOffsets) && isset($ntEdges)) {
+        // Fill: nontree edges (the null guards mirror the same condition
+        // that constructed the buffers above; $nontreeEdgeCount > 0
+        // implies both arrays were allocated).
+        if ($nontreeEdgeCount > 0 && $ntOffsets !== null && $ntEdges !== null) {
             for ($p = 0; $p < $nc; $p++) {
                 $start = $ntOffsets[$p];
                 $end = $ntOffsets[$p + 1];
@@ -1243,7 +1252,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
         // Find link_id via reverse dict if available, else linear scan of forward dict.
         $link_id = $this->linkDictReverse[$link_name] ?? array_search($link_name, $this->linkDict, true);
-        if ($link_id === false || $link_id === null) {
+        if ($link_id === false) {
             return;
         }
         $n = $this->nodeCount;

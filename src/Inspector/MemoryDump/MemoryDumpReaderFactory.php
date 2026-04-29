@@ -99,7 +99,7 @@ final class MemoryDumpReaderFactory
 
         // Build FastPathReader for dump analysis
         $fast_path = null;
-        /** @var class-string<FastPathReader>|null $fast_path_class */
+        /** @var class-string<FastPathReader> $fast_path_class */
         $fast_path_class = "Reli\\Inspector\\MemoryDump\\FastPath\\Generated\\{$php_version}\\FastPathReader";
         if (!$disable_fast_path && class_exists($fast_path_class)) {
             $fast_fp = fopen($file_path, 'rb');

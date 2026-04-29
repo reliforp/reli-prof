@@ -38,6 +38,10 @@ final class RmemQueryService
     /**
      * @param array<string, mixed> $request
      * @return array<string, mixed>
+     * @psalm-suppress MixedReturnTypeCoercion the match arms each return
+     *   helper-shaped arrays whose full union infers as
+     *   array<array-key, mixed> at the call site; the public contract
+     *   stays array<string, mixed> per the JSON-RPC envelope.
      */
     public function handle(array $request): array
     {

@@ -18,56 +18,12 @@
       <code><![CDATA[$decoded]]></code>
     </MixedAssignment>
   </file>
-  <file src="src/Inspector/MemoryDump/MemoryDumpReaderFactory.php">
-    <PossiblyNullArgument>
-      <code><![CDATA[$fast_path_class]]></code>
-    </PossiblyNullArgument>
-  </file>
   <file src="src/Inspector/Output/MemoryOutput/BinaryFormat/DerivedCacheReader.php">
-    <LessSpecificReturnStatement>
-      <code><![CDATA[$buf]]></code>
-    </LessSpecificReturnStatement>
-    <MoreSpecificReturnType>
-      <code><![CDATA[\FFI\CArray<int>|null]]></code>
-    </MoreSpecificReturnType>
-  </file>
-  <file src="src/Inspector/Output/MemoryOutput/Comparison/Formatter/TextComparisonFormatter.php">
-    <TypeDoesNotContainType>
-      <code><![CDATA[$key]]></code>
-    </TypeDoesNotContainType>
-  </file>
-  <file src="src/Inspector/Output/MemoryOutput/Report/BinaryReportDataProvider.php">
-    <ArgumentTypeCoercion>
-      <code><![CDATA[$locIndex]]></code>
-      <code><![CDATA[$locIndex]]></code>
-    </ArgumentTypeCoercion>
-    <LessSpecificReturnStatement>
-      <code><![CDATA[self::getDedupCandidateStatsFallback($reader, $limit)]]></code>
-      <code><![CDATA[self::getDedupCandidateStatsFallback($reader, $limit)]]></code>
-    </LessSpecificReturnStatement>
-    <MoreSpecificReturnType>
-      <code><![CDATA[list<array{
-     *     link_name: string,
-     *     size: int,
-     *     cnt: int,
-     *     total_waste: int,
-     *     sample_parent_node_id: int,
-     *     sample_child_node_id: int,
-     *     sample_location_type: ?string,
-     *     sample_child_node_ids: list<int>,
-     *     examples: array<string, mixed>
-     * }>]]></code>
-    </MoreSpecificReturnType>
+    <InvalidArgument>
+      <code><![CDATA[$buf[$elemOffset]]]></code>
+    </InvalidArgument>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/Report/Substrate/FfiCsrGraphSubstrate.php">
-    <DocblockTypeContradiction>
-      <code><![CDATA[$link_id === false || $link_id === null]]></code>
-      <code><![CDATA[$link_id === null]]></code>
-    </DocblockTypeContradiction>
-    <MixedArgument>
-      <code><![CDATA[$ci]]></code>
-      <code><![CDATA[$ci]]></code>
-    </MixedArgument>
     <PropertyTypeCoercion>
       <code><![CDATA[$profiles]]></code>
     </PropertyTypeCoercion>
@@ -80,11 +36,6 @@
       <code><![CDATA[$member_addr]]></code>
     </MixedOperand>
   </file>
-  <file src="src/Lib/PhpProcessReader/PhpMemoryReader/Collector/Job/EmitObjectJob.php">
-    <RedundantCast>
-      <code><![CDATA[(int)$alloc_size]]></code>
-    </RedundantCast>
-  </file>
   <file src="src/Lib/PhpProcessReader/PhpMemoryReader/ContextAnalyzer/BinaryContextTreeSink.php">
     <PossiblyNullArgument>
       <code><![CDATA[$this->perNodeClasses]]></code>
@@ -94,11 +45,6 @@
     <InvalidOperand>
       <code><![CDATA[$capacity * self::MAX_LOAD_FACTOR]]></code>
     </InvalidOperand>
-  </file>
-  <file src="src/Rbt/Analyze/TraceAggregator.php">
-    <InvalidArgument>
-      <code><![CDATA[$tail_buffer]]></code>
-    </InvalidArgument>
   </file>
   <file src="src/Rmem/Explore/RmemExploreTui.php">
     <ArgumentTypeCoercion>
@@ -118,10 +64,6 @@
       <code><![CDATA[$response]]></code>
       <code><![CDATA[array_slice($lines, 1)]]></code>
     </MixedArgumentTypeCoercion>
-    <MixedArrayAccess>
-      <code><![CDATA[$a['total_size']]]></code>
-      <code><![CDATA[$b['total_size']]]></code>
-    </MixedArrayAccess>
     <MixedAssignment>
       <code><![CDATA[$header]]></code>
       <code><![CDATA[$text]]></code>
@@ -143,35 +85,5 @@
     <MixedPropertyTypeCoercion>
       <code><![CDATA[$frameLabels]]></code>
     </MixedPropertyTypeCoercion>
-  </file>
-  <file src="src/Rmem/Serve/RmemQueryService.php">
-    <MixedReturnTypeCoercion>
-      <code><![CDATA[array<string, mixed>]]></code>
-      <code><![CDATA[match ($action) {
-                'server.hello' => $this->hello(),
-                'server.ping' => ['ok' => true, 'data' => 'pong'],
-
-                'query.roots' => $this->roots($request),
-                'query.children' => $this->children($request),
-                'query.parents' => $this->parents($request),
-                'query.node_detail' => $this->nodeDetail($request),
-                'query.sandwich' => $this->sandwich($request),
-                'query.path_to_root' => $this->pathToRoot($request),
-                'query.class_ranking' => $this->classRanking($request),
-                'query.type_ranking' => $this->typeRanking($request),
-                'query.top_retained' => $this->topRetained($request),
-                'query.nodes_by_class' => $this->nodesByClass($request),
-                'query.nodes_by_type' => $this->nodesByType($request),
-                'query.find_by_address' => $this->findByAddress($request),
-                'query.find_function_def' => $this->findFunctionDef($request),
-                'query.find_class_def' => $this->findClassDef($request),
-                'query.subtree_stats' => $this->subtreeStats($request),
-                'query.search' => $this->search($request),
-                'query.scc_for_node' => $this->sccForNode($request),
-                'query.scc_ranking' => $this->sccRanking($request),
-
-                default => ['ok' => false, 'error' => "Unknown action: {$action}"],
-            }]]></code>
-    </MixedReturnTypeCoercion>
   </file>
 </files>

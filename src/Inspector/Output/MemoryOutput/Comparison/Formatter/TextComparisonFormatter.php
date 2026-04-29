@@ -93,7 +93,6 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
                     $label = match ($key) {
                         'node_count' => 'Nodes',
                         'edge_count' => 'Edges',
-                        default => $key,
                     };
                     $lines[] = sprintf(
                         '  %s: %s → %s (%+d)',
