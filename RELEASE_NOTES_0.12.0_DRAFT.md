@@ -201,8 +201,8 @@ Memory analysis in 0.12 expands in three directions:
 
 - **Broader heap coverage:** Generator / Fiber, WeakReference / WeakMap,
   PHP stream resources, SimpleXML, PDO / mysqlnd internal allocations
-  (columns, bound parameters), and global callback / shutdown handler
-  retention are now tracked explicitly.
+  (columns, bound parameters), global callback / shutdown handler
+  retention, FFI CData allocations, and more are now tracked explicitly.
 - **Richer graph analysis:** new additions include per-property memory ranking,
   cycle detection (SCC), GC-pending detection, ownership patterns, and
   ZendMM chunk cache / fragmentation analysis.
