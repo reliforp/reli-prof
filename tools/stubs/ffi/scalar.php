@@ -45,11 +45,17 @@ class CArray extends CData implements \ArrayAccess, \Countable
         // TODO: Implement offsetExists() method.
     }
 
+    /**
+     * @return T
+     */
     public function offsetGet($offset)
     {
         // TODO: Implement offsetGet() method.
     }
 
+    /**
+     * @param T $value
+     */
     public function offsetSet($offset, $value)
     {
         // TODO: Implement offsetSet() method.

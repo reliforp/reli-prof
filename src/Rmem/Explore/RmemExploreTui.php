@@ -132,7 +132,7 @@ final class RmemExploreTui
     /** 'retained' | 'link' */
     private string $sortMode = 'retained';
 
-    /** @var 'normal'|'class_ranking'|'type_ranking'|'class_instances'|'type_instances' */
+    /** @var 'normal'|'class_ranking'|'type_ranking'|'class_instances'|'type_instances'|'scc_members' */
     private string $listMode = 'normal';
     private string $listModeParam = '';
 
@@ -1178,7 +1178,26 @@ final class RmemExploreTui
         $this->topRow = 0;
     }
 
-    /** @var array<string, mixed>|null saved state before SCC member view */
+    /**
+     * Saved state before SCC member view, restored when leaving the
+     * `scc_members` mode. Mirrors the corresponding properties' shapes
+     * so destructuring at the restore site narrows correctly.
+     *
+     * @var array{
+     *     sandwich: bool,
+     *     sandwichNodeId: int,
+     *     sandwichLabel: string,
+     *     sandwichHistory: list<array{node_id: int, label: string, pane: string}>,
+     *     rows: list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}>,
+     *     selected: int,
+     *     topRow: int,
+     *     focusLabel: string,
+     *     listMode: 'normal'|'class_ranking'|'type_ranking'|'class_instances'|'type_instances'|'scc_members',
+     *     parentRows: list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}>,
+     *     childRows: list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}>,
+     *     activePane: string,
+     * }|null
+     */
     private ?array $preSccState = null;
 
     /** @param array{id: int, nodes: list<int>, node_count: int, total_size: int, signature?: string} $profile */

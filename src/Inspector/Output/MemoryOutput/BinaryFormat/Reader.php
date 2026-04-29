@@ -313,6 +313,13 @@ final class Reader
      * @param string $section Section name
      * @param string $type FFI type string, e.g. "NodeRow" or "EdgeRow"
      * @return CData|null The typed array, or null if section missing/empty
+     *
+     * @psalm-return (
+     *   $type is 'NodeRow' ? \FFI\CArray<\FFI\PhpInternals\NodeRow>|null :
+     *   ($type is 'EdgeRow' ? \FFI\CArray<\FFI\PhpInternals\EdgeRow>|null :
+     *   ($type is 'LocationRow' ? \FFI\CArray<\FFI\PhpInternals\LocationRow>|null :
+     *   CData|null))
+     * )
      */
     public function castSection(string $section, string $type): ?CData
     {

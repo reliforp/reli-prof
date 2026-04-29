@@ -162,15 +162,6 @@
   </file>
   <file src="src/Inspector/Output/MemoryOutput/Report/BinaryReportDataProvider.php">
     <InvalidPropertyFetch>
-      <code><![CDATA[$edgeRows[$i]->child_node_id]]></code>
-      <code><![CDATA[$edgeRows[$i]->child_node_id]]></code>
-      <code><![CDATA[$edgeRows[$i]->is_tree]]></code>
-      <code><![CDATA[$edgeRows[$i]->is_tree]]></code>
-      <code><![CDATA[$edgeRows[$i]->link_name_id]]></code>
-      <code><![CDATA[$edgeRows[$i]->link_name_id]]></code>
-      <code><![CDATA[$edgeRows[$i]->parent_node_id]]></code>
-      <code><![CDATA[$edgeRows[$i]->strength]]></code>
-      <code><![CDATA[$edgeRows[$i]->strength]]></code>
       <code><![CDATA[$locRows[$li]->class_id]]></code>
       <code><![CDATA[$locRows[$li]->location_type_id]]></code>
       <code><![CDATA[$locRows[$li]->string_value_id]]></code>
@@ -179,6 +170,19 @@
       <code><![CDATA[self::getDedupCandidateStatsFallback($reader, $limit)]]></code>
       <code><![CDATA[self::getDedupCandidateStatsFallback($reader, $limit)]]></code>
     </LessSpecificReturnStatement>
+    <MixedArgument>
+      <code><![CDATA[$classId]]></code>
+      <code><![CDATA[$locRows[$li]->location_type_id]]></code>
+    </MixedArgument>
+    <MixedAssignment>
+      <code><![CDATA[$classId]]></code>
+      <code><![CDATA[$meta['string_value_id']]]></code>
+      <code><![CDATA[$svId]]></code>
+    </MixedAssignment>
+    <MixedReturnTypeCoercion>
+      <code><![CDATA[$meta]]></code>
+      <code><![CDATA[array{size: int, location_type: ?string, class_name: ?string, string_value_id: ?int}]]></code>
+    </MixedReturnTypeCoercion>
     <MoreSpecificReturnType>
       <code><![CDATA[list<array{
      *     link_name: string,
@@ -192,16 +196,11 @@
      *     examples: array<string, mixed>
      * }>]]></code>
     </MoreSpecificReturnType>
+    <PossiblyNullArgument>
+      <code><![CDATA[$classId]]></code>
+      <code><![CDATA[$locRows[$li]->location_type_id]]></code>
+    </PossiblyNullArgument>
     <PossiblyNullPropertyFetch>
-      <code><![CDATA[$edgeRows[$i]->child_node_id]]></code>
-      <code><![CDATA[$edgeRows[$i]->child_node_id]]></code>
-      <code><![CDATA[$edgeRows[$i]->is_tree]]></code>
-      <code><![CDATA[$edgeRows[$i]->is_tree]]></code>
-      <code><![CDATA[$edgeRows[$i]->link_name_id]]></code>
-      <code><![CDATA[$edgeRows[$i]->link_name_id]]></code>
-      <code><![CDATA[$edgeRows[$i]->parent_node_id]]></code>
-      <code><![CDATA[$edgeRows[$i]->strength]]></code>
-      <code><![CDATA[$edgeRows[$i]->strength]]></code>
       <code><![CDATA[$locRows[$li]->class_id]]></code>
       <code><![CDATA[$locRows[$li]->location_type_id]]></code>
       <code><![CDATA[$locRows[$li]->string_value_id]]></code>
@@ -211,15 +210,6 @@
       <code><![CDATA[$info['ref_count'] <= 50]]></code>
     </RedundantCondition>
     <UndefinedPropertyFetch>
-      <code><![CDATA[$edgeRows[$i]->child_node_id]]></code>
-      <code><![CDATA[$edgeRows[$i]->child_node_id]]></code>
-      <code><![CDATA[$edgeRows[$i]->is_tree]]></code>
-      <code><![CDATA[$edgeRows[$i]->is_tree]]></code>
-      <code><![CDATA[$edgeRows[$i]->link_name_id]]></code>
-      <code><![CDATA[$edgeRows[$i]->link_name_id]]></code>
-      <code><![CDATA[$edgeRows[$i]->parent_node_id]]></code>
-      <code><![CDATA[$edgeRows[$i]->strength]]></code>
-      <code><![CDATA[$edgeRows[$i]->strength]]></code>
       <code><![CDATA[$locRows[$li]->class_id]]></code>
       <code><![CDATA[$locRows[$li]->location_type_id]]></code>
       <code><![CDATA[$locRows[$li]->string_value_id]]></code>
@@ -234,53 +224,15 @@
       <code><![CDATA[$ntColIdxData]]></code>
       <code><![CDATA[$ntRowPtrData]]></code>
     </MixedArgument>
-    <PossiblyNullArrayAccess>
-      <code><![CDATA[$canonIdxFfi[$v]]]></code>
-      <code><![CDATA[$canonIdxFfi[$v]]]></code>
-      <code><![CDATA[$canonIdxFfi[$w]]]></code>
-      <code><![CDATA[$canonIdxFfi[$w]]]></code>
-      <code><![CDATA[$canonIdxFfi[$w]]]></code>
-      <code><![CDATA[$canonIdxFfi[$w]]]></code>
-      <code><![CDATA[$canonIdxFfi[$w]]]></code>
-      <code><![CDATA[$origData[$oi]]]></code>
-      <code><![CDATA[$origData[$oi]]]></code>
-      <code><![CDATA[$origData[$oi]]]></code>
-      <code><![CDATA[$origData[$oi]]]></code>
-      <code><![CDATA[$origData[$oi]]]></code>
-      <code><![CDATA[$origData[$oi]]]></code>
-      <code><![CDATA[$origOffsets[$canonical_idx]]]></code>
-      <code><![CDATA[$origOffsets[$node]]]></code>
-      <code><![CDATA[$origOffsets[$v]]]></code>
-      <code><![CDATA[$origOffsets[$v]]]></code>
-      <code><![CDATA[$origOffsets[$v]]]></code>
-      <code><![CDATA[$origOffsets[$v]]]></code>
-      <code><![CDATA[$this->origData[$i]]]></code>
-    </PossiblyNullArrayAccess>
-    <PossiblyNullReference>
-      <code><![CDATA[$canonIdxFfi]]></code>
-      <code><![CDATA[$canonIdxFfi]]></code>
-      <code><![CDATA[$canonIdxFfi]]></code>
-      <code><![CDATA[$canonIdxFfi]]></code>
-      <code><![CDATA[$canonIdxFfi]]></code>
-      <code><![CDATA[$canonIdxFfi]]></code>
-      <code><![CDATA[$canonIdxFfi]]></code>
-      <code><![CDATA[$origData]]></code>
-      <code><![CDATA[$origData]]></code>
-      <code><![CDATA[$origData]]></code>
-      <code><![CDATA[$origData]]></code>
-      <code><![CDATA[$origData]]></code>
-      <code><![CDATA[$origData]]></code>
-      <code><![CDATA[$origOffsets]]></code>
-      <code><![CDATA[$origOffsets]]></code>
-      <code><![CDATA[$origOffsets]]></code>
-      <code><![CDATA[$origOffsets]]></code>
-      <code><![CDATA[$origOffsets]]></code>
-      <code><![CDATA[$origOffsets]]></code>
-      <code><![CDATA[$this->origData]]></code>
-    </PossiblyNullReference>
     <PropertyTypeCoercion>
       <code><![CDATA[$profiles]]></code>
     </PropertyTypeCoercion>
+  </file>
+  <file src="src/Lib/ByteStream/CDataByteReader.php">
+    <RedundantConditionGivenDocblockType>
+      <code><![CDATA[assert(is_int($value))]]></code>
+      <code><![CDATA[is_int($value)]]></code>
+    </RedundantConditionGivenDocblockType>
   </file>
   <file src="src/Lib/PhpInternals/Types/Zend/ZendOp.php">
     <TypeDoesNotContainNull>
@@ -360,12 +312,6 @@
       <code><![CDATA[$lines]]></code>
       <code><![CDATA[$lines]]></code>
     </ArgumentTypeCoercion>
-    <DocblockTypeContradiction>
-      <code><![CDATA[$this->listMode === 'scc_members']]></code>
-      <code><![CDATA[$this->listMode === 'scc_members']]></code>
-      <code><![CDATA[$this->listMode === 'scc_members']]></code>
-      <code><![CDATA[$this->listMode === 'scc_members']]></code>
-    </DocblockTypeContradiction>
     <InvalidArrayOffset>
       <code><![CDATA[$help[$i - 1]]]></code>
       <code><![CDATA[$row['_class']]]></code>
@@ -382,7 +328,6 @@
       <code><![CDATA[$this->rows]]></code>
       <code><![CDATA[$this->rows]]></code>
       <code><![CDATA[$this->rows]]></code>
-      <code><![CDATA['scc_members']]></code>
     </InvalidPropertyAssignmentValue>
     <MixedArgument>
       <code><![CDATA[$className]]></code>
@@ -412,23 +357,11 @@
       <code><![CDATA[$parts[]]]></code>
       <code><![CDATA[$prevNodeId]]></code>
       <code><![CDATA[$text]]></code>
-      <code><![CDATA[$this->activePane]]></code>
-      <code><![CDATA[$this->childRows]]></code>
-      <code><![CDATA[$this->focusLabel]]></code>
       <code><![CDATA[$this->focusLabel]]></code>
       <code><![CDATA[$this->focusNodeId]]></code>
-      <code><![CDATA[$this->listMode]]></code>
       <code><![CDATA[$this->listModeParam]]></code>
       <code><![CDATA[$this->listModeParam]]></code>
-      <code><![CDATA[$this->parentRows]]></code>
-      <code><![CDATA[$this->rows]]></code>
-      <code><![CDATA[$this->sandwich]]></code>
-      <code><![CDATA[$this->sandwichHistory]]></code>
-      <code><![CDATA[$this->sandwichLabel]]></code>
-      <code><![CDATA[$this->sandwichNodeId]]></code>
       <code><![CDATA[$this->selected]]></code>
-      <code><![CDATA[$this->selected]]></code>
-      <code><![CDATA[$this->topRow]]></code>
       <code><![CDATA[$this->topRow]]></code>
       <code><![CDATA[$typeName]]></code>
     </MixedAssignment>
@@ -448,16 +381,16 @@
     </ReferenceConstraintViolation>
   </file>
   <file src="src/Rmem/Explore/RmemModel.php">
-    <InvalidPropertyFetch>
-      <code><![CDATA[$locRows[$i]->address]]></code>
-      <code><![CDATA[$locRows[$i]->class_id]]></code>
-      <code><![CDATA[$locRows[$i]->node_id]]></code>
-      <code><![CDATA[$locRows[$i]->refcount]]></code>
-      <code><![CDATA[$locRows[$i]->string_value_id]]></code>
-    </InvalidPropertyFetch>
     <MixedPropertyTypeCoercion>
       <code><![CDATA[$frameLabels]]></code>
     </MixedPropertyTypeCoercion>
+    <RedundantCast>
+      <code><![CDATA[(int)$locRows[$i]->address]]></code>
+      <code><![CDATA[(int)$locRows[$i]->class_id]]></code>
+      <code><![CDATA[(int)$locRows[$i]->node_id]]></code>
+      <code><![CDATA[(int)$locRows[$i]->refcount]]></code>
+      <code><![CDATA[(int)$locRows[$i]->string_value_id]]></code>
+    </RedundantCast>
   </file>
   <file src="src/Rmem/Serve/RmemQueryService.php">
     <MixedReturnTypeCoercion>

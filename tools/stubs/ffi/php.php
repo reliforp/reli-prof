@@ -603,3 +603,39 @@ class php_shutdown_function_entry extends CData
 class php_basic_globals extends CData
 {
 }
+
+// Binary .rmem section row structs — see
+// src/Inspector/Output/MemoryOutput/BinaryFormat/Reader.php::getStructFfi()
+// for the C-side definitions; these mirrors let Psalm infer the field
+// types when callers do `$rows = $reader->castSection(SECTION, 'EdgeRow')`
+// followed by `$rows[$i]->parent_node_id`.
+class NodeRow extends CData
+{
+    public int $node_id;
+    public int $canonical_id;
+    public int $type_id;
+    public int $class_id;
+}
+
+class EdgeRow extends CData
+{
+    public int $parent_node_id;
+    public int $child_node_id;
+    public int $link_name_id;
+    public int $is_tree;
+    public int $strength;
+}
+
+class LocationRow extends CData
+{
+    public int $node_id;
+    public int $location_type_id;
+    public int $class_id;
+    public int $address;
+    public int $size;
+    public int $string_value_id;
+    public int $refcount;
+    public int $type_info;
+    public int $region_id;
+    public int $bin_overhead;
+}
