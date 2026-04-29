@@ -23,6 +23,21 @@ RUN apt-get update && apt-get install -y \
 # the type-narrowing asserts still fire during phpunit.
 RUN echo 'zend.assertions=-1' > /usr/local/etc/php/conf.d/zz-assertions.ini
 
+# Bump PHP's runtime memory_limit. Several reli commands (notably
+# inspector:peek-var, but also the eager symbol-resolver path used by
+# inspector:trace / inspector:memory:* on first attach) read the target
+# binary fully into a PHP string via FFI::string. With phpenv-style or
+# debug-info-bearing PHP builds, the target binary is comfortably 50-100 MB,
+# and at PHP's default 128 MB memory_limit the FFI buffer + PHP string copies
+# during ELF parsing push past the cap and fault as
+# "Allowed memory size of 134217728 bytes exhausted ... in NativeFileReader".
+# 256M gives enough headroom for those host PHP shapes without making the
+# image's per-invocation memory footprint unreasonable. Longer-term, the
+# individual commands should grow `--memory-limit` flags and the symbol
+# resolver should stream rather than buffer the whole binary, at which
+# point this default can shrink again.
+RUN echo 'memory_limit=256M' > /usr/local/etc/php/conf.d/zz-memory.ini
+
 COPY --from=composer /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
