@@ -261,39 +261,31 @@ After that you're in a sandwich-style explorer modelled loosely on
 
 ### Screenshots
 
-Click any thumbnail for the full-size image.
+#### Panes view
+![panes view](../images/rbt-explore-panes.png)
+
+#### Flame view
+![flame view](../images/rbt-explore-flame.png)
+
+#### Callers / callees tree views
+
+Click either thumbnail for the full-size image.
 
 <table>
   <tr>
     <td align="center" width="50%">
-      <a href="../images/rbt-explore-panes.png">
-        <img src="../images/rbt-explore-panes.png" width="420" alt="panes view">
-      </a>
-      <br>
-      <sub><b>Panes view</b></sub>
-    </td>
-    <td align="center" width="50%">
-      <a href="../images/rbt-explore-flame.png">
-        <img src="../images/rbt-explore-flame.png" width="420" alt="flame view">
-      </a>
-      <br>
-      <sub><b>Flame view</b></sub>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="50%">
       <a href="../images/rbt-explore-callers-tree.png">
-        <img src="../images/rbt-explore-callers-tree.png" width="420" alt="callers tree view">
+        <img src="../images/rbt-explore-callers-tree.png" alt="callers tree view">
       </a>
       <br>
-      <sub><b>Callers tree view</b></sub>
+      <sub><b>Callers tree</b></sub>
     </td>
     <td align="center" width="50%">
       <a href="../images/rbt-explore-callees-tree.png">
-        <img src="../images/rbt-explore-callees-tree.png" width="420" alt="callees tree view">
+        <img src="../images/rbt-explore-callees-tree.png" alt="callees tree view">
       </a>
       <br>
-      <sub><b>Callees tree view</b></sub>
+      <sub><b>Callees tree</b></sub>
     </td>
   </tr>
 </table>
