@@ -472,9 +472,11 @@ spec:
 
 ## Performance
 
-At the default `--poll-interval=1000` (1 second), polling overhead is negligible
-for any trigger combination. Roughly in increasing order of cost:
-**memory / RSS triggers ≪ function / depth triggers < variable watch**.
+At the default `--poll-interval=1000` (1 second), per-target polling overhead is
+negligible for typical trigger combinations. Roughly: memory / RSS and
+function / depth triggers stay sub-millisecond; variable watch is the expensive
+tier, but still small at the default interval. In daemon mode the total cost
+scales with the number of monitored processes.
 
 <details>
 <summary>Measured polling overhead (PHP 8.4, median)</summary>
