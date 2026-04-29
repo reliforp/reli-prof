@@ -230,40 +230,18 @@
     <ArgumentTypeCoercion>
       <code><![CDATA[$lines]]></code>
       <code><![CDATA[$lines]]></code>
+      <code><![CDATA[$this->childRows[$i]]]></code>
+      <code><![CDATA[$this->parentRows[$i]]]></code>
+      <code><![CDATA[$this->rows[$i]]]></code>
     </ArgumentTypeCoercion>
     <InvalidArrayOffset>
       <code><![CDATA[$help[$i - 1]]]></code>
-      <code><![CDATA[$row['_class']]]></code>
-      <code><![CDATA[$row['_scc_id']]]></code>
-      <code><![CDATA[$row['_scc_nodes']]]></code>
-      <code><![CDATA[$row['_type']]]></code>
     </InvalidArrayOffset>
-    <InvalidOperand>
-      <code><![CDATA[$cols * 0.3]]></code>
-    </InvalidOperand>
-    <InvalidPropertyAssignmentValue>
-      <code><![CDATA[$results]]></code>
-      <code><![CDATA[$this->rows]]></code>
-      <code><![CDATA[$this->rows]]></code>
-      <code><![CDATA[$this->rows]]></code>
-      <code><![CDATA[$this->rows]]></code>
-    </InvalidPropertyAssignmentValue>
     <MixedArgument>
-      <code><![CDATA[$className]]></code>
-      <code><![CDATA[$prevNodeId]]></code>
-      <code><![CDATA[$row['_scc_nodes']]]></code>
       <code><![CDATA[$text]]></code>
-      <code><![CDATA[$typeName]]></code>
     </MixedArgument>
     <MixedArgumentTypeCoercion>
-      <code><![CDATA[$parts]]></code>
       <code><![CDATA[$response]]></code>
-      <code><![CDATA[[
-                'id' => $row['_scc_id'] ?? 0,
-                'nodes' => $row['_scc_nodes'],
-                'node_count' => count($row['_scc_nodes']),
-                'total_size' => $row['retained'],
-            ]]]></code>
       <code><![CDATA[array_slice($lines, 1)]]></code>
     </MixedArgumentTypeCoercion>
     <MixedArrayAccess>
@@ -271,25 +249,13 @@
       <code><![CDATA[$b['total_size']]]></code>
     </MixedArrayAccess>
     <MixedAssignment>
-      <code><![CDATA[$className]]></code>
       <code><![CDATA[$header]]></code>
-      <code><![CDATA[$parts[]]]></code>
-      <code><![CDATA[$prevNodeId]]></code>
       <code><![CDATA[$text]]></code>
-      <code><![CDATA[$this->focusLabel]]></code>
-      <code><![CDATA[$this->focusNodeId]]></code>
-      <code><![CDATA[$this->listModeParam]]></code>
-      <code><![CDATA[$this->listModeParam]]></code>
-      <code><![CDATA[$this->selected]]></code>
-      <code><![CDATA[$this->topRow]]></code>
-      <code><![CDATA[$typeName]]></code>
     </MixedAssignment>
     <MixedOperand>
       <code><![CDATA[$header]]></code>
       <code><![CDATA[$header]]></code>
       <code><![CDATA[$lines[$lastIdx]]]></code>
-      <code><![CDATA[self::$SPINNER[$this->spinnerFrame]]]></code>
-      <code><![CDATA[self::$SPINNER[$this->spinnerFrame]]]></code>
     </MixedOperand>
     <PossiblyFalseOperand>
       <code><![CDATA[$idx]]></code>
