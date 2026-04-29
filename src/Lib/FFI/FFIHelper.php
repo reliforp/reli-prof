@@ -35,24 +35,32 @@ final class FFIHelper
      * would otherwise blow up PHPUnit's RunTestsInSeparateProcesses
      * serialization.
      *
+     * Throws on the rare null return path (e.g. invalid type spec) so the
+     * non-nullable return type is honest and callers do not need to write
+     * `?? throw new …` at every site — Psalm would otherwise flag those
+     * as RedundantCondition / TypeDoesNotContainNull.
+     *
      * @template T of CData
      * @param \FFI\CType|non-empty-string $type
-     * @psalm-suppress InvalidNullableReturnType, NullableReturnStatement
      */
     public static function cast(\FFI\CType|string $type, CData &$ptr): CData
     {
-        /** @var CData */
-        return self::ffi()->cast($type, $ptr);
+        return self::ffi()->cast($type, $ptr)
+            ?? throw new CannotCastCDataException(
+                'FFI::cast(' . (is_string($type) ? $type : '<CType>') . ') returned null'
+            );
     }
 
     /**
      * @param \FFI\CType|non-empty-string $type
-     * @psalm-suppress InvalidNullableReturnType, NullableReturnStatement
+     * @throws CannotAllocateBufferException when FFI::new() returns null
      */
     public static function new(\FFI\CType|string $type, bool $owned = true, bool $persistent = false): CData
     {
-        /** @var CData */
-        return self::ffi()->new($type, $owned, $persistent);
+        return self::ffi()->new($type, $owned, $persistent)
+            ?? throw new CannotAllocateBufferException(
+                'FFI::new(' . (is_string($type) ? $type : '<CType>') . ') returned null'
+            );
     }
 
     /**

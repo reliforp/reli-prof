@@ -289,39 +289,36 @@ namespace FFI {
     class CData
     {
         /**
-         * Note that this method does not physically exist and is only required
-         * for correct type inference.
+         * Array-access methods are declared public so that `$cdata[$i]`
+         * type-checks: ext/ffi implements the indexing operator on
+         * CArray-shaped CData at the engine level (no actual PHP method
+         * is called at runtime), but Psalm still checks visibility on
+         * the synthetic ArrayAccess methods. The upstream stub marked
+         * these private with a comment that they "don't physically
+         * exist", which is true at the C level but causes Psalm to
+         * report InaccessibleMethod on every legitimate `$cdata[$i]`.
          *
          * @param int $offset
          * @return bool
          */
-        private function offsetExists(int $offset) {}
+        public function offsetExists(int $offset) {}
 
         /**
-         * Note that this method does not physically exist and is only required
-         * for correct type inference.
-         *
          * @param int $offset
          * @return CData|int|float|bool|null|string
          */
-        private function offsetGet(int $offset) {}
+        public function offsetGet(int $offset) {}
 
         /**
-         * Note that this method does not physically exist and is only required
-         * for correct type inference.
-         *
          * @param int $offset
          * @param CData|int|float|bool|null|string $value
          */
-        private function offsetSet(int $offset, $value) {}
+        public function offsetSet(int $offset, $value) {}
 
         /**
-         * Note that this method does not physically exist and is only required
-         * for correct type inference.
-         *
          * @param int $offset
          */
-        private function offsetUnset(int $offset) {}
+        public function offsetUnset(int $offset) {}
 
         /**
          * Note that this method does not physically exist and is only required

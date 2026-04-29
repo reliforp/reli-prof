@@ -16,7 +16,6 @@ namespace Reli\Lib\Libc\Sys\Ptrace;
 use FFI\CData;
 use FFI\CInteger;
 use Reli\Lib\FFI\CannotAllocateBufferException;
-use Reli\Lib\FFI\CannotCastCDataException;
 use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\Libc\Addressable;
 
@@ -73,19 +72,15 @@ final class PtraceAarch64 implements Ptrace
     ): int {
         if (is_null($addr) or is_int($addr)) {
             /** @var CInteger */
-            $addr_holder = FFIHelper::new('long')
-                ?? throw new CannotAllocateBufferException('cannot allocate buffer');
+            $addr_holder = FFIHelper::new('long');
             $addr_holder->cdata = (int)$addr;
-            $addr = FFIHelper::cast('void *', $addr_holder)
-                ?? throw new CannotCastCDataException('cannot cast buffer');
+            $addr = FFIHelper::cast('void *', $addr_holder);
         }
         if (is_null($data) or is_int($data)) {
             /** @var CInteger */
-            $data_holder = FFIHelper::new('long')
-                ?? throw new CannotAllocateBufferException('cannot allocate buffer');
+            $data_holder = FFIHelper::new('long');
             $data_holder->cdata = (int)$data;
-            $data = FFIHelper::cast('void *', $data_holder)
-                ?? throw new CannotCastCDataException('cannot cast buffer');
+            $data = FFIHelper::cast('void *', $data_holder);
         }
 
         $addr_pointer = $addr instanceof Addressable ? $addr->toVoidPointer() : $addr;

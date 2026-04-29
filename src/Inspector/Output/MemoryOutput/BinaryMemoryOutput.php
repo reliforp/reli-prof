@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput;
 
+use PhpCast\Cast;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\DiskBackedStringDict;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Writer;
@@ -247,9 +248,9 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
                 $is_tree = ord($data[$off + 12]);
 
                 if ($parent_idx < $nc) {
-                    $allDeg[$parent_idx] = (int)$allDeg[$parent_idx] + 1;
+                    $allDeg[$parent_idx] = Cast::toInt($allDeg[$parent_idx]) + 1;
                     if ($is_tree === 1) {
-                        $treeDeg[$parent_idx] = (int)$treeDeg[$parent_idx] + 1;
+                        $treeDeg[$parent_idx] = Cast::toInt($treeDeg[$parent_idx]) + 1;
                         $treeEdgeCount++;
 
                         // Track tree parent for child
@@ -260,7 +261,7 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
                             $treeParents[$child_idx] = $parent_idx;
                         }
                     } else {
-                        $nontreeDeg[$parent_idx] = (int)$nontreeDeg[$parent_idx] + 1;
+                        $nontreeDeg[$parent_idx] = Cast::toInt($nontreeDeg[$parent_idx]) + 1;
                         $nontreeEdgeCount++;
                     }
                 }
@@ -278,14 +279,14 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
         $allRowPtr[0] = 0;
         $nontreeRowPtr[0] = 0;
         for ($i = 0; $i < $nc; $i++) {
-            $treeRowPtr[$i + 1] = (int)$treeRowPtr[$i] + (int)$treeDeg[$i];
-            $allRowPtr[$i + 1] = (int)$allRowPtr[$i] + (int)$allDeg[$i];
-            $nontreeRowPtr[$i + 1] = (int)$nontreeRowPtr[$i] + (int)$nontreeDeg[$i];
+            $treeRowPtr[$i + 1] = Cast::toInt($treeRowPtr[$i]) + Cast::toInt($treeDeg[$i]);
+            $allRowPtr[$i + 1] = Cast::toInt($allRowPtr[$i]) + Cast::toInt($allDeg[$i]);
+            $nontreeRowPtr[$i + 1] = Cast::toInt($nontreeRowPtr[$i]) + Cast::toInt($nontreeDeg[$i]);
         }
 
-        $totalAllEdges = (int)$allRowPtr[$nc];
-        $totalTreeEdges = (int)$treeRowPtr[$nc];
-        $totalNontreeEdges = (int)$nontreeRowPtr[$nc];
+        $totalAllEdges = Cast::toInt($allRowPtr[$nc]);
+        $totalTreeEdges = Cast::toInt($treeRowPtr[$nc]);
+        $totalNontreeEdges = Cast::toInt($nontreeRowPtr[$nc]);
 
         // Allocate col_idx + link_name + strength arrays
         $allColIdx = FFIHelper::new("int32_t[" . max(1, $totalAllEdges) . "]");
@@ -299,9 +300,9 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
         $allPos = FFIHelper::new("int32_t[{$nc}]");
         $nontreePos = FFIHelper::new("int32_t[{$nc}]");
         for ($i = 0; $i < $nc; $i++) {
-            $treePos[$i] = (int)$treeRowPtr[$i];
-            $allPos[$i] = (int)$allRowPtr[$i];
-            $nontreePos[$i] = (int)$nontreeRowPtr[$i];
+            $treePos[$i] = Cast::toInt($treeRowPtr[$i]);
+            $allPos[$i] = Cast::toInt($allRowPtr[$i]);
+            $nontreePos[$i] = Cast::toInt($nontreeRowPtr[$i]);
         }
 
         // ---- Pass 2: fill col_idx ----
@@ -337,18 +338,18 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
 
                 if ($parent_idx < $nc) {
                     // All edges
-                    $pos = (int)$allPos[$parent_idx];
+                    $pos = Cast::toInt($allPos[$parent_idx]);
                     $allColIdx[$pos] = $child_idx;
                     $allPos[$parent_idx] = $pos + 1;
 
                     if ($is_tree === 1) {
-                        $pos = (int)$treePos[$parent_idx];
+                        $pos = Cast::toInt($treePos[$parent_idx]);
                         $treeColIdx[$pos] = $child_idx;
                         $treeLinkNames[$pos] = $link_name_id;
                         $treeStrength[$pos] = $strength;
                         $treePos[$parent_idx] = $pos + 1;
                     } else {
-                        $pos = (int)$nontreePos[$parent_idx];
+                        $pos = Cast::toInt($nontreePos[$parent_idx]);
                         $nontreeColIdx[$pos] = $child_idx;
                         $nontreePos[$parent_idx] = $pos + 1;
                     }

@@ -288,7 +288,7 @@ final class RmemMcpCommand extends ReliCommand
         /** @var array<string, mixed> $backendRequest */
         $backendRequest = ['action' => $action];
         foreach ($args as $key => $value) {
-            $backendRequest[(string)$key] = $value;
+            $backendRequest[$key] = $value;
         }
 
         $result = $this->queryBackend($backendRequest);

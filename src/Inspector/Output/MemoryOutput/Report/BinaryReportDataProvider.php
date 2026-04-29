@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Output\MemoryOutput\Report;
 
 use FFI;
+use PhpCast\Cast;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\StringDict;
@@ -317,7 +318,7 @@ final class BinaryReportDataProvider
                 if ($child < 0 || $child >= $nodeSizesSlots) {
                     continue;
                 }
-                $size = (int)$nodeSizes[$child];
+                $size = Cast::toInt($nodeSizes[$child]);
                 if ($size <= 0) {
                     continue;
                 }
@@ -346,7 +347,7 @@ final class BinaryReportDataProvider
                 if ($child < 0 || $child >= $nodeSizesSlots) {
                     continue;
                 }
-                $size = (int)$nodeSizes[$child];
+                $size = Cast::toInt($nodeSizes[$child]);
                 if ($size <= 0) {
                     continue;
                 }
@@ -382,7 +383,7 @@ final class BinaryReportDataProvider
                 if ($nid < 0 || $nid >= $nodeSizesSlots) {
                     continue;
                 }
-                $cur = (int)$locIndex[$nid];
+                $cur = Cast::toInt($locIndex[$nid]);
                 if ($cur === -1) {
                     // First row for this node
                     $locIndex[$nid] = $i;
@@ -424,7 +425,7 @@ final class BinaryReportDataProvider
             }
             $sampleLocType = null;
             if ($locIndex !== null && $locRows !== null) {
-                $li = (int)$locIndex[$info['sample_child_node_id']];
+                $li = Cast::toInt($locIndex[$info['sample_child_node_id']]);
                 if ($li >= 0) {
                     $sampleLocType = $dict->lookup((int)$locRows[$li]->location_type_id);
                 }
@@ -484,7 +485,7 @@ final class BinaryReportDataProvider
                 if ($child < 0 || $child >= $nodeSizesSlots) {
                     continue;
                 }
-                $size = (int)$nodeSizes[$child];
+                $size = Cast::toInt($nodeSizes[$child]);
                 if ($size <= 0) {
                     continue;
                 }
@@ -507,7 +508,7 @@ final class BinaryReportDataProvider
                 if ($child < 0 || $child >= $nodeSizesSlots) {
                     continue;
                 }
-                $size = (int)$nodeSizes[$child];
+                $size = Cast::toInt($nodeSizes[$child]);
                 if ($size <= 0) {
                     continue;
                 }
@@ -857,7 +858,7 @@ final class BinaryReportDataProvider
         if ($locIndex === null || $locRows === null) {
             return $meta;
         }
-        $li = (int)$locIndex[$nodeId];
+        $li = Cast::toInt($locIndex[$nodeId]);
         if ($li < 0) {
             return $meta;
         }
@@ -1220,18 +1221,15 @@ final class BinaryReportDataProvider
         if ($string_counts !== []) {
             arsort($string_counts);
             $values = array_keys($string_counts);
-            $top_value = (string)($values[0] ?? '');
+            $top_value = $values[0] ?? '';
             if (strlen($top_value) > 60) {
                 $top_value = substr($top_value, 0, 57) . '...';
             }
 
             $samples = array_map(
-                static function (string|int $value): string {
-                    $value = (string)$value;
-                    return strlen($value) > 40
-                        ? substr($value, 0, 37) . '...'
-                        : $value;
-                },
+                static fn (string $value): string => strlen($value) > 40
+                    ? substr($value, 0, 37) . '...'
+                    : $value,
                 array_slice($values, 0, 5),
             );
 

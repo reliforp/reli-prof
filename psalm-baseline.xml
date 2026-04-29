@@ -1,10 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <files psalm-version="6.16.1@f1f5de594dc76faf8784e02d3dc4716c91c6f6ac">
-  <file src="src/Command/Inspector/MemoryCompareCommand.php">
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(int)$size_u[1]]]></code>
-    </RedundantCastGivenDocblockType>
-  </file>
   <file src="src/Command/Inspector/MemoryDumpNormalizeCommand.php">
     <InvalidOperand>
       <code><![CDATA[$result['total_bytes'] / 1024.0]]></code>
@@ -26,14 +21,10 @@
   </file>
   <file src="src/Command/Rmem/RmemMcpCommand.php">
     <MixedAssignment>
-      <code><![CDATA[$backendRequest[(string)$key]]]></code>
       <code><![CDATA[$id]]></code>
       <code><![CDATA[$resp]]></code>
       <code><![CDATA[$value]]></code>
     </MixedAssignment>
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(string)$key]]></code>
-    </RedundantCastGivenDocblockType>
     <RiskyTruthyFalsyComparison>
       <code><![CDATA[!($result['ok'] ?? false)]]></code>
     </RiskyTruthyFalsyComparison>
@@ -46,9 +37,6 @@
       <code><![CDATA[unpack('V', $data, $offset)[1]]]></code>
       <code><![CDATA[unpack('V', $data, 0)[1]]]></code>
     </PossiblyInvalidArrayAccess>
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(int) $size[1]]]></code>
-    </RedundantCastGivenDocblockType>
   </file>
   <file src="src/Command/Rmem/RmemServeCommand.php">
     <MixedAssignment>
@@ -95,9 +83,6 @@
     </TypeDoesNotContainNull>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/BinaryFormat/DerivedCacheReader.php">
-    <InaccessibleMethod>
-      <code><![CDATA[$buf]]></code>
-    </InaccessibleMethod>
     <PossiblyInvalidArgument>
       <code><![CDATA[$buf[$elemOffset]]]></code>
     </PossiblyInvalidArgument>
@@ -118,9 +103,6 @@
     </RedundantConditionGivenDocblockType>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/BinaryFormat/DerivedCacheWriter.php">
-    <InaccessibleMethod>
-      <code><![CDATA[$data]]></code>
-    </InaccessibleMethod>
     <InvalidOperand>
       <code><![CDATA[getmypid()]]></code>
     </InvalidOperand>
@@ -143,90 +125,6 @@
     </PossiblyInvalidArrayAccess>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/BinaryMemoryOutput.php">
-    <InaccessibleMethod>
-      <code><![CDATA[$allColIdx]]></code>
-      <code><![CDATA[$allColIdx]]></code>
-      <code><![CDATA[$allDeg]]></code>
-      <code><![CDATA[$allDeg]]></code>
-      <code><![CDATA[$allDeg]]></code>
-      <code><![CDATA[$allDeg]]></code>
-      <code><![CDATA[$allPos]]></code>
-      <code><![CDATA[$allPos]]></code>
-      <code><![CDATA[$allPos]]></code>
-      <code><![CDATA[$allPos]]></code>
-      <code><![CDATA[$allPos]]></code>
-      <code><![CDATA[$allRowPtr]]></code>
-      <code><![CDATA[$allRowPtr]]></code>
-      <code><![CDATA[$allRowPtr]]></code>
-      <code><![CDATA[$allRowPtr]]></code>
-      <code><![CDATA[$allRowPtr]]></code>
-      <code><![CDATA[$allRowPtr]]></code>
-      <code><![CDATA[$allRowPtr]]></code>
-      <code><![CDATA[$nontreeColIdx]]></code>
-      <code><![CDATA[$nontreeColIdx]]></code>
-      <code><![CDATA[$nontreeDeg]]></code>
-      <code><![CDATA[$nontreeDeg]]></code>
-      <code><![CDATA[$nontreeDeg]]></code>
-      <code><![CDATA[$nontreeDeg]]></code>
-      <code><![CDATA[$nontreePos]]></code>
-      <code><![CDATA[$nontreePos]]></code>
-      <code><![CDATA[$nontreePos]]></code>
-      <code><![CDATA[$nontreePos]]></code>
-      <code><![CDATA[$nontreePos]]></code>
-      <code><![CDATA[$nontreeRowPtr]]></code>
-      <code><![CDATA[$nontreeRowPtr]]></code>
-      <code><![CDATA[$nontreeRowPtr]]></code>
-      <code><![CDATA[$nontreeRowPtr]]></code>
-      <code><![CDATA[$nontreeRowPtr]]></code>
-      <code><![CDATA[$nontreeRowPtr]]></code>
-      <code><![CDATA[$nontreeRowPtr]]></code>
-      <code><![CDATA[$treeColIdx]]></code>
-      <code><![CDATA[$treeColIdx]]></code>
-      <code><![CDATA[$treeDeg]]></code>
-      <code><![CDATA[$treeDeg]]></code>
-      <code><![CDATA[$treeDeg]]></code>
-      <code><![CDATA[$treeDeg]]></code>
-      <code><![CDATA[$treeLinkNames]]></code>
-      <code><![CDATA[$treeLinkNames]]></code>
-      <code><![CDATA[$treeParents]]></code>
-      <code><![CDATA[$treeParents]]></code>
-      <code><![CDATA[$treeParents]]></code>
-      <code><![CDATA[$treeParents]]></code>
-      <code><![CDATA[$treePos]]></code>
-      <code><![CDATA[$treePos]]></code>
-      <code><![CDATA[$treePos]]></code>
-      <code><![CDATA[$treePos]]></code>
-      <code><![CDATA[$treePos]]></code>
-      <code><![CDATA[$treeRowPtr]]></code>
-      <code><![CDATA[$treeRowPtr]]></code>
-      <code><![CDATA[$treeRowPtr]]></code>
-      <code><![CDATA[$treeRowPtr]]></code>
-      <code><![CDATA[$treeRowPtr]]></code>
-      <code><![CDATA[$treeRowPtr]]></code>
-      <code><![CDATA[$treeRowPtr]]></code>
-      <code><![CDATA[$treeStrength]]></code>
-      <code><![CDATA[$treeStrength]]></code>
-    </InaccessibleMethod>
-    <InvalidCast>
-      <code><![CDATA[$allDeg[$i]]]></code>
-      <code><![CDATA[$allDeg[$parent_idx]]]></code>
-      <code><![CDATA[$allPos[$parent_idx]]]></code>
-      <code><![CDATA[$allRowPtr[$i]]]></code>
-      <code><![CDATA[$allRowPtr[$i]]]></code>
-      <code><![CDATA[$allRowPtr[$nc]]]></code>
-      <code><![CDATA[$nontreeDeg[$i]]]></code>
-      <code><![CDATA[$nontreeDeg[$parent_idx]]]></code>
-      <code><![CDATA[$nontreePos[$parent_idx]]]></code>
-      <code><![CDATA[$nontreeRowPtr[$i]]]></code>
-      <code><![CDATA[$nontreeRowPtr[$i]]]></code>
-      <code><![CDATA[$nontreeRowPtr[$nc]]]></code>
-      <code><![CDATA[$treeDeg[$i]]]></code>
-      <code><![CDATA[$treeDeg[$parent_idx]]]></code>
-      <code><![CDATA[$treePos[$parent_idx]]]></code>
-      <code><![CDATA[$treeRowPtr[$i]]]></code>
-      <code><![CDATA[$treeRowPtr[$i]]]></code>
-      <code><![CDATA[$treeRowPtr[$nc]]]></code>
-    </InvalidCast>
     <MixedArgument>
       <code><![CDATA[$nodeSlots]]></code>
       <code><![CDATA[$nodeSlots * 4]]></code>
@@ -245,30 +143,6 @@
     </TypeDoesNotContainType>
   </file>
   <file src="src/Inspector/Output/MemoryOutput/Report/BinaryReportDataProvider.php">
-    <InaccessibleMethod>
-      <code><![CDATA[$edgeRows]]></code>
-      <code><![CDATA[$edgeRows]]></code>
-      <code><![CDATA[$edgeRows]]></code>
-      <code><![CDATA[$edgeRows]]></code>
-      <code><![CDATA[$edgeRows]]></code>
-      <code><![CDATA[$edgeRows]]></code>
-      <code><![CDATA[$edgeRows]]></code>
-      <code><![CDATA[$edgeRows]]></code>
-      <code><![CDATA[$edgeRows]]></code>
-      <code><![CDATA[$locIndex]]></code>
-      <code><![CDATA[$locRows]]></code>
-      <code><![CDATA[$locRows]]></code>
-      <code><![CDATA[$locRows]]></code>
-    </InaccessibleMethod>
-    <InvalidCast>
-      <code><![CDATA[$locIndex[$info['sample_child_node_id']]]]></code>
-      <code><![CDATA[$locIndex[$nid]]]></code>
-      <code><![CDATA[$locIndex[$nodeId]]]></code>
-      <code><![CDATA[$nodeSizes[$child]]]></code>
-      <code><![CDATA[$nodeSizes[$child]]]></code>
-      <code><![CDATA[$nodeSizes[$child]]]></code>
-      <code><![CDATA[$nodeSizes[$child]]]></code>
-    </InvalidCast>
     <InvalidPropertyFetch>
       <code><![CDATA[$edgeRows[$i]->child_node_id]]></code>
       <code><![CDATA[$edgeRows[$i]->child_node_id]]></code>
@@ -314,10 +188,6 @@
       <code><![CDATA[$locRows[$li]->location_type_id]]></code>
       <code><![CDATA[$locRows[$li]->string_value_id]]></code>
     </PossiblyNullPropertyFetch>
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(string)$value]]></code>
-      <code><![CDATA[(string)($values[0] ?? '')]]></code>
-    </RedundantCastGivenDocblockType>
     <RedundantCondition>
       <code><![CDATA[$cnt <= 50]]></code>
       <code><![CDATA[$info['ref_count'] <= 50]]></code>
@@ -393,38 +263,6 @@
     <PropertyTypeCoercion>
       <code><![CDATA[$profiles]]></code>
     </PropertyTypeCoercion>
-    <RedundantCastGivenDocblockType>
-      <code><![CDATA[(int)$cls_u[1]]]></code>
-      <code><![CDATA[(int)$size_u[1]]]></code>
-    </RedundantCastGivenDocblockType>
-  </file>
-  <file src="src/Lib/Libc/Sys/Ptrace/PtraceAarch64.php">
-    <RedundantCondition>
-      <code><![CDATA[FFIHelper::cast('void *', $addr_holder)]]></code>
-      <code><![CDATA[FFIHelper::cast('void *', $data_holder)]]></code>
-      <code><![CDATA[FFIHelper::new('long')]]></code>
-      <code><![CDATA[FFIHelper::new('long')]]></code>
-    </RedundantCondition>
-    <TypeDoesNotContainNull>
-      <code><![CDATA[throw new CannotAllocateBufferException('cannot allocate buffer')]]></code>
-      <code><![CDATA[throw new CannotAllocateBufferException('cannot allocate buffer')]]></code>
-      <code><![CDATA[throw new CannotCastCDataException('cannot cast buffer')]]></code>
-      <code><![CDATA[throw new CannotCastCDataException('cannot cast buffer')]]></code>
-    </TypeDoesNotContainNull>
-  </file>
-  <file src="src/Lib/Libc/Sys/Ptrace/PtraceX64.php">
-    <RedundantCondition>
-      <code><![CDATA[FFIHelper::cast('void *', $addr_holder)]]></code>
-      <code><![CDATA[FFIHelper::cast('void *', $data_holder)]]></code>
-      <code><![CDATA[FFIHelper::new('long')]]></code>
-      <code><![CDATA[FFIHelper::new('long')]]></code>
-    </RedundantCondition>
-    <TypeDoesNotContainNull>
-      <code><![CDATA[throw new CannotAllocateBufferException('cannot allocate buffer')]]></code>
-      <code><![CDATA[throw new CannotAllocateBufferException('cannot allocate buffer')]]></code>
-      <code><![CDATA[throw new CannotCastCDataException('cannot cast buffer')]]></code>
-      <code><![CDATA[throw new CannotCastCDataException('cannot cast buffer')]]></code>
-    </TypeDoesNotContainNull>
   </file>
   <file src="src/Lib/PhpInternals/Types/Zend/ZendOp.php">
     <TypeDoesNotContainNull>
@@ -455,20 +293,6 @@
     </RedundantCast>
   </file>
   <file src="src/Lib/PhpProcessReader/PhpMemoryReader/ContextAnalyzer/BinaryContextTreeSink.php">
-    <InaccessibleMethod>
-      <code><![CDATA[$map]]></code>
-      <code><![CDATA[$map]]></code>
-      <code><![CDATA[$map]]></code>
-      <code><![CDATA[$map]]></code>
-      <code><![CDATA[$new_classes]]></code>
-      <code><![CDATA[$new_classes]]></code>
-      <code><![CDATA[$this->perNodeClasses]]></code>
-      <code><![CDATA[$this->perNodeClasses]]></code>
-      <code><![CDATA[$this->perNodeClasses]]></code>
-      <code><![CDATA[$this->perNodeSizes]]></code>
-      <code><![CDATA[$this->perNodeSizes]]></code>
-      <code><![CDATA[$this->perNodeSizes]]></code>
-    </InaccessibleMethod>
     <InvalidCast>
       <code><![CDATA[$this->perNodeClasses[$node_id]]]></code>
       <code><![CDATA[$this->perNodeSizes[$node_id]]]></code>
@@ -489,13 +313,6 @@
     </RedundantCast>
   </file>
   <file src="src/Lib/PhpProcessReader/PhpMemoryReader/MemoryLocation/FfiIntSet.php">
-    <InaccessibleMethod>
-      <code><![CDATA[$old_slots]]></code>
-      <code><![CDATA[$this->slots]]></code>
-      <code><![CDATA[$this->slots]]></code>
-      <code><![CDATA[$this->slots]]></code>
-      <code><![CDATA[$this->slots]]></code>
-    </InaccessibleMethod>
     <InvalidCast>
       <code><![CDATA[$old_slots[$i]]]></code>
       <code><![CDATA[$this->slots[$slot]]]></code>

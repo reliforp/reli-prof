@@ -363,7 +363,7 @@ final class RmemQueryCommand extends ReliCommand
                 '  type=%s addr=0x%x size=%s refcount=%d',
                 $type_name,
                 $addr[1],
-                SizeFormatter::format((int) $size[1]),
+                SizeFormatter::format($size[1]),
                 $refcount[1],
             );
             if ($class_name !== '') {
