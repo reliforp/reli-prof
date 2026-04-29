@@ -24,17 +24,51 @@ use Reli\Rbt\Explore\TerminalInterface;
  * Modes:
  * - List: flat list (roots or TopN retained)
  * - Sandwich: parents | focus | children (3-pane)
+ *
+ * @psalm-type Row = array{
+ *     node_id: int,
+ *     retained: int,
+ *     shallow: int,
+ *     label: string,
+ *     link_name?: string|null,
+ *     _class?: string,
+ *     _type?: string,
+ *     _count?: int,
+ *     _scc_id?: int,
+ *     _scc_nodes?: list<int>,
+ *     match_field?: string,
+ * }
  */
 final class RmemExploreTui
 {
     private bool $running = false;
 
     // ---- List mode state ----
-    /** @var list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}> */
+    /**
+     * Rows currently shown in the list pane. The shape is the union of
+     * fields used across all `listMode` values — see the class-level
+     * `@psalm-type Row` for the full layout.
+     *
+     * @var list<Row>
+     */
     private array $rows = [];
     private int $selected = 0;
     private int $topRow = 0;
-    /** @var list<array<string, mixed>> focus stack for list drill-down */
+    /**
+     * Focus stack for list drill-down. Currently never pushed to in
+     * this codebase (the back-from-drill-down branch reads from it but
+     * no path appends), but the typed shape lets the read-side narrow
+     * `array_pop()`'s return so the destructure in goBack() doesn't
+     * widen $this->focusNodeId / focusLabel / topRow / selected to
+     * mixed via array<string, mixed>.
+     *
+     * @var list<array{
+     *     node_id: int,
+     *     label: string,
+     *     selected?: int,
+     *     topRow?: int,
+     * }>
+     */
     private array $focusStack = [];
     private ?int $focusNodeId = null;
     private string $focusLabel = 'Roots';
@@ -43,9 +77,9 @@ final class RmemExploreTui
     private bool $sandwich = false;
     private int $sandwichNodeId = 0;
     private string $sandwichLabel = '';
-    /** @var list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}> */
+    /** @var list<Row> */
     private array $parentRows = [];
-    /** @var list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}> */
+    /** @var list<Row> */
     private array $childRows = [];
     private int $parentSelected = 0;
     private int $parentTopRow = 0;
@@ -126,7 +160,7 @@ final class RmemExploreTui
     private string $addrInput = '';
     private bool $searchPrompt = false;
     private string $searchInput = '';
-    /** @var list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}> */
+    /** @var list<Row> */
     private array $unfilteredRows = [];
     private bool $allEdges = true;
     /** 'retained' | 'link' */
@@ -138,6 +172,7 @@ final class RmemExploreTui
 
     private int $spinnerFrame = 0;
     private string $lastRendered = '';
+    /** @var list<string> */
     private static array $SPINNER = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];
     private ?int $queryChildPid = null;
     private ?int $sccBuilderPid = null;
@@ -1188,13 +1223,13 @@ final class RmemExploreTui
      *     sandwichNodeId: int,
      *     sandwichLabel: string,
      *     sandwichHistory: list<array{node_id: int, label: string, pane: string}>,
-     *     rows: list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}>,
+     *     rows: list<Row>,
      *     selected: int,
      *     topRow: int,
      *     focusLabel: string,
      *     listMode: 'normal'|'class_ranking'|'type_ranking'|'class_instances'|'type_instances'|'scc_members',
-     *     parentRows: list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}>,
-     *     childRows: list<array{node_id: int, retained: int, shallow: int, label: string, link_name?: string}>,
+     *     parentRows: list<Row>,
+     *     childRows: list<Row>,
      *     activePane: string,
      * }|null
      */
@@ -1784,7 +1819,9 @@ final class RmemExploreTui
         $sidebarW = 0;
         $sidebarLines = [];
         if ($this->showSidebar && $cols > 80) {
-            $sidebarW = min(40, (int)($cols * 0.3));
+            // intdiv with denominator 10 keeps both operands int (avoids
+            // psalm-058 strict int/float operand check).
+            $sidebarW = min(40, intdiv($cols * 3, 10));
             if ($focusId !== null) {
                 $allSidebarLines = $this->buildSidebarLines($focusId, $sidebarW, $rows + $this->sidebarScroll);
                 // Apply scroll
