@@ -25,8 +25,9 @@ $not_loaded = true;
 foreach ([__DIR__ . '/vendor/autoload.php', __DIR__ . '/../../autoload.php'] as $autoload) {
     if (file_exists($autoload)) {
         require $autoload;
+        $not_loaded = false;
+        break;
     }
-    $not_loaded = false;
 }
 
 if ($not_loaded) {
