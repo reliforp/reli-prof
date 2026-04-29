@@ -84,7 +84,7 @@ final class GetTraceCommand extends ReliCommand
     public function configure(): void
     {
         $this->setName('inspector:trace')
-            ->setDescription('periodically get call trace from an outer process or thread')
+            ->setDescription('periodically get call trace from a target process or thread')
         ;
         $this->target_process_settings_from_console_input->setOptions($this);
         $this->get_trace_settings_from_console_input->setOptions($this);
