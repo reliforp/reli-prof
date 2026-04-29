@@ -18,9 +18,15 @@ use Reli\Lib\Amphp\MessageProtocolInterface;
 use Reli\Lib\Log\Log;
 use Reli\Lib\Log\StateCollector\StateCollector;
 use Psr\Log\LoggerInterface;
+use Webmozart\Assert\Assert;
 
 return function (Channel $channel) use ($argv): void {
-    assert(count($argv) === 4);
+    // Worker is spawned by reli's parent with exactly 4 argv entries; a
+    // mismatch means either the launcher contract changed or the worker
+    // was invoked manually. Without this guard, the destructuring below
+    // silently leaves entries as null and the container build then fails
+    // with an opaque error far from the actual cause.
+    Assert::count($argv, 4);
     /**
      * @var class-string<WorkerEntryPointInterface> $entry_class
      * @var class-string<MessageProtocolInterface> $protocol_class
