@@ -129,7 +129,10 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
             . $this->packString(gmdate('Y-m-d\TH:i:s\Z'));
         $writer->writeSection(Format::SECTION_RUNS, $runs_data, 1);
 
-        // Section 8-9: Per-node sizes and classes for fast report loading.
+        // Sections 8-10: Per-node sizes/classes + canonical map. All three
+        // share the same `$nodeSlots = $maxNodeId + 1` width and run only
+        // when at least one node was emitted; keep them in a single block
+        // so $nodeSlots's scope is unambiguous.
         $maxNodeId = $sink->getMaxNodeId();
         if ($maxNodeId >= 0) {
             $nodeSlots = $maxNodeId + 1;
@@ -149,10 +152,6 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
                     $nodeSlots,
                 );
             }
-        }
-
-        // Section 10: Canonical map
-        if ($maxNodeId >= 0) {
             $canonicalMap = $sink->buildCanonicalMap();
             if ($canonicalMap !== null) {
                 $writer->writeSection(
@@ -191,8 +190,6 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
      * - SECTION_TREE_CSR_ROWPTR / COLIDX / LINKNAMES / STRENGTH
      * - SECTION_TREE_PARENTS
      * - SECTION_NONTREE_CSR_ROWPTR / COLIDX
-     *
-     * @psalm-suppress PossiblyInvalidArrayAccess
      */
     private function buildCsrSections(
         Writer $writer,
@@ -208,12 +205,12 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
         $nc = $nodeCount + 1; // +1 for sentinel -1 → index $nodeCount
 
         // Allocate degree arrays
-        $treeDeg = FFIHelper::new("int32_t[{$nc}]");
-        $allDeg = FFIHelper::new("int32_t[{$nc}]");
-        $nontreeDeg = FFIHelper::new("int32_t[{$nc}]");
+        $treeDeg = FFIHelper::newInt32Array($nc);
+        $allDeg = FFIHelper::newInt32Array($nc);
+        $nontreeDeg = FFIHelper::newInt32Array($nc);
 
         // Tree parent tracking
-        $treeParents = FFIHelper::new("int32_t[{$nc}]");
+        $treeParents = FFIHelper::newInt32Array($nc);
         for ($i = 0; $i < $nc; $i++) {
             $treeParents[$i] = -1;
         }
@@ -248,13 +245,9 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
                 $is_tree = ord($data[$off + 12]);
 
                 if ($parent_idx < $nc) {
-                    // (int) on FFI int32_t[] reads: avoid Cast::toInt() in
-                    // this O(edgeCount) loop. Element type is provably int
-                    // at runtime, but Psalm's FFI stub leaves offsetGet as
-                    // CData|null|scalar, so InvalidCast stays in baseline.
-                    $allDeg[$parent_idx] = (int)$allDeg[$parent_idx] + 1;
+                    $allDeg[$parent_idx] = $allDeg[$parent_idx] + 1;
                     if ($is_tree === 1) {
-                        $treeDeg[$parent_idx] = (int)$treeDeg[$parent_idx] + 1;
+                        $treeDeg[$parent_idx] = $treeDeg[$parent_idx] + 1;
                         $treeEdgeCount++;
 
                         // Track tree parent for child
@@ -265,7 +258,7 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
                             $treeParents[$child_idx] = $parent_idx;
                         }
                     } else {
-                        $nontreeDeg[$parent_idx] = (int)$nontreeDeg[$parent_idx] + 1;
+                        $nontreeDeg[$parent_idx] = $nontreeDeg[$parent_idx] + 1;
                         $nontreeEdgeCount++;
                     }
                 }
@@ -275,40 +268,38 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
         fclose($fp);
 
         // ---- Build row_ptr from degrees ----
-        $treeRowPtr = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $allRowPtr = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $nontreeRowPtr = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $treeRowPtr = FFIHelper::newInt32Array($nc + 1);
+        $allRowPtr = FFIHelper::newInt32Array($nc + 1);
+        $nontreeRowPtr = FFIHelper::newInt32Array($nc + 1);
 
         $treeRowPtr[0] = 0;
         $allRowPtr[0] = 0;
         $nontreeRowPtr[0] = 0;
-        // O(nc) prefix-sum: keep `(int)` to match the per-edge loops above.
         for ($i = 0; $i < $nc; $i++) {
-            $treeRowPtr[$i + 1] = (int)$treeRowPtr[$i] + (int)$treeDeg[$i];
-            $allRowPtr[$i + 1] = (int)$allRowPtr[$i] + (int)$allDeg[$i];
-            $nontreeRowPtr[$i + 1] = (int)$nontreeRowPtr[$i] + (int)$nontreeDeg[$i];
+            $treeRowPtr[$i + 1] = $treeRowPtr[$i] + $treeDeg[$i];
+            $allRowPtr[$i + 1] = $allRowPtr[$i] + $allDeg[$i];
+            $nontreeRowPtr[$i + 1] = $nontreeRowPtr[$i] + $nontreeDeg[$i];
         }
 
-        // One-shot scalar reads — Cast::toInt() is fine here, only 3 calls.
-        $totalAllEdges = Cast::toInt($allRowPtr[$nc]);
-        $totalTreeEdges = Cast::toInt($treeRowPtr[$nc]);
-        $totalNontreeEdges = Cast::toInt($nontreeRowPtr[$nc]);
+        $totalAllEdges = $allRowPtr[$nc];
+        $totalTreeEdges = $treeRowPtr[$nc];
+        $totalNontreeEdges = $nontreeRowPtr[$nc];
 
         // Allocate col_idx + link_name + strength arrays
-        $allColIdx = FFIHelper::new("int32_t[" . max(1, $totalAllEdges) . "]");
-        $treeColIdx = FFIHelper::new("int32_t[" . max(1, $totalTreeEdges) . "]");
-        $treeLinkNames = FFIHelper::new("int32_t[" . max(1, $totalTreeEdges) . "]");
-        $treeStrength = FFIHelper::new("int8_t[" . max(1, $totalTreeEdges) . "]");
-        $nontreeColIdx = FFIHelper::new("int32_t[" . max(1, $totalNontreeEdges) . "]");
+        $allColIdx = FFIHelper::newInt32Array(max(1, $totalAllEdges));
+        $treeColIdx = FFIHelper::newInt32Array(max(1, $totalTreeEdges));
+        $treeLinkNames = FFIHelper::newInt32Array(max(1, $totalTreeEdges));
+        $treeStrength = FFIHelper::newInt8Array(max(1, $totalTreeEdges));
+        $nontreeColIdx = FFIHelper::newInt32Array(max(1, $totalNontreeEdges));
 
         // Position counters (reuse degree arrays)
-        $treePos = FFIHelper::new("int32_t[{$nc}]");
-        $allPos = FFIHelper::new("int32_t[{$nc}]");
-        $nontreePos = FFIHelper::new("int32_t[{$nc}]");
+        $treePos = FFIHelper::newInt32Array($nc);
+        $allPos = FFIHelper::newInt32Array($nc);
+        $nontreePos = FFIHelper::newInt32Array($nc);
         for ($i = 0; $i < $nc; $i++) {
-            $treePos[$i] = (int)$treeRowPtr[$i];
-            $allPos[$i] = (int)$allRowPtr[$i];
-            $nontreePos[$i] = (int)$nontreeRowPtr[$i];
+            $treePos[$i] = $treeRowPtr[$i];
+            $allPos[$i] = $allRowPtr[$i];
+            $nontreePos[$i] = $nontreeRowPtr[$i];
         }
 
         // ---- Pass 2: fill col_idx ----
@@ -343,19 +334,18 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
                 $strength = ord($data[$off + 13]);
 
                 if ($parent_idx < $nc) {
-                    // All edges — `(int)` for the same hot-loop reasoning.
-                    $pos = (int)$allPos[$parent_idx];
+                    $pos = $allPos[$parent_idx];
                     $allColIdx[$pos] = $child_idx;
                     $allPos[$parent_idx] = $pos + 1;
 
                     if ($is_tree === 1) {
-                        $pos = (int)$treePos[$parent_idx];
+                        $pos = $treePos[$parent_idx];
                         $treeColIdx[$pos] = $child_idx;
                         $treeLinkNames[$pos] = $link_name_id;
                         $treeStrength[$pos] = $strength;
                         $treePos[$parent_idx] = $pos + 1;
                     } else {
-                        $pos = (int)$nontreePos[$parent_idx];
+                        $pos = $nontreePos[$parent_idx];
                         $nontreeColIdx[$pos] = $child_idx;
                         $nontreePos[$parent_idx] = $pos + 1;
                     }

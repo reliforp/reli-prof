@@ -65,36 +65,51 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private int $nodeCount = 0;
 
     // CSR for tree children
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $treeOffsets;
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $treeEdges;
 
     // CSR for strong tree children (tree + strong, for subtree sizes)
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $strongTreeOffsets;
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $strongTreeEdges;
 
     // CSR for all children (tree + non-tree)
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $allOffsets;
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $allEdges;
 
     // CSR for strong all children (strong tree + non-tree, for SCC)
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $strongAllOffsets;
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $strongAllEdges;
 
     // Reverse CSR for all parents
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $revOffsets;
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $revEdges;
 
     // Per-node data in FFI
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $ffiNodeSizes;
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $ffiSubtreeSizes;
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $ffiNodeToScc;
 
     // Node ID mapping (FFI-backed)
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $indexToNodeFfi;  // int32_t[nodeCount]: CSR index → node_id
 
     // Direct-indexed nodeToIndex: nodeToIndexDirect[node_id + 1] = CSR index
     // (offset by 1 to handle -1 sentinel at slot 0)
     // If node_ids are too sparse, falls back to PHP array.
+    /** @var \FFI\CArray<int> */
     private ?\FFI\CData $nodeToIndexDirect = null;
     private int $directIndexOffset = 1; // node_id + offset → array index
     private int $directIndexSize = 0;   // size of nodeToIndexDirect array
@@ -110,6 +125,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     // can easily produce 32k+ unique class names, which silently wrapped
     // around when this was int16 and pointed every overflowed node at the
     // wrong dict slot.
+    /** @var \FFI\CArray<int> */
     private \FFI\CData $nodeClassIds; // int32_t[nodeCount], -1 = no class
 
     // Tree-edge link_name index: an int32 per child CSR slot (-1 = no
@@ -128,7 +144,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private array $linkDict = [];
     /** @var array<string, int> link_name → link_id */
     private array $linkDictReverse = [];
+    /** @var \FFI\CArray<int> */
     private ?\FFI\CData $treeLinkIds = null;     // int32_t[nodeCount], -1 = no tree edge
+    /** @var \FFI\CArray<int> */
     private ?\FFI\CData $treeParentIdx = null;   // int32_t[nodeCount], -1 = no tree parent
 
     // Per-node context type ("PhpReferenceContext", etc.). Same shape
@@ -137,6 +155,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private array $nodeTypeDict = [];
     /** @var array<string, int> type name → type_id */
     private array $nodeTypeDictReverse = [];
+    /** @var \FFI\CArray<int> */
     private ?\FFI\CData $nodeTypeIds = null;     // int16_t[nodeCount], -1 = unknown
 
     private bool $subtreeSizesComputed = false;
@@ -146,8 +165,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     // canonIdxFfi[csrIdx] = canonical csrIdx (self for unique nodes).
     // origOffsets + origData form a CSR: originals of canon c are
     // origData[origOffsets[c]..origOffsets[c+1]].
+    /** @var \FFI\CArray<int> */
     private ?\FFI\CData $canonIdxFfi = null;
+    /** @var \FFI\CArray<int> */
     private ?\FFI\CData $origOffsets = null;
+    /** @var \FFI\CArray<int> */
     private ?\FFI\CData $origData = null;
 
     /**
@@ -222,7 +244,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
         $substrate->nodeCount = count($all_node_ids);
         $nc = $substrate->nodeCount;
-        $substrate->indexToNodeFfi = FFIHelper::new("int32_t[{$nc}]");
+        $substrate->indexToNodeFfi = FFIHelper::newInt32Array($nc);
 
         $idx = 0;
         $minNodeId = PHP_INT_MAX;
@@ -244,35 +266,35 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $substrate->directIndexOffset = -$minNodeId;
             $directSize = $range;
             $substrate->directIndexSize = $directSize;
-            $substrate->nodeToIndexDirect = FFIHelper::new("int32_t[{$directSize}]");
+            $substrate->nodeToIndexDirect = FFIHelper::newInt32Array($directSize);
             for ($i = 0; $i < $directSize; $i++) {
                 $substrate->nodeToIndexDirect[$i] = -1;
             }
             for ($i = 0; $i < $nc; $i++) {
-                $nid = (int)$substrate->indexToNodeFfi[$i];
+                $nid = $substrate->indexToNodeFfi[$i];
                 $slot = $nid + $substrate->directIndexOffset;
                 $substrate->nodeToIndexDirect[$slot] = $i;
             }
         } else {
             $substrate->nodeToIndexPhp = [];
             for ($i = 0; $i < $nc; $i++) {
-                $substrate->nodeToIndexPhp[(int)$substrate->indexToNodeFfi[$i]] = $i;
+                $substrate->nodeToIndexPhp[$substrate->indexToNodeFfi[$i]] = $i;
             }
         }
         unset($all_node_ids);
 
         // Allocate per-node FFI arrays
-        $substrate->ffiNodeSizes = FFIHelper::new("int64_t[{$nc}]");
-        $substrate->ffiSubtreeSizes = FFIHelper::new("int64_t[{$nc}]");
-        $substrate->ffiNodeToScc = FFIHelper::new("int32_t[{$nc}]");
-        $substrate->nodeClassIds = FFIHelper::new("int32_t[{$nc}]");
+        $substrate->ffiNodeSizes = FFIHelper::newInt64Array($nc);
+        $substrate->ffiSubtreeSizes = FFIHelper::newInt64Array($nc);
+        $substrate->ffiNodeToScc = FFIHelper::newInt32Array($nc);
+        $substrate->nodeClassIds = FFIHelper::newInt32Array($nc);
         for ($i = 0; $i < $nc; $i++) {
             $substrate->ffiNodeToScc[$i] = -1;
             $substrate->nodeClassIds[$i] = -1;
         }
 
         // ---- Phase 2: Load node types from nodes section ----
-        $substrate->nodeTypeIds = FFIHelper::new("int16_t[{$nc}]");
+        $substrate->nodeTypeIds = FFIHelper::newInt16Array($nc);
         for ($i = 0; $i < $nc; $i++) {
             $substrate->nodeTypeIds[$i] = -1;
         }
@@ -297,7 +319,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
             if ($directMap !== null) {
                 $slot = $node_id + $directOffset;
-                $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
+                $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : $directMap[$slot];
             } else {
                 $csrIdx = $phpMap[$node_id] ?? -1;
             }
@@ -340,7 +362,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 // node_id == i (dense), map to CSR index
                 if ($directMap !== null) {
                     $slot = $i + $directOffset;
-                    $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
+                    $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : $directMap[$slot];
                 } else {
                     $csrIdx = $phpMap[$i] ?? -1;
                 }
@@ -430,18 +452,18 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 if (!$sizesLoaded) {
                     if ($directMap !== null) {
                         $slot = $node_id + $directOffset;
-                        $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
+                        $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : $directMap[$slot];
                     } else {
                         $csrIdx = $phpMap[$node_id] ?? -1;
                     }
                     if ($csrIdx >= 0) {
                         /** @psalm-suppress PossiblyUndefinedVariable */
-                        $ffiNodeSizes[$csrIdx] = (int)$ffiNodeSizes[$csrIdx] + (int)$size;
+                        $ffiNodeSizes[$csrIdx] = $ffiNodeSizes[$csrIdx] + (int)$size;
                         /** @psalm-suppress PossiblyUndefinedVariable */
                         $substrate->nodeSizesSum += (int)$size;
 
                         /** @psalm-suppress PossiblyUndefinedVariable */
-                        if ((int)$class_id !== Format::NULL_STRING_ID && (int)$nodeClassIds[$csrIdx] === -1) {
+                        if ((int)$class_id !== Format::NULL_STRING_ID && $nodeClassIds[$csrIdx] === -1) {
                             /** @psalm-suppress PossiblyUndefinedVariable */
                             $className = $dict->lookup((int)$class_id);
                             if ($className !== null) {
@@ -539,39 +561,39 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $substrate->edge_count = $edgeCount;
         $rootParentIdx = $substrate->nodeIdToIndex(-1);
 
-        $substrate->treeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $substrate->strongTreeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $substrate->allOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $substrate->strongAllOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $substrate->revOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $substrate->treeOffsets = FFIHelper::newInt32Array(($nc + 1));
+        $substrate->strongTreeOffsets = FFIHelper::newInt32Array(($nc + 1));
+        $substrate->allOffsets = FFIHelper::newInt32Array(($nc + 1));
+        $substrate->strongAllOffsets = FFIHelper::newInt32Array(($nc + 1));
+        $substrate->revOffsets = FFIHelper::newInt32Array(($nc + 1));
 
         if ($edgeCount === 0) {
-            $substrate->treeEdges = FFIHelper::new("int32_t[1]");
-            $substrate->strongTreeEdges = FFIHelper::new("int32_t[1]");
-            $substrate->allEdges = FFIHelper::new("int32_t[1]");
-            $substrate->strongAllEdges = FFIHelper::new("int32_t[1]");
-            $substrate->revEdges = FFIHelper::new("int32_t[1]");
+            $substrate->treeEdges = FFIHelper::newInt32Array(1);
+            $substrate->strongTreeEdges = FFIHelper::newInt32Array(1);
+            $substrate->allEdges = FFIHelper::newInt32Array(1);
+            $substrate->strongAllEdges = FFIHelper::newInt32Array(1);
+            $substrate->revEdges = FFIHelper::newInt32Array(1);
             $substrate->subtreeSizesComputed = false;
             return $substrate;
         }
 
         // Staging buffers
-        $stageParentIdx = FFIHelper::new("int32_t[{$edgeCount}]");
-        $stageChildIdx = FFIHelper::new("int32_t[{$edgeCount}]");
-        $stageFlags = FFIHelper::new("int8_t[{$edgeCount}]");
+        $stageParentIdx = FFIHelper::newInt32Array($edgeCount);
+        $stageChildIdx = FFIHelper::newInt32Array($edgeCount);
+        $stageFlags = FFIHelper::newInt8Array($edgeCount);
 
-        $substrate->treeLinkIds = FFIHelper::new("int32_t[{$nc}]");
-        $substrate->treeParentIdx = FFIHelper::new("int32_t[{$nc}]");
+        $substrate->treeLinkIds = FFIHelper::newInt32Array($nc);
+        $substrate->treeParentIdx = FFIHelper::newInt32Array($nc);
         for ($k = 0; $k < $nc; $k++) {
             $substrate->treeLinkIds[$k] = -1;
             $substrate->treeParentIdx[$k] = -1;
         }
 
-        $treeDeg = FFIHelper::new("int32_t[{$nc}]");
-        $strongTreeDeg = FFIHelper::new("int32_t[{$nc}]");
-        $allDeg = FFIHelper::new("int32_t[{$nc}]");
-        $strongAllDeg = FFIHelper::new("int32_t[{$nc}]");
-        $revDeg = FFIHelper::new("int32_t[{$nc}]");
+        $treeDeg = FFIHelper::newInt32Array($nc);
+        $strongTreeDeg = FFIHelper::newInt32Array($nc);
+        $allDeg = FFIHelper::newInt32Array($nc);
+        $strongAllDeg = FFIHelper::newInt32Array($nc);
+        $revDeg = FFIHelper::newInt32Array($nc);
 
         $treeCount = 0;
         $strongTreeCount = 0;
@@ -607,9 +629,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
             if ($directMap !== null) {
                 $slot = $parent + $directOffset;
-                $pi = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
+                $pi = ($slot < 0 || $slot >= $directSize) ? -1 : $directMap[$slot];
                 $slot = $child + $directOffset;
-                $ci = ($slot < 0 || $slot >= $directSize) ? -1 : (int)$directMap[$slot];
+                $ci = ($slot < 0 || $slot >= $directSize) ? -1 : $directMap[$slot];
             } else {
                 $pi = $phpMap[$parent] ?? -1;
                 $ci = $phpMap[$child] ?? -1;
@@ -666,17 +688,17 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
         unset($treeDeg, $strongTreeDeg, $allDeg, $strongAllDeg, $revDeg);
 
-        $substrate->treeEdges = FFIHelper::new("int32_t[" . max($treeCount, 1) . "]");
-        $substrate->strongTreeEdges = FFIHelper::new("int32_t[" . max($strongTreeCount, 1) . "]");
-        $substrate->allEdges = FFIHelper::new("int32_t[" . max($allCount, 1) . "]");
-        $substrate->strongAllEdges = FFIHelper::new("int32_t[" . max($strongAllCount, 1) . "]");
-        $substrate->revEdges = FFIHelper::new("int32_t[{$edgeCount}]");
+        $substrate->treeEdges = FFIHelper::newInt32Array(max($treeCount, 1));
+        $substrate->strongTreeEdges = FFIHelper::newInt32Array(max($strongTreeCount, 1));
+        $substrate->allEdges = FFIHelper::newInt32Array(max($allCount, 1));
+        $substrate->strongAllEdges = FFIHelper::newInt32Array(max($strongAllCount, 1));
+        $substrate->revEdges = FFIHelper::newInt32Array($edgeCount);
 
-        $treeP = FFIHelper::new("int32_t[{$nc}]");
-        $streeP = FFIHelper::new("int32_t[{$nc}]");
-        $allP = FFIHelper::new("int32_t[{$nc}]");
-        $sallP = FFIHelper::new("int32_t[{$nc}]");
-        $revP = FFIHelper::new("int32_t[{$nc}]");
+        $treeP = FFIHelper::newInt32Array($nc);
+        $streeP = FFIHelper::newInt32Array($nc);
+        $allP = FFIHelper::newInt32Array($nc);
+        $sallP = FFIHelper::newInt32Array($nc);
+        $revP = FFIHelper::newInt32Array($nc);
         for ($k = 0; $k < $nc; $k++) {
             $treeP[$k] = $substrate->treeOffsets[$k];
             $streeP[$k] = $substrate->strongTreeOffsets[$k];
@@ -687,33 +709,33 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
         // Second pass: walk staged edges into CSR
         for ($k = 0; $k < $edgeCount; $k++) {
-            $pi = (int)$stageParentIdx[$k];
-            $ci = (int)$stageChildIdx[$k];
-            $flags = (int)$stageFlags[$k];
+            $pi = $stageParentIdx[$k];
+            $ci = $stageChildIdx[$k];
+            $flags = $stageFlags[$k];
             $is_tree = ($flags & 1) !== 0;
             $is_strong = ($flags & 2) !== 0;
 
             if ($is_tree) {
-                $p = (int)$treeP[$pi];
+                $p = $treeP[$pi];
                 $substrate->treeEdges[$p] = $ci;
                 $treeP[$pi] = $p + 1;
                 if ($is_strong) {
-                    $p = (int)$streeP[$pi];
+                    $p = $streeP[$pi];
                     $substrate->strongTreeEdges[$p] = $ci;
                     $streeP[$pi] = $p + 1;
                 }
             }
             if ($pi !== $rootParentIdx) {
-                $p = (int)$allP[$pi];
+                $p = $allP[$pi];
                 $substrate->allEdges[$p] = $ci;
                 $allP[$pi] = $p + 1;
                 if ($is_strong) {
-                    $p = (int)$sallP[$pi];
+                    $p = $sallP[$pi];
                     $substrate->strongAllEdges[$p] = $ci;
                     $sallP[$pi] = $p + 1;
                 }
             }
-            $p = (int)$revP[$ci];
+            $p = $revP[$ci];
             $substrate->revEdges[$p] = $pi;
             $revP[$ci] = $p + 1;
         }
@@ -755,26 +777,26 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $this->edge_count = $treeEdgeCount; // will be updated after nontree
 
         // Allocate and populate tree CSR from raw bytes
-        $this->treeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->treeOffsets = FFIHelper::newInt32Array(($nc + 1));
         \FFI::memcpy($this->treeOffsets, $treeRowPtrData, ($nc + 1) * 4);
 
-        $this->treeEdges = FFIHelper::new("int32_t[" . max(1, $treeEdgeCount) . "]");
+        $this->treeEdges = FFIHelper::newInt32Array(max(1, $treeEdgeCount));
         if ($treeEdgeCount > 0) {
             \FFI::memcpy($this->treeEdges, $treeColIdxData, $treeEdgeCount * 4);
         }
 
         // Tree link names
-        $this->treeLinkIds = FFIHelper::new("int32_t[{$nc}]");
+        $this->treeLinkIds = FFIHelper::newInt32Array($nc);
         for ($i = 0; $i < $nc; $i++) {
             $this->treeLinkIds[$i] = -1;
         }
         // Populate from the CSR linknames array: for each parent, walk
         // its children and set treeLinkIds[child] = link_name_dict_id
         for ($p = 0; $p < $nc; $p++) {
-            $start = (int)$this->treeOffsets[$p];
-            $end = (int)$this->treeOffsets[$p + 1];
+            $start = $this->treeOffsets[$p];
+            $end = $this->treeOffsets[$p + 1];
             for ($j = $start; $j < $end; $j++) {
-                $child = (int)$this->treeEdges[$j];
+                $child = $this->treeEdges[$j];
                 /** @var array{1: int} */
                 $lid_raw = unpack('V', $treeLinkData, $j * 4);
                 $link_name_id = $lid_raw[1];
@@ -790,48 +812,48 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
 
         // Tree parents
-        $this->treeParentIdx = FFIHelper::new("int32_t[{$nc}]");
+        $this->treeParentIdx = FFIHelper::newInt32Array($nc);
         \FFI::memcpy($this->treeParentIdx, $treeParentsData, $nc * 4);
 
         // Roots: children of the sentinel node (last index)
         $sentinelIdx = $nc - 1;
-        $rstart = (int)$this->treeOffsets[$sentinelIdx];
-        $rend = (int)$this->treeOffsets[$sentinelIdx + 1];
+        $rstart = $this->treeOffsets[$sentinelIdx];
+        $rend = $this->treeOffsets[$sentinelIdx + 1];
         for ($j = $rstart; $j < $rend; $j++) {
-            $child_node_id = (int)$this->indexToNodeFfi[(int)$this->treeEdges[$j]];
+            $child_node_id = $this->indexToNodeFfi[$this->treeEdges[$j]];
             $this->roots[] = $child_node_id;
         }
 
         // Strong tree CSR: filter tree edges by strength == 0
-        $strongTreeDeg = FFIHelper::new("int32_t[{$nc}]");
+        $strongTreeDeg = FFIHelper::newInt32Array($nc);
         $strongTreeCount = 0;
         for ($p = 0; $p < $nc; $p++) {
-            $start = (int)$this->treeOffsets[$p];
-            $end = (int)$this->treeOffsets[$p + 1];
+            $start = $this->treeOffsets[$p];
+            $end = $this->treeOffsets[$p + 1];
             for ($j = $start; $j < $end; $j++) {
                 if (ord($treeStrengthData[$j]) === 0) {
-                    $strongTreeDeg[$p] = (int)$strongTreeDeg[$p] + 1;
+                    $strongTreeDeg[$p] = $strongTreeDeg[$p] + 1;
                     $strongTreeCount++;
                 }
             }
         }
-        $this->strongTreeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->strongTreeOffsets = FFIHelper::newInt32Array(($nc + 1));
         $this->strongTreeOffsets[0] = 0;
         for ($i = 0; $i < $nc; $i++) {
-            $this->strongTreeOffsets[$i + 1] = (int)$this->strongTreeOffsets[$i] + (int)$strongTreeDeg[$i];
+            $this->strongTreeOffsets[$i + 1] = $this->strongTreeOffsets[$i] + $strongTreeDeg[$i];
         }
-        $this->strongTreeEdges = FFIHelper::new("int32_t[" . max(1, $strongTreeCount) . "]");
-        $stPos = FFIHelper::new("int32_t[{$nc}]");
+        $this->strongTreeEdges = FFIHelper::newInt32Array(max(1, $strongTreeCount));
+        $stPos = FFIHelper::newInt32Array($nc);
         for ($i = 0; $i < $nc; $i++) {
-            $stPos[$i] = (int)$this->strongTreeOffsets[$i];
+            $stPos[$i] = $this->strongTreeOffsets[$i];
         }
         for ($p = 0; $p < $nc; $p++) {
-            $start = (int)$this->treeOffsets[$p];
-            $end = (int)$this->treeOffsets[$p + 1];
+            $start = $this->treeOffsets[$p];
+            $end = $this->treeOffsets[$p + 1];
             for ($j = $start; $j < $end; $j++) {
                 if (ord($treeStrengthData[$j]) === 0) {
-                    $pos = (int)$stPos[$p];
-                    $this->strongTreeEdges[$pos] = (int)$this->treeEdges[$j];
+                    $pos = $stPos[$p];
+                    $this->strongTreeEdges[$pos] = $this->treeEdges[$j];
                     $stPos[$p] = $pos + 1;
                 }
             }
@@ -850,9 +872,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
         // All-edges CSR = tree + nontree (excluding root-parent edges)
         // Strong all-edges = strong tree + strong nontree (nontree are strong by default)
-        $allDeg = FFIHelper::new("int32_t[{$nc}]");
-        $strongAllDeg = FFIHelper::new("int32_t[{$nc}]");
-        $revDeg = FFIHelper::new("int32_t[{$nc}]");
+        $allDeg = FFIHelper::newInt32Array($nc);
+        $strongAllDeg = FFIHelper::newInt32Array($nc);
+        $revDeg = FFIHelper::newInt32Array($nc);
 
         // Count: tree edges (excluding root parent)
         $rootIdx = $nc - 1; // sentinel
@@ -860,25 +882,25 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             if ($p === $rootIdx) {
                 continue;
             }
-            $start = (int)$this->treeOffsets[$p];
-            $end = (int)$this->treeOffsets[$p + 1];
+            $start = $this->treeOffsets[$p];
+            $end = $this->treeOffsets[$p + 1];
             $deg = $end - $start;
-            $allDeg[$p] = (int)$allDeg[$p] + $deg;
+            $allDeg[$p] = $allDeg[$p] + $deg;
             for ($j = $start; $j < $end; $j++) {
                 if (ord($treeStrengthData[$j]) === 0) {
-                    $strongAllDeg[$p] = (int)$strongAllDeg[$p] + 1;
+                    $strongAllDeg[$p] = $strongAllDeg[$p] + 1;
                 }
-                $ci = (int)$this->treeEdges[$j];
-                $revDeg[$ci] = (int)$revDeg[$ci] + 1;
+                $ci = $this->treeEdges[$j];
+                $revDeg[$ci] = $revDeg[$ci] + 1;
             }
         }
         // Also count root tree edges for reverse
         {
-            $start = (int)$this->treeOffsets[$rootIdx];
-            $end = (int)$this->treeOffsets[$rootIdx + 1];
+            $start = $this->treeOffsets[$rootIdx];
+            $end = $this->treeOffsets[$rootIdx + 1];
         for ($j = $start; $j < $end; $j++) {
-            $ci = (int)$this->treeEdges[$j];
-            $revDeg[$ci] = (int)$revDeg[$ci] + 1;
+            $ci = $this->treeEdges[$j];
+            $revDeg[$ci] = $revDeg[$ci] + 1;
         }
         }
 
@@ -886,20 +908,20 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $allCount = 0;
         $strongAllCount = 0;
         if ($nontreeEdgeCount > 0) {
-            $ntOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+            $ntOffsets = FFIHelper::newInt32Array(($nc + 1));
             \FFI::memcpy($ntOffsets, $ntRowPtrData, ($nc + 1) * 4);
-            $ntEdges = FFIHelper::new("int32_t[" . max(1, $nontreeEdgeCount) . "]");
+            $ntEdges = FFIHelper::newInt32Array(max(1, $nontreeEdgeCount));
             \FFI::memcpy($ntEdges, $ntColIdxData, $nontreeEdgeCount * 4);
 
             for ($p = 0; $p < $nc; $p++) {
-                $start = (int)$ntOffsets[$p];
-                $end = (int)$ntOffsets[$p + 1];
+                $start = $ntOffsets[$p];
+                $end = $ntOffsets[$p + 1];
                 $deg = $end - $start;
-                $allDeg[$p] = (int)$allDeg[$p] + $deg;
-                $strongAllDeg[$p] = (int)$strongAllDeg[$p] + $deg; // nontree are strong
+                $allDeg[$p] = $allDeg[$p] + $deg;
+                $strongAllDeg[$p] = $strongAllDeg[$p] + $deg; // nontree are strong
                 for ($j = $start; $j < $end; $j++) {
-                    $ci = (int)$ntEdges[$j];
-                    $revDeg[$ci] = (int)$revDeg[$ci] + 1;
+                    $ci = $ntEdges[$j];
+                    $revDeg[$ci] = $revDeg[$ci] + 1;
                 }
             }
         }
@@ -908,63 +930,63 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $totalAll = 0;
         $totalStrongAll = 0;
         $totalRev = 0;
-        $this->allOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $this->strongAllOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $this->revOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->allOffsets = FFIHelper::newInt32Array(($nc + 1));
+        $this->strongAllOffsets = FFIHelper::newInt32Array(($nc + 1));
+        $this->revOffsets = FFIHelper::newInt32Array(($nc + 1));
         $this->allOffsets[0] = 0;
         $this->strongAllOffsets[0] = 0;
         $this->revOffsets[0] = 0;
         for ($i = 0; $i < $nc; $i++) {
-            $this->allOffsets[$i + 1] = (int)$this->allOffsets[$i] + (int)$allDeg[$i];
-            $this->strongAllOffsets[$i + 1] = (int)$this->strongAllOffsets[$i] + (int)$strongAllDeg[$i];
-            $this->revOffsets[$i + 1] = (int)$this->revOffsets[$i] + (int)$revDeg[$i];
+            $this->allOffsets[$i + 1] = $this->allOffsets[$i] + $allDeg[$i];
+            $this->strongAllOffsets[$i + 1] = $this->strongAllOffsets[$i] + $strongAllDeg[$i];
+            $this->revOffsets[$i + 1] = $this->revOffsets[$i] + $revDeg[$i];
         }
-        $totalAll = (int)$this->allOffsets[$nc];
-        $totalStrongAll = (int)$this->strongAllOffsets[$nc];
-        $totalRev = (int)$this->revOffsets[$nc];
+        $totalAll = $this->allOffsets[$nc];
+        $totalStrongAll = $this->strongAllOffsets[$nc];
+        $totalRev = $this->revOffsets[$nc];
 
-        $this->allEdges = FFIHelper::new("int32_t[" . max(1, $totalAll) . "]");
-        $this->strongAllEdges = FFIHelper::new("int32_t[" . max(1, $totalStrongAll) . "]");
-        $this->revEdges = FFIHelper::new("int32_t[" . max(1, $totalRev) . "]");
+        $this->allEdges = FFIHelper::newInt32Array(max(1, $totalAll));
+        $this->strongAllEdges = FFIHelper::newInt32Array(max(1, $totalStrongAll));
+        $this->revEdges = FFIHelper::newInt32Array(max(1, $totalRev));
 
-        $allP = FFIHelper::new("int32_t[{$nc}]");
-        $sallP = FFIHelper::new("int32_t[{$nc}]");
-        $revP = FFIHelper::new("int32_t[{$nc}]");
+        $allP = FFIHelper::newInt32Array($nc);
+        $sallP = FFIHelper::newInt32Array($nc);
+        $revP = FFIHelper::newInt32Array($nc);
         for ($i = 0; $i < $nc; $i++) {
-            $allP[$i] = (int)$this->allOffsets[$i];
-            $sallP[$i] = (int)$this->strongAllOffsets[$i];
-            $revP[$i] = (int)$this->revOffsets[$i];
+            $allP[$i] = $this->allOffsets[$i];
+            $sallP[$i] = $this->strongAllOffsets[$i];
+            $revP[$i] = $this->revOffsets[$i];
         }
 
         // Fill: tree edges (excluding root)
         for ($p = 0; $p < $nc; $p++) {
             if ($p === $rootIdx) {
                 // Still fill reverse for root's children
-                $start = (int)$this->treeOffsets[$p];
-                $end = (int)$this->treeOffsets[$p + 1];
+                $start = $this->treeOffsets[$p];
+                $end = $this->treeOffsets[$p + 1];
                 for ($j = $start; $j < $end; $j++) {
-                    $ci = (int)$this->treeEdges[$j];
-                    $rp = (int)$revP[$ci];
+                    $ci = $this->treeEdges[$j];
+                    $rp = $revP[$ci];
                     $this->revEdges[$rp] = $p;
                     $revP[$ci] = $rp + 1;
                 }
                 continue;
             }
-            $start = (int)$this->treeOffsets[$p];
-            $end = (int)$this->treeOffsets[$p + 1];
+            $start = $this->treeOffsets[$p];
+            $end = $this->treeOffsets[$p + 1];
             for ($j = $start; $j < $end; $j++) {
-                $ci = (int)$this->treeEdges[$j];
-                $ap = (int)$allP[$p];
+                $ci = $this->treeEdges[$j];
+                $ap = $allP[$p];
                 $this->allEdges[$ap] = $ci;
                 $allP[$p] = $ap + 1;
 
                 if (ord($treeStrengthData[$j]) === 0) {
-                    $sp = (int)$sallP[$p];
+                    $sp = $sallP[$p];
                     $this->strongAllEdges[$sp] = $ci;
                     $sallP[$p] = $sp + 1;
                 }
 
-                $rp = (int)$revP[$ci];
+                $rp = $revP[$ci];
                 $this->revEdges[$rp] = $p;
                 $revP[$ci] = $rp + 1;
             }
@@ -973,19 +995,19 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // Fill: nontree edges
         if ($nontreeEdgeCount > 0 && isset($ntOffsets) && isset($ntEdges)) {
             for ($p = 0; $p < $nc; $p++) {
-                $start = (int)$ntOffsets[$p];
-                $end = (int)$ntOffsets[$p + 1];
+                $start = $ntOffsets[$p];
+                $end = $ntOffsets[$p + 1];
                 for ($j = $start; $j < $end; $j++) {
-                    $ci = (int)$ntEdges[$j];
-                    $ap = (int)$allP[$p];
+                    $ci = $ntEdges[$j];
+                    $ap = $allP[$p];
                     $this->allEdges[$ap] = $ci;
                     $allP[$p] = $ap + 1;
 
-                    $sp = (int)$sallP[$p];
+                    $sp = $sallP[$p];
                     $this->strongAllEdges[$sp] = $ci;
                     $sallP[$p] = $sp + 1;
 
-                    $rp = (int)$revP[$ci];
+                    $rp = $revP[$ci];
                     $this->revEdges[$rp] = $p;
                     $revP[$ci] = $rp + 1;
                 }
@@ -1048,7 +1070,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         if ($idx < 0) {
             return 0;
         }
-        return (int)$this->revOffsets[$idx + 1] - (int)$this->revOffsets[$idx];
+        return $this->revOffsets[$idx + 1] - $this->revOffsets[$idx];
     }
 
     #[\Override]
@@ -1064,7 +1086,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         if ($idx < 0) {
             return 0;
         }
-        return (int)$this->ffiNodeSizes[$idx];
+        return $this->ffiNodeSizes[$idx];
     }
 
     #[\Override]
@@ -1074,7 +1096,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         if ($idx < 0) {
             return 0;
         }
-        return (int)$this->ffiSubtreeSizes[$idx];
+        return $this->ffiSubtreeSizes[$idx];
     }
 
     #[\Override]
@@ -1087,7 +1109,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         if ($idx < 0) {
             return true;
         }
-        return (int)$this->canonIdxFfi[$idx] === $idx;
+        return $this->canonIdxFfi[$idx] === $idx;
     }
 
     #[\Override]
@@ -1100,7 +1122,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         if ($idx < 0) {
             return $nodeId;
         }
-        $canonIdx = (int)$this->canonIdxFfi[$idx];
+        $canonIdx = $this->canonIdxFfi[$idx];
         return $this->indexToNodeId($canonIdx);
     }
 
@@ -1119,15 +1141,15 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         if ($idx < 0) {
             return [$nodeId];
         }
-        $canonIdx = (int)$this->canonIdxFfi[$idx];
-        $oStart = (int)$this->origOffsets[$canonIdx];
-        $oEnd = (int)$this->origOffsets[$canonIdx + 1];
+        $canonIdx = $this->canonIdxFfi[$idx];
+        $oStart = $this->origOffsets[$canonIdx];
+        $oEnd = $this->origOffsets[$canonIdx + 1];
         if ($oEnd <= $oStart) {
             return [$nodeId];
         }
         $group = [];
         for ($i = $oStart; $i < $oEnd; $i++) {
-            $group[] = $this->indexToNodeId((int)$this->origData[$i]);
+            $group[] = $this->indexToNodeId($this->origData[$i]);
         }
         return $group;
     }
@@ -1139,7 +1161,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         if ($idx < 0) {
             return null;
         }
-        $classId = (int)$this->nodeClassIds[$idx];
+        $classId = $this->nodeClassIds[$idx];
         if ($classId < 0) {
             return null;
         }
@@ -1156,7 +1178,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         if ($idx < 0) {
             return null;
         }
-        $typeId = (int)$this->nodeTypeIds[$idx];
+        $typeId = $this->nodeTypeIds[$idx];
         if ($typeId < 0) {
             return null;
         }
@@ -1173,7 +1195,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         if ($idx < 0) {
             return null;
         }
-        $link_id = (int)$this->treeLinkIds[$idx];
+        $link_id = $this->treeLinkIds[$idx];
         if ($link_id < 0) {
             return null;
         }
@@ -1190,11 +1212,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         if ($idx < 0) {
             return null;
         }
-        $parent_idx = (int)$this->treeParentIdx[$idx];
+        $parent_idx = $this->treeParentIdx[$idx];
         if ($parent_idx < 0) {
             return null;
         }
-        $parent_id = (int)$this->indexToNodeFfi[$parent_idx];
+        $parent_id = $this->indexToNodeFfi[$parent_idx];
         return $parent_id === -1 ? null : $parent_id;
     }
 
@@ -1220,8 +1242,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
         $n = $this->nodeCount;
         for ($i = 0; $i < $n; $i++) {
-            if ((int)$this->treeLinkIds[$i] === $link_id) {
-                yield (int)$this->indexToNodeFfi[$i];
+            if ($this->treeLinkIds[$i] === $link_id) {
+                yield $this->indexToNodeFfi[$i];
             }
         }
     }
@@ -1243,7 +1265,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     public function iterateNodeSizes(): iterable
     {
         for ($i = 0; $i < $this->nodeCount; $i++) {
-            yield (int)$this->indexToNodeFfi[$i] => (int)$this->ffiNodeSizes[$i];
+            yield $this->indexToNodeFfi[$i] => $this->ffiNodeSizes[$i];
         }
     }
 
@@ -1252,9 +1274,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     public function iterateSubtreeSizes(): iterable
     {
         for ($i = 0; $i < $this->nodeCount; $i++) {
-            $size = (int)$this->ffiSubtreeSizes[$i];
+            $size = $this->ffiSubtreeSizes[$i];
             if ($size > 0) {
-                yield (int)$this->indexToNodeFfi[$i] => $size;
+                yield $this->indexToNodeFfi[$i] => $size;
             }
         }
     }
@@ -1264,16 +1286,16 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     public function iterateAllParents(): iterable
     {
         for ($i = 0; $i < $this->nodeCount; $i++) {
-            $start = (int)$this->revOffsets[$i];
-            $end = (int)$this->revOffsets[$i + 1];
+            $start = $this->revOffsets[$i];
+            $end = $this->revOffsets[$i + 1];
             if ($start < $end) {
                 $parents = [];
                 for ($j = $start; $j < $end; $j++) {
                     // revEdges stores CSR indices (matching the rest of the
                     // CSR arrays); translate back to node_ids on the way out.
-                    $parents[] = (int)$this->indexToNodeFfi[(int)$this->revEdges[$j]];
+                    $parents[] = $this->indexToNodeFfi[$this->revEdges[$j]];
                 }
-                yield (int)$this->indexToNodeFfi[$i] => $parents;
+                yield $this->indexToNodeFfi[$i] => $parents;
             }
         }
     }
@@ -1283,9 +1305,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     public function iterateNodeClasses(): iterable
     {
         for ($i = 0; $i < $this->nodeCount; $i++) {
-            $classId = (int)$this->nodeClassIds[$i];
+            $classId = $this->nodeClassIds[$i];
             if ($classId >= 0) {
-                yield (int)$this->indexToNodeFfi[$i] => $this->classDict[$classId];
+                yield $this->indexToNodeFfi[$i] => $this->classDict[$classId];
             }
         }
     }
@@ -1295,9 +1317,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     public function iterateNodeToScc(): iterable
     {
         for ($i = 0; $i < $this->nodeCount; $i++) {
-            $scc_id = (int)$this->ffiNodeToScc[$i];
+            $scc_id = $this->ffiNodeToScc[$i];
             if ($scc_id >= 0) {
-                yield (int)$this->indexToNodeFfi[$i] => $scc_id;
+                yield $this->indexToNodeFfi[$i] => $scc_id;
             }
         }
     }
@@ -1314,7 +1336,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             if ($slot < 0 || $slot >= $this->directIndexSize) {
                 return -1;
             }
-            return (int)$this->nodeToIndexDirect[$slot];
+            return $this->nodeToIndexDirect[$slot];
         }
         return $this->nodeToIndexPhp[$nodeId] ?? -1;
     }
@@ -1324,7 +1346,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
      */
     private function indexToNodeId(int $idx): int
     {
-        return (int)$this->indexToNodeFfi[$idx];
+        return $this->indexToNodeFfi[$idx];
     }
 
     /**
@@ -1340,7 +1362,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
         $result = [];
         for ($i = $start; $i < $end; $i++) {
-            $result[] = (int)$this->indexToNodeFfi[(int)$edges[$i]];
+            $result[] = $this->indexToNodeFfi[(int)$edges[$i]];
         }
         return $result;
     }
@@ -1400,7 +1422,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
         // Build mapping: assign CSR indices
         $this->nodeCount = count($all_node_ids);
-        $this->indexToNodeFfi = FFIHelper::new("int32_t[{$this->nodeCount}]");
+        $this->indexToNodeFfi = FFIHelper::newInt32Array($this->nodeCount);
 
         $idx = 0;
         $minNodeId = PHP_INT_MAX;
@@ -1424,14 +1446,14 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $this->directIndexOffset = -$minNodeId; // node_id + offset → 0-based slot
             $directSize = $range;
             $this->directIndexSize = $directSize;
-            $this->nodeToIndexDirect = FFIHelper::new("int32_t[{$directSize}]");
+            $this->nodeToIndexDirect = FFIHelper::newInt32Array($directSize);
             // Initialize all to -1
             for ($i = 0; $i < $directSize; $i++) {
                 $this->nodeToIndexDirect[$i] = -1;
             }
             // Fill
             for ($i = 0; $i < $this->nodeCount; $i++) {
-                $nid = (int)$this->indexToNodeFfi[$i];
+                $nid = $this->indexToNodeFfi[$i];
                 $slot = $nid + $this->directIndexOffset;
                 $this->nodeToIndexDirect[$slot] = $i;
             }
@@ -1439,16 +1461,16 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             // Fallback: PHP associative array
             $this->nodeToIndexPhp = [];
             for ($i = 0; $i < $this->nodeCount; $i++) {
-                $this->nodeToIndexPhp[(int)$this->indexToNodeFfi[$i]] = $i;
+                $this->nodeToIndexPhp[$this->indexToNodeFfi[$i]] = $i;
             }
         }
         unset($all_node_ids);
 
         // Allocate per-node FFI arrays
-        $this->ffiNodeSizes = FFIHelper::new("int64_t[{$this->nodeCount}]");
-        $this->ffiSubtreeSizes = FFIHelper::new("int64_t[{$this->nodeCount}]");
-        $this->ffiNodeToScc = FFIHelper::new("int32_t[{$this->nodeCount}]");
-        $this->nodeClassIds = FFIHelper::new("int32_t[{$this->nodeCount}]");
+        $this->ffiNodeSizes = FFIHelper::newInt64Array($this->nodeCount);
+        $this->ffiSubtreeSizes = FFIHelper::newInt64Array($this->nodeCount);
+        $this->ffiNodeToScc = FFIHelper::newInt32Array($this->nodeCount);
+        $this->nodeClassIds = FFIHelper::newInt32Array($this->nodeCount);
 
         // Initialize
         for ($i = 0; $i < $this->nodeCount; $i++) {
@@ -1506,7 +1528,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $slot = $node_id + $directOffset;
                     $csrIdx = ($slot < 0 || $slot >= $directSize)
                         ? -1
-                        : (int)$directMap[$slot];
+                        : $directMap[$slot];
                 } else {
                     $csrIdx = $phpMap[$node_id] ?? -1;
                 }
@@ -1546,7 +1568,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private function loadNodeTypesFfi(\PDO $db, int $run_id): void
     {
         $nc = $this->nodeCount;
-        $this->nodeTypeIds = FFIHelper::new("int16_t[{$nc}]");
+        $this->nodeTypeIds = FFIHelper::newInt16Array($nc);
         for ($i = 0; $i < $nc; $i++) {
             $this->nodeTypeIds[$i] = -1;
         }
@@ -1585,7 +1607,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $slot = $node_id + $directOffset;
                     $idx = ($slot < 0 || $slot >= $directSize)
                         ? -1
-                        : (int)$directMap[$slot];
+                        : $directMap[$slot];
                 } else {
                     $idx = $phpMap[$node_id] ?? -1;
                 }
@@ -1644,44 +1666,44 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         )->fetchColumn();
         $this->edge_count = $edgeCount;
 
-        $this->treeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $this->strongTreeOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $this->allOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $this->strongAllOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
-        $this->revOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->treeOffsets = FFIHelper::newInt32Array(($nc + 1));
+        $this->strongTreeOffsets = FFIHelper::newInt32Array(($nc + 1));
+        $this->allOffsets = FFIHelper::newInt32Array(($nc + 1));
+        $this->strongAllOffsets = FFIHelper::newInt32Array(($nc + 1));
+        $this->revOffsets = FFIHelper::newInt32Array(($nc + 1));
 
         if ($edgeCount === 0) {
-            $this->treeEdges = FFIHelper::new("int32_t[1]");
-            $this->strongTreeEdges = FFIHelper::new("int32_t[1]");
-            $this->allEdges = FFIHelper::new("int32_t[1]");
-            $this->strongAllEdges = FFIHelper::new("int32_t[1]");
-            $this->revEdges = FFIHelper::new("int32_t[1]");
+            $this->treeEdges = FFIHelper::newInt32Array(1);
+            $this->strongTreeEdges = FFIHelper::newInt32Array(1);
+            $this->allEdges = FFIHelper::newInt32Array(1);
+            $this->strongAllEdges = FFIHelper::newInt32Array(1);
+            $this->revEdges = FFIHelper::newInt32Array(1);
             return;
         }
 
         // Staging buffer: written during the SQL pass, read during the
         // CSR fill pass. Flags layout: bit 0 = is_tree, bit 1 = is_strong.
-        $stageParentIdx = FFIHelper::new("int32_t[{$edgeCount}]");
-        $stageChildIdx = FFIHelper::new("int32_t[{$edgeCount}]");
-        $stageFlags = FFIHelper::new("int8_t[{$edgeCount}]");
+        $stageParentIdx = FFIHelper::newInt32Array($edgeCount);
+        $stageChildIdx = FFIHelper::newInt32Array($edgeCount);
+        $stageFlags = FFIHelper::newInt8Array($edgeCount);
 
         // Tree-edge link_name index: int32 per child slot, -1 = no
         // tree edge. Initialised below to -1 in one pass over the
         // CSR slot space, then filled as we walk tree edges. Must
         // stay int32: see the field-declaration comment for the int16
         // wrap-around bug that motivated the widening.
-        $this->treeLinkIds = FFIHelper::new("int32_t[{$nc}]");
-        $this->treeParentIdx = FFIHelper::new("int32_t[{$nc}]");
+        $this->treeLinkIds = FFIHelper::newInt32Array($nc);
+        $this->treeParentIdx = FFIHelper::newInt32Array($nc);
         for ($k = 0; $k < $nc; $k++) {
             $this->treeLinkIds[$k] = -1;
             $this->treeParentIdx[$k] = -1;
         }
 
-        $treeDeg = FFIHelper::new("int32_t[{$nc}]");
-        $strongTreeDeg = FFIHelper::new("int32_t[{$nc}]");
-        $allDeg = FFIHelper::new("int32_t[{$nc}]");
-        $strongAllDeg = FFIHelper::new("int32_t[{$nc}]");
-        $revDeg = FFIHelper::new("int32_t[{$nc}]");
+        $treeDeg = FFIHelper::newInt32Array($nc);
+        $strongTreeDeg = FFIHelper::newInt32Array($nc);
+        $allDeg = FFIHelper::newInt32Array($nc);
+        $strongAllDeg = FFIHelper::newInt32Array($nc);
+        $revDeg = FFIHelper::newInt32Array($nc);
 
         $treeCount = 0;
         $strongTreeCount = 0;
@@ -1736,11 +1758,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $slot = $parent + $directOffset;
                     $pi = ($slot < 0 || $slot >= $directSize)
                         ? -1
-                        : (int)$directMap[$slot];
+                        : $directMap[$slot];
                     $slot = $child + $directOffset;
                     $ci = ($slot < 0 || $slot >= $directSize)
                         ? -1
-                        : (int)$directMap[$slot];
+                        : $directMap[$slot];
                 } else {
                     $pi = $phpMap[$parent] ?? -1;
                     $ci = $phpMap[$child] ?? -1;
@@ -1800,18 +1822,18 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
         unset($treeDeg, $strongTreeDeg, $allDeg, $strongAllDeg, $revDeg);
 
-        $this->treeEdges = FFIHelper::new("int32_t[" . max($treeCount, 1) . "]");
-        $this->strongTreeEdges = FFIHelper::new("int32_t[" . max($strongTreeCount, 1) . "]");
-        $this->allEdges = FFIHelper::new("int32_t[" . max($allCount, 1) . "]");
-        $this->strongAllEdges = FFIHelper::new("int32_t[" . max($strongAllCount, 1) . "]");
-        $this->revEdges = FFIHelper::new("int32_t[{$edgeCount}]");
+        $this->treeEdges = FFIHelper::newInt32Array(max($treeCount, 1));
+        $this->strongTreeEdges = FFIHelper::newInt32Array(max($strongTreeCount, 1));
+        $this->allEdges = FFIHelper::newInt32Array(max($allCount, 1));
+        $this->strongAllEdges = FFIHelper::newInt32Array(max($strongAllCount, 1));
+        $this->revEdges = FFIHelper::newInt32Array($edgeCount);
 
         // Write positions, seeded from the offsets we just computed.
-        $treeP = FFIHelper::new("int32_t[{$nc}]");
-        $streeP = FFIHelper::new("int32_t[{$nc}]");
-        $allP = FFIHelper::new("int32_t[{$nc}]");
-        $sallP = FFIHelper::new("int32_t[{$nc}]");
-        $revP = FFIHelper::new("int32_t[{$nc}]");
+        $treeP = FFIHelper::newInt32Array($nc);
+        $streeP = FFIHelper::newInt32Array($nc);
+        $allP = FFIHelper::newInt32Array($nc);
+        $sallP = FFIHelper::newInt32Array($nc);
+        $revP = FFIHelper::newInt32Array($nc);
         for ($k = 0; $k < $nc; $k++) {
             $treeP[$k] = $this->treeOffsets[$k];
             $streeP[$k] = $this->strongTreeOffsets[$k];
@@ -1823,28 +1845,28 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // Second pass: walk the staged edges and place them into the
         // CSR arrays. No SQL.
         for ($k = 0; $k < $edgeCount; $k++) {
-            $pi = (int)$stageParentIdx[$k];
-            $ci = (int)$stageChildIdx[$k];
-            $flags = (int)$stageFlags[$k];
+            $pi = $stageParentIdx[$k];
+            $ci = $stageChildIdx[$k];
+            $flags = $stageFlags[$k];
             $is_tree = ($flags & 1) !== 0;
             $is_strong = ($flags & 2) !== 0;
 
             if ($is_tree) {
-                $p = (int)$treeP[$pi];
+                $p = $treeP[$pi];
                 $this->treeEdges[$p] = $ci;
                 $treeP[$pi] = $p + 1;
                 if ($is_strong) {
-                    $p = (int)$streeP[$pi];
+                    $p = $streeP[$pi];
                     $this->strongTreeEdges[$p] = $ci;
                     $streeP[$pi] = $p + 1;
                 }
             }
             if ($pi !== $rootParentIdx) {
-                $p = (int)$allP[$pi];
+                $p = $allP[$pi];
                 $this->allEdges[$p] = $ci;
                 $allP[$pi] = $p + 1;
                 if ($is_strong) {
-                    $p = (int)$sallP[$pi];
+                    $p = $sallP[$pi];
                     $this->strongAllEdges[$p] = $ci;
                     $sallP[$pi] = $p + 1;
                 }
@@ -1853,7 +1875,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             // contract csrSlice expects). The previous code stored
             // the raw parent value here, which corrupted getAllParents
             // for every non-root node and crashed on the actual root.
-            $p = (int)$revP[$ci];
+            $p = $revP[$ci];
             $this->revEdges[$p] = $pi;
             $revP[$ci] = $p + 1;
         }
@@ -1885,20 +1907,20 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         while ($stack) {
             [$idx, $processed] = array_pop($stack);
             if ($processed) {
-                $size = (int)$this->ffiNodeSizes[$idx];
-                $start = (int)$this->strongTreeOffsets[$idx];
-                $end = (int)$this->strongTreeOffsets[$idx + 1];
+                $size = $this->ffiNodeSizes[$idx];
+                $start = $this->strongTreeOffsets[$idx];
+                $end = $this->strongTreeOffsets[$idx + 1];
                 for ($i = $start; $i < $end; $i++) {
-                    $size += (int)$this->ffiSubtreeSizes[(int)$this->strongTreeEdges[$i]];
+                    $size += $this->ffiSubtreeSizes[$this->strongTreeEdges[$i]];
                 }
                 $this->ffiSubtreeSizes[$idx] = $size;
                 $visited[$idx] = true;
             } else {
                 $stack[] = [$idx, true];
-                $start = (int)$this->strongTreeOffsets[$idx];
-                $end = (int)$this->strongTreeOffsets[$idx + 1];
+                $start = $this->strongTreeOffsets[$idx];
+                $end = $this->strongTreeOffsets[$idx + 1];
                 for ($i = $start; $i < $end; $i++) {
-                    $childIdx = (int)$this->strongTreeEdges[$i];
+                    $childIdx = $this->strongTreeEdges[$i];
                     if (!isset($visited[$childIdx])) {
                         $stack[] = [$childIdx, false];
                     }
@@ -1943,15 +1965,15 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $nc = $this->nodeCount;
         $indexToNodeFfi = $this->indexToNodeFfi;
 
-        $this->canonIdxFfi = FFIHelper::new("int32_t[{$nc}]");
-        $this->origOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $this->canonIdxFfi = FFIHelper::newInt32Array($nc);
+        $this->origOffsets = FFIHelper::newInt32Array(($nc + 1));
         $canonIdxFfi = $this->canonIdxFfi;
         $origOffsets = $this->origOffsets;
 
         // Pass 1: compute canonIdxFfi and count originals per canonical
-        $origCount = FFIHelper::new("int32_t[{$nc}]");
+        $origCount = FFIHelper::newInt32Array($nc);
         for ($v = 0; $v < $nc; $v++) {
-            $nid = (int)$indexToNodeFfi[$v];
+            $nid = $indexToNodeFfi[$v];
             if ($nid === -1) {
                 $canonIdxFfi[$v] = $v;
                 continue;
@@ -1962,30 +1984,30 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             } else {
                 $canonIdxFfi[$v] = $v;
             }
-            $c = (int)$canonIdxFfi[$v];
-            $origCount[$c] = (int)$origCount[$c] + 1;
+            $c = $canonIdxFfi[$v];
+            $origCount[$c] = $origCount[$c] + 1;
         }
 
         // Pass 2: build origOffsets (prefix sum)
         $origOffsets[0] = 0;
         for ($i = 0; $i < $nc; $i++) {
-            $origOffsets[$i + 1] = (int)$origOffsets[$i] + (int)$origCount[$i];
+            $origOffsets[$i + 1] = $origOffsets[$i] + $origCount[$i];
         }
-        $totalOrig = (int)$origOffsets[$nc];
-        $origData = FFIHelper::new("int32_t[" . max(1, $totalOrig) . "]");
+        $totalOrig = $origOffsets[$nc];
+        $origData = FFIHelper::newInt32Array(max(1, $totalOrig));
 
         // Pass 3: fill origData
-        $origPos = FFIHelper::new("int32_t[{$nc}]");
+        $origPos = FFIHelper::newInt32Array($nc);
         for ($i = 0; $i < $nc; $i++) {
-            $origPos[$i] = (int)$origOffsets[$i];
+            $origPos[$i] = $origOffsets[$i];
         }
         for ($v = 0; $v < $nc; $v++) {
-            $nid = (int)$indexToNodeFfi[$v];
+            $nid = $indexToNodeFfi[$v];
             if ($nid === -1) {
                 continue;
             }
-            $c = (int)$canonIdxFfi[$v];
-            $p = (int)$origPos[$c];
+            $c = $canonIdxFfi[$v];
+            $p = $origPos[$c];
             $origData[$p] = $v;
             $origPos[$c] = $p + 1;
         }
@@ -2034,16 +2056,16 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         //   active-only reverse CSR is tiny (proportional to active
         //   edges) instead of the full 60M-edge reverse.
 
-        $active = FFIHelper::new("int8_t[{$nc}]");
-        $in_deg = FFIHelper::new("int32_t[{$nc}]");
+        $active = FFIHelper::newInt8Array($nc);
+        $in_deg = FFIHelper::newInt32Array($nc);
 
         // Phase A: compute in-degree and initial active set
         for ($v = 0; $v < $nc; $v++) {
-            if ((int)$indexToNodeFfi[$v] === -1) {
+            if ($indexToNodeFfi[$v] === -1) {
                 $active[$v] = 0;
                 continue;
             }
-            $cv = $has_canonical ? (int)$canonIdxFfi[$v] : $v;
+            $cv = $has_canonical ? $canonIdxFfi[$v] : $v;
             if ($cv !== $v) {
                 $active[$v] = 0;
                 continue;
@@ -2052,29 +2074,29 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
             $seen = [];
             if ($has_canonical) {
-                $oStart = (int)$origOffsets[$v];
-                $oEnd = (int)$origOffsets[$v + 1];
+                $oStart = $origOffsets[$v];
+                $oEnd = $origOffsets[$v + 1];
                 for ($oi = $oStart; $oi < $oEnd; $oi++) {
-                    $origIdx = (int)$origData[$oi];
-                    $start = (int)$strongAllOffsets[$origIdx];
-                    $end = (int)$strongAllOffsets[$origIdx + 1];
+                    $origIdx = $origData[$oi];
+                    $start = $strongAllOffsets[$origIdx];
+                    $end = $strongAllOffsets[$origIdx + 1];
                     for ($j = $start; $j < $end; $j++) {
-                        $w = (int)$strongAllEdges[$j];
-                        $cw = (int)$canonIdxFfi[$w];
+                        $w = $strongAllEdges[$j];
+                        $cw = $canonIdxFfi[$w];
                         if ($cw !== $v && !isset($seen[$cw])) {
                             $seen[$cw] = true;
-                            $in_deg[$cw] = (int)$in_deg[$cw] + 1;
+                            $in_deg[$cw] = $in_deg[$cw] + 1;
                         }
                     }
                 }
             } else {
-                $start = (int)$strongAllOffsets[$v];
-                $end = (int)$strongAllOffsets[$v + 1];
+                $start = $strongAllOffsets[$v];
+                $end = $strongAllOffsets[$v + 1];
                 for ($j = $start; $j < $end; $j++) {
-                    $w = (int)$strongAllEdges[$j];
+                    $w = $strongAllEdges[$j];
                     if ($w !== $v && !isset($seen[$w])) {
                         $seen[$w] = true;
-                        $in_deg[$w] = (int)$in_deg[$w] + 1;
+                        $in_deg[$w] = $in_deg[$w] + 1;
                     }
                 }
             }
@@ -2083,45 +2105,45 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // Phase A: in-degree queue peeling
         $queue = [];
         for ($v = 0; $v < $nc; $v++) {
-            if ((int)$active[$v] !== 0 && (int)$in_deg[$v] === 0) {
+            if ($active[$v] !== 0 && $in_deg[$v] === 0) {
                 $queue[] = $v;
             }
         }
         while ($queue !== []) {
             $v = array_pop($queue);
-            if ((int)$active[$v] === 0) {
+            if ($active[$v] === 0) {
                 continue;
             }
             $active[$v] = 0;
             $seen = [];
             if ($has_canonical) {
-                $oStart = (int)$origOffsets[$v];
-                $oEnd = (int)$origOffsets[$v + 1];
+                $oStart = $origOffsets[$v];
+                $oEnd = $origOffsets[$v + 1];
                 for ($oi = $oStart; $oi < $oEnd; $oi++) {
-                    $origIdx = (int)$origData[$oi];
-                    $start = (int)$strongAllOffsets[$origIdx];
-                    $end = (int)$strongAllOffsets[$origIdx + 1];
+                    $origIdx = $origData[$oi];
+                    $start = $strongAllOffsets[$origIdx];
+                    $end = $strongAllOffsets[$origIdx + 1];
                     for ($j = $start; $j < $end; $j++) {
-                        $w = (int)$strongAllEdges[$j];
-                        $cw = (int)$canonIdxFfi[$w];
-                        if ($cw !== $v && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
+                        $w = $strongAllEdges[$j];
+                        $cw = $canonIdxFfi[$w];
+                        if ($cw !== $v && $active[$cw] !== 0 && !isset($seen[$cw])) {
                             $seen[$cw] = true;
-                            $in_deg[$cw] = (int)$in_deg[$cw] - 1;
-                            if ((int)$in_deg[$cw] === 0) {
+                            $in_deg[$cw] = $in_deg[$cw] - 1;
+                            if ($in_deg[$cw] === 0) {
                                 $queue[] = $cw;
                             }
                         }
                     }
                 }
             } else {
-                $start = (int)$strongAllOffsets[$v];
-                $end = (int)$strongAllOffsets[$v + 1];
+                $start = $strongAllOffsets[$v];
+                $end = $strongAllOffsets[$v + 1];
                 for ($j = $start; $j < $end; $j++) {
-                    $w = (int)$strongAllEdges[$j];
-                    if ($w !== $v && (int)$active[$w] !== 0 && !isset($seen[$w])) {
+                    $w = $strongAllEdges[$j];
+                    if ($w !== $v && $active[$w] !== 0 && !isset($seen[$w])) {
                         $seen[$w] = true;
-                        $in_deg[$w] = (int)$in_deg[$w] - 1;
-                        if ((int)$in_deg[$w] === 0) {
+                        $in_deg[$w] = $in_deg[$w] - 1;
+                        if ($in_deg[$w] === 0) {
                             $queue[] = $w;
                         }
                     }
@@ -2131,40 +2153,40 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         unset($in_deg);
 
         // Phase B: active-only reverse CSR + out-degree peeling
-        $out_deg = FFIHelper::new("int32_t[{$nc}]");
-        $arevDeg = FFIHelper::new("int32_t[{$nc}]");
+        $out_deg = FFIHelper::newInt32Array($nc);
+        $arevDeg = FFIHelper::newInt32Array($nc);
         $active_edge_count = 0;
 
         for ($v = 0; $v < $nc; $v++) {
-            if ((int)$active[$v] === 0) {
+            if ($active[$v] === 0) {
                 continue;
             }
             $seen = [];
             if ($has_canonical) {
-                $oStart = (int)$origOffsets[$v];
-                $oEnd = (int)$origOffsets[$v + 1];
+                $oStart = $origOffsets[$v];
+                $oEnd = $origOffsets[$v + 1];
                 for ($oi = $oStart; $oi < $oEnd; $oi++) {
-                    $origIdx = (int)$origData[$oi];
-                    $start = (int)$strongAllOffsets[$origIdx];
-                    $end = (int)$strongAllOffsets[$origIdx + 1];
+                    $origIdx = $origData[$oi];
+                    $start = $strongAllOffsets[$origIdx];
+                    $end = $strongAllOffsets[$origIdx + 1];
                     for ($j = $start; $j < $end; $j++) {
-                        $w = (int)$strongAllEdges[$j];
-                        $cw = (int)$canonIdxFfi[$w];
-                        if ($cw !== $v && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
+                        $w = $strongAllEdges[$j];
+                        $cw = $canonIdxFfi[$w];
+                        if ($cw !== $v && $active[$cw] !== 0 && !isset($seen[$cw])) {
                             $seen[$cw] = true;
-                            $arevDeg[$cw] = (int)$arevDeg[$cw] + 1;
+                            $arevDeg[$cw] = $arevDeg[$cw] + 1;
                             $active_edge_count++;
                         }
                     }
                 }
             } else {
-                $start = (int)$strongAllOffsets[$v];
-                $end = (int)$strongAllOffsets[$v + 1];
+                $start = $strongAllOffsets[$v];
+                $end = $strongAllOffsets[$v + 1];
                 for ($j = $start; $j < $end; $j++) {
-                    $w = (int)$strongAllEdges[$j];
-                    if ($w !== $v && (int)$active[$w] !== 0 && !isset($seen[$w])) {
+                    $w = $strongAllEdges[$j];
+                    if ($w !== $v && $active[$w] !== 0 && !isset($seen[$w])) {
                         $seen[$w] = true;
-                        $arevDeg[$w] = (int)$arevDeg[$w] + 1;
+                        $arevDeg[$w] = $arevDeg[$w] + 1;
                         $active_edge_count++;
                     }
                 }
@@ -2172,47 +2194,47 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $out_deg[$v] = count($seen);
         }
 
-        $arevOffsets = FFIHelper::new("int32_t[" . ($nc + 1) . "]");
+        $arevOffsets = FFIHelper::newInt32Array(($nc + 1));
         $arevOffsets[0] = 0;
         for ($i = 0; $i < $nc; $i++) {
-            $arevOffsets[$i + 1] = (int)$arevOffsets[$i] + (int)$arevDeg[$i];
+            $arevOffsets[$i + 1] = $arevOffsets[$i] + $arevDeg[$i];
         }
-        $arevEdges = FFIHelper::new("int32_t[" . max(1, $active_edge_count) . "]");
-        $arevPos = FFIHelper::new("int32_t[{$nc}]");
+        $arevEdges = FFIHelper::newInt32Array(max(1, $active_edge_count));
+        $arevPos = FFIHelper::newInt32Array($nc);
         for ($i = 0; $i < $nc; $i++) {
-            $arevPos[$i] = (int)$arevOffsets[$i];
+            $arevPos[$i] = $arevOffsets[$i];
         }
         for ($v = 0; $v < $nc; $v++) {
-            if ((int)$active[$v] === 0) {
+            if ($active[$v] === 0) {
                 continue;
             }
             $seen = [];
             if ($has_canonical) {
-                $oStart = (int)$origOffsets[$v];
-                $oEnd = (int)$origOffsets[$v + 1];
+                $oStart = $origOffsets[$v];
+                $oEnd = $origOffsets[$v + 1];
                 for ($oi = $oStart; $oi < $oEnd; $oi++) {
-                    $origIdx = (int)$origData[$oi];
-                    $start = (int)$strongAllOffsets[$origIdx];
-                    $end = (int)$strongAllOffsets[$origIdx + 1];
+                    $origIdx = $origData[$oi];
+                    $start = $strongAllOffsets[$origIdx];
+                    $end = $strongAllOffsets[$origIdx + 1];
                     for ($j = $start; $j < $end; $j++) {
-                        $w = (int)$strongAllEdges[$j];
-                        $cw = (int)$canonIdxFfi[$w];
-                        if ($cw !== $v && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
+                        $w = $strongAllEdges[$j];
+                        $cw = $canonIdxFfi[$w];
+                        if ($cw !== $v && $active[$cw] !== 0 && !isset($seen[$cw])) {
                             $seen[$cw] = true;
-                            $p = (int)$arevPos[$cw];
+                            $p = $arevPos[$cw];
                             $arevEdges[$p] = $v;
                             $arevPos[$cw] = $p + 1;
                         }
                     }
                 }
             } else {
-                $start = (int)$strongAllOffsets[$v];
-                $end = (int)$strongAllOffsets[$v + 1];
+                $start = $strongAllOffsets[$v];
+                $end = $strongAllOffsets[$v + 1];
                 for ($j = $start; $j < $end; $j++) {
-                    $w = (int)$strongAllEdges[$j];
-                    if ($w !== $v && (int)$active[$w] !== 0 && !isset($seen[$w])) {
+                    $w = $strongAllEdges[$j];
+                    if ($w !== $v && $active[$w] !== 0 && !isset($seen[$w])) {
                         $seen[$w] = true;
-                        $p = (int)$arevPos[$w];
+                        $p = $arevPos[$w];
                         $arevEdges[$p] = $v;
                         $arevPos[$w] = $p + 1;
                     }
@@ -2224,23 +2246,23 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // Out-degree queue peeling
         $queue = [];
         for ($v = 0; $v < $nc; $v++) {
-            if ((int)$active[$v] !== 0 && (int)$out_deg[$v] === 0) {
+            if ($active[$v] !== 0 && $out_deg[$v] === 0) {
                 $queue[] = $v;
             }
         }
         while ($queue !== []) {
             $v = array_pop($queue);
-            if ((int)$active[$v] === 0) {
+            if ($active[$v] === 0) {
                 continue;
             }
             $active[$v] = 0;
-            $start = (int)$arevOffsets[$v];
-            $end = (int)$arevOffsets[$v + 1];
+            $start = $arevOffsets[$v];
+            $end = $arevOffsets[$v + 1];
             for ($j = $start; $j < $end; $j++) {
-                $cw = (int)$arevEdges[$j];
-                if ((int)$active[$cw] !== 0) {
-                    $out_deg[$cw] = (int)$out_deg[$cw] - 1;
-                    if ((int)$out_deg[$cw] === 0) {
+                $cw = $arevEdges[$j];
+                if ($active[$cw] !== 0) {
+                    $out_deg[$cw] = $out_deg[$cw] - 1;
+                    if ($out_deg[$cw] === 0) {
                         $queue[] = $cw;
                     }
                 }
@@ -2250,9 +2272,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
         // Tarjan tables in FFI. -1 in tarjan_index means unvisited;
         // tarjan_on_stack uses 0/1 because int8 is plenty.
-        $tarjan_index = FFIHelper::new("int32_t[{$nc}]");
-        $tarjan_lowlink = FFIHelper::new("int32_t[{$nc}]");
-        $tarjan_on_stack = FFIHelper::new("int8_t[{$nc}]");
+        $tarjan_index = FFIHelper::newInt32Array($nc);
+        $tarjan_lowlink = FFIHelper::newInt32Array($nc);
+        $tarjan_on_stack = FFIHelper::newInt8Array($nc);
         for ($i = 0; $i < $nc; $i++) {
             $tarjan_index[$i] = -1;
             $tarjan_lowlink[$i] = -1;
@@ -2264,11 +2286,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $sccs = [];
 
         for ($v = 0; $v < $nc; $v++) {
-            if ((int)$active[$v] === 0) {
+            if ($active[$v] === 0) {
                 continue;
             }
-            $cv = $has_canonical ? (int)$canonIdxFfi[$v] : $v;
-            if ((int)$tarjan_index[$cv] !== -1) {
+            $cv = $has_canonical ? $canonIdxFfi[$v] : $v;
+            if ($tarjan_index[$cv] !== -1) {
                 continue;
             }
 
@@ -2286,16 +2308,16 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     if (!isset($canonical_neighbors[$node])) {
                         $neighbors = [];
                         $seen = [];
-                        $oStart = (int)$origOffsets[$node];
-                        $oEnd = (int)$origOffsets[$node + 1];
+                        $oStart = $origOffsets[$node];
+                        $oEnd = $origOffsets[$node + 1];
                         for ($oi = $oStart; $oi < $oEnd; $oi++) {
-                            $origIdx = (int)$origData[$oi];
-                            $start = (int)$strongAllOffsets[$origIdx];
-                            $end = (int)$strongAllOffsets[$origIdx + 1];
+                            $origIdx = $origData[$oi];
+                            $start = $strongAllOffsets[$origIdx];
+                            $end = $strongAllOffsets[$origIdx + 1];
                             for ($j = $start; $j < $end; $j++) {
-                                $w = (int)$strongAllEdges[$j];
-                                $cw = (int)$canonIdxFfi[$w];
-                                if ($cw !== $node && (int)$active[$cw] !== 0 && !isset($seen[$cw])) {
+                                $w = $strongAllEdges[$j];
+                                $cw = $canonIdxFfi[$w];
+                                if ($cw !== $node && $active[$cw] !== 0 && !isset($seen[$cw])) {
                                     $seen[$cw] = true;
                                     $neighbors[] = $cw;
                                 }
@@ -2307,11 +2329,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 } else {
                     $neighbors = [];
                     $seen = [];
-                    $start = (int)$strongAllOffsets[$node];
-                    $end = (int)$strongAllOffsets[$node + 1];
+                    $start = $strongAllOffsets[$node];
+                    $end = $strongAllOffsets[$node + 1];
                     for ($j = $start; $j < $end; $j++) {
-                        $w = (int)$strongAllEdges[$j];
-                        if ($w !== $node && (int)$active[$w] !== 0 && !isset($seen[$w])) {
+                        $w = $strongAllEdges[$j];
+                        if ($w !== $node && $active[$w] !== 0 && !isset($seen[$w])) {
                             $seen[$w] = true;
                             $neighbors[] = $w;
                         }
@@ -2322,7 +2344,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 $found_unvisited = false;
                 for ($i = $ci; $i < $count; $i++) {
                     $w = $neighbors[$i];
-                    $w_index = (int)$tarjan_index[$w];
+                    $w_index = $tarjan_index[$w];
                     if ($w_index === -1) {
                         $call_stack[] = [$node, $i + 1];
                         $tarjan_index[$w] = $index_counter;
@@ -2333,8 +2355,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                         $call_stack[] = [$w, 0];
                         $found_unvisited = true;
                         break;
-                    } elseif ((int)$tarjan_on_stack[$w] !== 0) {
-                        $cur = (int)$tarjan_lowlink[$node];
+                    } elseif ($tarjan_on_stack[$w] !== 0) {
+                        $cur = $tarjan_lowlink[$node];
                         if ($w_index < $cur) {
                             $tarjan_lowlink[$node] = $w_index;
                         }
@@ -2342,7 +2364,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 }
 
                 if (!$found_unvisited) {
-                    if ((int)$tarjan_lowlink[$node] === (int)$tarjan_index[$node]) {
+                    if ($tarjan_lowlink[$node] === $tarjan_index[$node]) {
                         /** @var list<int> $scc CSR indices (canonical) */
                         $scc = [];
                         do {
@@ -2357,8 +2379,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     }
                     if ($call_stack) {
                         $parent_node = $call_stack[count($call_stack) - 1][0];
-                        $cur = (int)$tarjan_lowlink[$parent_node];
-                        $cand = (int)$tarjan_lowlink[$node];
+                        $cur = $tarjan_lowlink[$parent_node];
+                        $cand = $tarjan_lowlink[$node];
                         if ($cand < $cur) {
                             $tarjan_lowlink[$parent_node] = $cand;
                         }
@@ -2373,10 +2395,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             foreach ($sccs as &$scc) {
                 $expanded = [];
                 foreach ($scc as $canonical_idx) {
-                    $oStart = (int)$origOffsets[$canonical_idx];
-                    $oEnd = (int)$origOffsets[$canonical_idx + 1];
+                    $oStart = $origOffsets[$canonical_idx];
+                    $oEnd = $origOffsets[$canonical_idx + 1];
                     for ($oi = $oStart; $oi < $oEnd; $oi++) {
-                        $expanded[] = (int)$origData[$oi];
+                        $expanded[] = $origData[$oi];
                     }
                 }
                 $scc = $expanded;
@@ -2389,8 +2411,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // strongAll CSR is only needed for SCC computation.
         // Free it to save ~480 MB on 60M-edge graphs.
         unset($this->strongAllOffsets, $this->strongAllEdges);
-        $this->strongAllOffsets = FFIHelper::new("int32_t[1]");
-        $this->strongAllEdges = FFIHelper::new("int32_t[1]");
+        $this->strongAllOffsets = FFIHelper::newInt32Array(1);
+        $this->strongAllEdges = FFIHelper::newInt32Array(1);
     }
 
     /**
@@ -2413,8 +2435,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
             foreach ($scc_indices as $idx) {
                 $this->ffiNodeToScc[$idx] = $scc_id;
-                $total_size += (int)$this->ffiNodeSizes[$idx];
-                $classId = (int)$this->nodeClassIds[$idx];
+                $total_size += $this->ffiNodeSizes[$idx];
+                $classId = $this->nodeClassIds[$idx];
                 if ($classId >= 0) {
                     $cls = $this->classDict[$classId];
                     $class_counts[$cls] = ($class_counts[$cls] ?? 0) + 1;
@@ -2426,10 +2448,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $ext_out = 0;
             foreach ($scc_indices as $idx) {
                 // Reverse edges (parents) — revEdges holds CSR indices.
-                $rStart = (int)$this->revOffsets[$idx];
-                $rEnd = (int)$this->revOffsets[$idx + 1];
+                $rStart = $this->revOffsets[$idx];
+                $rEnd = $this->revOffsets[$idx + 1];
                 for ($j = $rStart; $j < $rEnd; $j++) {
-                    $parentIdx = (int)$this->revEdges[$j];
+                    $parentIdx = $this->revEdges[$j];
                     if ($parentIdx === $rootParentIdx) {
                         continue;
                     }
@@ -2438,10 +2460,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     }
                 }
                 // Forward edges (all children)
-                $fStart = (int)$this->allOffsets[$idx];
-                $fEnd = (int)$this->allOffsets[$idx + 1];
+                $fStart = $this->allOffsets[$idx];
+                $fEnd = $this->allOffsets[$idx + 1];
                 for ($j = $fStart; $j < $fEnd; $j++) {
-                    $childIdx = (int)$this->allEdges[$j];
+                    $childIdx = $this->allEdges[$j];
                     if (!isset($scc_set[$childIdx])) {
                         $ext_out++;
                     }
