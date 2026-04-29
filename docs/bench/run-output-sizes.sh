@@ -96,14 +96,14 @@ kill "$spid" 2>/dev/null; wait "$spid" 2>/dev/null || true
 echo "phpspy,laravel-route-${ITERS}@200hz,$(stat -c %s /tmp/outsize-phpspy.out 2>/dev/null || echo 0),phpspy text"
 
 # ---- reli at 200 Hz, plain rbt ----
-"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 5000000 -F rbt \
+"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 5000000 -f rbt \
     -o /tmp/outsize-reli.rbt \
     -- /usr/bin/php8.4 -n $JIT_FLAGS $LARAVEL_EXTS \
     "${SCRIPTS_DIR}/laravel-route.php" "$ITERS" "$LARAVEL_DIR" >/dev/null 2>&1 || true
 echo "reli-200hz,laravel-route-${ITERS},$(stat -c %s /tmp/outsize-reli.rbt 2>/dev/null || echo 0),rbt binary"
 
 # ---- reli at 200 Hz, compressed rbt (--rbt-compress) ----
-"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 5000000 -F rbt --rbt-compress \
+"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 5000000 -f rbt --rbt-compress \
     -o /tmp/outsize-reli-z.rbt \
     -- /usr/bin/php8.4 -n $JIT_FLAGS $LARAVEL_EXTS \
     "${SCRIPTS_DIR}/laravel-route.php" "$ITERS" "$LARAVEL_DIR" >/dev/null 2>&1 || true
@@ -116,14 +116,14 @@ echo "reli-200hz-z,laravel-route-${ITERS},$(stat -c %s /tmp/outsize-reli-z.rbt 2
 # leave a 0-byte gzip output).
 
 # reli plain rbt with -S
-"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 5000000 -S -F rbt \
+"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 5000000 -S -f rbt \
     -o /tmp/outsize-reli-S.rbt \
     -- /usr/bin/php8.4 -n $JIT_FLAGS $LARAVEL_EXTS \
     "${SCRIPTS_DIR}/laravel-route.php" "$ITERS" "$LARAVEL_DIR" >/dev/null 2>&1 || true
 echo "reli-200hz-S,laravel-route-${ITERS},$(stat -c %s /tmp/outsize-reli-S.rbt 2>/dev/null || echo 0),rbt binary -S"
 
 # reli --rbt-compress with -S
-"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 5000000 -S -F rbt --rbt-compress \
+"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 5000000 -S -f rbt --rbt-compress \
     -o /tmp/outsize-reli-zS.rbt \
     -- /usr/bin/php8.4 -n $JIT_FLAGS $LARAVEL_EXTS \
     "${SCRIPTS_DIR}/laravel-route.php" "$ITERS" "$LARAVEL_DIR" >/dev/null 2>&1 || true

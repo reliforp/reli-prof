@@ -558,10 +558,10 @@ Each worker process writes directly to its own file, bypassing IPC for trace dat
 
 ```bash
 # Explicit output directory
-reli inspector:daemon -F rbt -o /path/to/output_dir/ ...
+reli inspector:daemon -f rbt -o /path/to/output_dir/ ...
 
 # Default: auto-creates a session directory under XDG_STATE_HOME
-reli inspector:daemon -F rbt ...
+reli inspector:daemon -f rbt ...
 # -> writes to $XDG_STATE_HOME/reli/daemon-traces/2026-04-09T163012Z_{pid}/
 ```
 
@@ -599,10 +599,10 @@ All traces are collected to the main process and written to a single stream usin
 
 ```bash
 # Explicit output file
-reli inspector:daemon -F rbt-bundled -o combined.rbt ...
+reli inspector:daemon -f rbt-bundled -o combined.rbt ...
 
 # Default: writes to stdout (pipe-friendly)
-reli inspector:daemon -F rbt-bundled ... > combined.rbt
+reli inspector:daemon -f rbt-bundled ... > combined.rbt
 ```
 
 - **Default output**: stdout (same as template modes), so it can be piped
@@ -666,7 +666,7 @@ reli converter:rbt --compress < trace.txt > trace.rbt.gz
 In daemon per-worker mode, `--rbt-compress` gzip-compresses each completed segment and writes concatenated gzip members to a single `.rbt.gz` file per worker:
 
 ```bash
-reli inspector:daemon -F rbt --rbt-compress -o /path/to/output_dir/ ...
+reli inspector:daemon -f rbt --rbt-compress -o /path/to/output_dir/ ...
 # Produces worker_{pid}.rbt.gz files with concatenated gzip members
 ```
 
@@ -676,7 +676,7 @@ reli inspector:daemon -F rbt --rbt-compress -o /path/to/output_dir/ ...
 - No raw `.rbt` data touches disk — only compressed data is written
 - Without `--rbt-compress`, output is raw `.rbt` per worker (default, best for recovery/tail)
 
-**Single-shot and bundled modes don't auto-suffix the filename.** Only daemon per-worker mode rewrites the extension, because there reli generates the per-worker filename itself (`worker_{pid}.rbt` → `worker_{pid}.rbt.gz`). In `inspector:trace` and `-F rbt-bundled`, `-o` is treated as the exact output path: `-o foo.rbt --rbt-compress` writes gzip content to a file named `foo.rbt`. `rbt:analyze` auto-detects gzip so the file still works, but external tools (`file`, `tar`) will see a `.rbt`-named gzip blob. Pass `-o foo.rbt.gz` explicitly if you want the extension to match the contents.
+**Single-shot and bundled modes don't auto-suffix the filename.** Only daemon per-worker mode rewrites the extension, because there reli generates the per-worker filename itself (`worker_{pid}.rbt` → `worker_{pid}.rbt.gz`). In `inspector:trace` and `-f rbt-bundled`, `-o` is treated as the exact output path: `-o foo.rbt --rbt-compress` writes gzip content to a file named `foo.rbt`. `rbt:analyze` auto-detects gzip so the file still works, but external tools (`file`, `tar`) will see a `.rbt`-named gzip blob. Pass `-o foo.rbt.gz` explicitly if you want the extension to match the contents.
 
 ### When to use which
 
@@ -689,7 +689,7 @@ Raw `.rbt` is the default for live capture because it supports append-only writi
 
 ### Compression modes by use case
 
-**Daemon per-worker mode** (`inspector:daemon -F rbt --rbt-compress`): each worker writes a single `.rbt.gz` file. Completed segments are gzip-compressed and appended as concatenated gzip members. One file per worker, multiple segments inside.
+**Daemon per-worker mode** (`inspector:daemon -f rbt --rbt-compress`): each worker writes a single `.rbt.gz` file. Completed segments are gzip-compressed and appended as concatenated gzip members. One file per worker, multiple segments inside.
 
 **File rotation via `stream_factory`** (programmatic API): each segment is written to a separate file. With `compress_completed_segments=true`, each file receives exactly one gzip member. The writer closes each stream on rotation.
 

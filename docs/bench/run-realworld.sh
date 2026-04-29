@@ -109,7 +109,7 @@ run_composer_inproc() {
 
 # Prime reli cache.
 echo "# priming reli cache..." >&2
-"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 10000000 -F rbt -o /tmp/bench-reli-prime.rbt \
+"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 10000000 -f rbt -o /tmp/bench-reli-prime.rbt \
     -- /usr/bin/php8.4 -n $JIT_FLAGS -r 'usleep(500000);' >/dev/null 2>&1 || true
 
 echo "config,bench,run,wall_seconds"
@@ -151,7 +151,7 @@ for ((i=1; i<=RUNS_LIGHT; i++)); do
 
     # reli
     "$RELI_PHP" "$RELI" inspector:trace --sleep-ns "$RELI_SLEEP_NS" \
-        -F rbt -o /tmp/bench-reli.rbt \
+        -f rbt -o /tmp/bench-reli.rbt \
         -- /usr/bin/php8.4 -n $JIT_FLAGS $LARAVEL_EXTS \
         "${SCRIPTS_DIR}/laravel-route.php" 2000 "$LARAVEL_DIR" >/dev/null 2>/tmp/bench-tgt.err \
         || true   # reli can hit a transient FFI\ParserException on fast-moving targets; tolerate
@@ -189,7 +189,7 @@ for ((i=1; i<=RUNS_LIGHT; i++)); do
     t_start=$(/usr/bin/php8.4 -n -r 'echo microtime(true);')
     COMPOSER_ALLOW_SUPERUSER=1 \
         "$RELI_PHP" "$RELI" inspector:trace --sleep-ns "$RELI_SLEEP_NS" \
-        -F rbt -o /tmp/bench-reli.rbt \
+        -f rbt -o /tmp/bench-reli.rbt \
         -- /usr/bin/php8.4 -n $JIT_FLAGS $COMPOSER_EXTS \
         /usr/local/bin/composer install \
         --no-interaction --prefer-dist --no-dev --no-scripts --quiet \

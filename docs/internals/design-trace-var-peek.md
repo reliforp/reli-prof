@@ -353,7 +353,7 @@ The daemon has three output modes (see `DaemonCommand::execute`,
 `src/Command/Inspector/DaemonCommand.php:90`). Each needs a slightly
 different plumbing for annotations:
 
-#### (a) Per-worker `rbt` (`-F rbt`) — simplest
+#### (a) Per-worker `rbt` (`-f rbt`) — simplest
 
 The worker writes directly to its own `worker_<pid>.rbt` file via
 `PhpReaderEntryPoint::writeBinaryTrace()`
@@ -373,7 +373,7 @@ and handles the RLE break case. **Zero IPC changes** — the annotations
 never leave the worker. This is the cleanest path and the one I'd ship
 first.
 
-#### (b) Bundled `rbt-bundled` (`-F rbt-bundled`) — writer extension
+#### (b) Bundled `rbt-bundled` (`-f rbt-bundled`) — writer extension
 
 Workers send `TraceMessage` to the controller; the controller's
 `writeBundledTrace()`

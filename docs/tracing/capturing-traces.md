@@ -57,7 +57,7 @@ from the output destination: writing to a `.rbt` file picks the
 binary format, anything else (including stdout) falls back to the
 configured default template — phpspy text out of the box.
 
-#### Text (default: `-F template:phpspy`)
+#### Text (default: `-f template:phpspy`)
 
 One block per sample, blank-line separated. Each line is
 `<idx> <fqn> <file>:<line>`, deepest frame on top:
@@ -80,7 +80,7 @@ phpspy-compatible tool. Note that the phpspy text format is **much
 larger** than `.rbt` for the same trace — for anything beyond a
 quick look, capture to `.rbt` instead.
 
-#### Binary (`-F rbt`, auto-selected for `-o *.rbt`)
+#### Binary (`-f rbt`, auto-selected for `-o *.rbt`)
 
 Compact append-only binary — typically a few bytes per sample after
 string interning and run-length encoding. Not human-readable;
@@ -123,7 +123,7 @@ Trace every process whose command line matches a regex. Common for
 sudo php ./reli inspector:daemon -P "^/usr/sbin/httpd"
 
 # Per-worker .rbt files (zero IPC overhead between workers)
-sudo php ./reli inspector:daemon -P "^php-fpm" -F rbt -o ./traces/
+sudo php ./reli inspector:daemon -P "^php-fpm" -f rbt -o ./traces/
 ```
 
 Useful flags (in addition to the `inspector:trace` set):
@@ -132,7 +132,7 @@ Useful flags (in addition to the `inspector:trace` set):
 - `-T/--threads <N>` — worker pool size (default 8)
 
 Output modes for `.rbt` come in two flavours: per-worker files
-(`-F rbt -o <dir>/`) which each worker writes independently, or a
+(`-f rbt -o <dir>/`) which each worker writes independently, or a
 single bundled stream. See [binary-trace-format.md](binary-trace-format.md).
 
 ### Sizing `-T`
@@ -142,7 +142,7 @@ roughly to the number of target processes you expect the regex to
 match concurrently:
 
 - **Workers > matched targets**: idle workers stay parked. With
-  `-F rbt -o <dir>/` the per-worker output stream is opened lazily on
+  `-f rbt -o <dir>/` the per-worker output stream is opened lazily on
   the first attach, so workers that never get assigned a target leave
   no `worker_<pid>.rbt` artifact behind. Extra workers are therefore a
   scheduling/resource concern only, not an output-cleanup concern.

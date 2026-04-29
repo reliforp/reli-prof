@@ -35,7 +35,7 @@ count_phpspy_stacks() {
 }
 
 echo "# priming reli cache..." >&2
-"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 10000000 -F rbt \
+"$RELI_PHP" "$RELI" inspector:trace --sleep-ns 10000000 -f rbt \
     -o /tmp/cpus-prime.rbt -- /usr/bin/php8.4 -n -r 'usleep(500000);' >/dev/null 2>&1 || true
 
 echo "profiler,depth,target_wall,samples,expected_at_1khz"
@@ -118,7 +118,7 @@ for spec in "${DEPTHS[@]}"; do
 
     # reli (no stop-process — default)
     "$RELI_PHP" "$RELI" inspector:trace --sleep-ns "$RELI_SLEEP_NS" \
-        -F rbt -o /tmp/cpus-reli.rbt \
+        -f rbt -o /tmp/cpus-reli.rbt \
         -- /usr/bin/php8.4 -n "${SCRIPTS_DIR}/depth.php" "$depth" "$iters" "$work" \
         2>/tmp/cpus-tgt.err >/dev/null
     wall=$(grep -oE 'in [0-9]+\.[0-9]+s' /tmp/cpus-tgt.err | tail -1 | awk '{print $2}' | tr -d 's')
@@ -128,7 +128,7 @@ for spec in "${DEPTHS[@]}"; do
 
     # reli with -S (stop target during each read — should reduce drops)
     "$RELI_PHP" "$RELI" inspector:trace --sleep-ns "$RELI_SLEEP_NS" -S \
-        -F rbt -o /tmp/cpus-reli-s.rbt \
+        -f rbt -o /tmp/cpus-reli-s.rbt \
         -- /usr/bin/php8.4 -n "${SCRIPTS_DIR}/depth.php" "$depth" "$iters" "$work" \
         2>/tmp/cpus-tgt.err >/dev/null
     wall=$(grep -oE 'in [0-9]+\.[0-9]+s' /tmp/cpus-tgt.err | tail -1 | awk '{print $2}' | tr -d 's')

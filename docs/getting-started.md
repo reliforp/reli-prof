@@ -170,7 +170,7 @@ Run your workload in one terminal, attach reli from another:
 php ./your-script.php
 
 # Terminal B: attach and capture for ~10 s, then Ctrl-C
-# (-F rbt is implied by the .rbt extension on -o)
+# (-f rbt is implied by the .rbt extension on -o)
 # pgrep -n picks the newest match — avoids passing multiple PIDs when several commands match.
 reli inspector:trace -p "$(pgrep -nf your-script.php)" -o trace.rbt
 ```
