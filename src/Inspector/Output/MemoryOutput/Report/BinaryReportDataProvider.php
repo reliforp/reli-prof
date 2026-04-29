@@ -57,9 +57,9 @@ final class BinaryReportDataProvider
         $result = [];
         if ($locRows !== null) {
             for ($i = 0; $i < $count; $i++) {
-                $type = $dict->lookup((int)$locRows[$i]->location_type_id);
+                $type = $dict->lookup($locRows[$i]->location_type_id);
                 if ($type === $location_type_name) {
-                    $result[(int)$locRows[$i]->node_id] = true;
+                    $result[$locRows[$i]->node_id] = true;
                 }
             }
         } else {
@@ -110,12 +110,12 @@ final class BinaryReportDataProvider
         $candidates = [];
         if ($locRows !== null) {
             for ($i = 0; $i < $count; $i++) {
-                $type = $dict->lookup((int)$locRows[$i]->location_type_id);
+                $type = $dict->lookup($locRows[$i]->location_type_id);
                 if ($type === 'ZendStringMemoryLocation') {
                     $candidates[] = [
-                        'node_id' => (int)$locRows[$i]->node_id,
-                        'size' => (int)$locRows[$i]->size,
-                        'string_value_id' => (int)$locRows[$i]->string_value_id,
+                        'node_id' => $locRows[$i]->node_id,
+                        'size' => $locRows[$i]->size,
+                        'string_value_id' => $locRows[$i]->string_value_id,
                     ];
                 }
             }
@@ -184,12 +184,12 @@ final class BinaryReportDataProvider
         $agg = [];
         if ($edgeRows !== null) {
             for ($i = 0; $i < $count; $i++) {
-                if ((int)$edgeRows[$i]->is_tree !== 0 || (int)$edgeRows[$i]->strength !== 0) {
+                if ($edgeRows[$i]->is_tree !== 0 || $edgeRows[$i]->strength !== 0) {
                     continue; // skip tree edges and non-strong edges
                 }
-                $lid = (int)$edgeRows[$i]->link_name_id;
-                $parent = (int)$edgeRows[$i]->parent_node_id;
-                $child = (int)$edgeRows[$i]->child_node_id;
+                $lid = $edgeRows[$i]->link_name_id;
+                $parent = $edgeRows[$i]->parent_node_id;
+                $child = $edgeRows[$i]->child_node_id;
                 if (!isset($agg[$lid])) {
                     $agg[$lid] = ['count' => 0, 'targets' => [], 'sample_parent' => $parent, 'sample_child' => $child];
                 }
@@ -311,10 +311,10 @@ final class BinaryReportDataProvider
 
         if ($edgeRows !== null) {
             for ($i = 0; $i < $edge_count; $i++) {
-                if ((int)$edgeRows[$i]->is_tree !== 0 || (int)$edgeRows[$i]->strength !== 0) {
+                if ($edgeRows[$i]->is_tree !== 0 || $edgeRows[$i]->strength !== 0) {
                     continue;
                 }
-                $child = (int)$edgeRows[$i]->child_node_id;
+                $child = $edgeRows[$i]->child_node_id;
                 if ($child < 0 || $child >= $nodeSizesSlots) {
                     continue;
                 }
@@ -322,14 +322,14 @@ final class BinaryReportDataProvider
                 if ($size <= 0) {
                     continue;
                 }
-                $lid = (int)$edgeRows[$i]->link_name_id;
+                $lid = $edgeRows[$i]->link_name_id;
                 $key = $lid . ':' . $size;
                 if (!isset($coarse[$key])) {
                     $coarse[$key] = [
                         'link_name_id' => $lid,
                         'size' => $size,
                         'ref_count' => 0,
-                        'sample_parent_node_id' => (int)$edgeRows[$i]->parent_node_id,
+                        'sample_parent_node_id' => $edgeRows[$i]->parent_node_id,
                         'sample_child_node_id' => $child,
                     ];
                 }
@@ -379,7 +379,7 @@ final class BinaryReportDataProvider
             $locIndex = FFIHelper::new("int32_t[{$nodeSizesSlots}]");
             FFI::memset($locIndex, 0xFF, $nodeSizesSlots * 4); // fill with -1
             for ($i = 0; $i < $locCount; $i++) {
-                $nid = (int)$locRows[$i]->node_id;
+                $nid = $locRows[$i]->node_id;
                 if ($nid < 0 || $nid >= $nodeSizesSlots) {
                     continue;
                 }
@@ -389,11 +389,11 @@ final class BinaryReportDataProvider
                     $locIndex[$nid] = $i;
                 } else {
                     // Prefer a row with richer metadata (class_id or string_value_id)
-                    $curHas = ((int)$locRows[$cur]->class_id !== Format::NULL_STRING_ID)
-                           || ((int)$locRows[$cur]->string_value_id !== Format::NULL_STRING_ID);
+                    $curHas = ($locRows[$cur]->class_id !== Format::NULL_STRING_ID)
+                           || ($locRows[$cur]->string_value_id !== Format::NULL_STRING_ID);
                     if (!$curHas) {
-                        $newHas = ((int)$locRows[$i]->class_id !== Format::NULL_STRING_ID)
-                               || ((int)$locRows[$i]->string_value_id !== Format::NULL_STRING_ID);
+                        $newHas = ($locRows[$i]->class_id !== Format::NULL_STRING_ID)
+                               || ($locRows[$i]->string_value_id !== Format::NULL_STRING_ID);
                         if ($newHas) {
                             $locIndex[$nid] = $i;
                         }
@@ -427,7 +427,7 @@ final class BinaryReportDataProvider
             if ($locIndex !== null && $locRows !== null) {
                 $li = Cast::toInt($locIndex[$info['sample_child_node_id']]);
                 if ($li >= 0) {
-                    $sampleLocType = $dict->lookup((int)$locRows[$li]->location_type_id);
+                    $sampleLocType = $dict->lookup($locRows[$li]->location_type_id);
                 }
             }
             $candidates[] = [
@@ -478,10 +478,10 @@ final class BinaryReportDataProvider
         // Build $meta on demand from nodeSizes + locIndex/locRows.
         if ($edgeRows !== null) {
             for ($i = 0; $i < $edge_count; $i++) {
-                if ((int)$edgeRows[$i]->is_tree !== 0 || (int)$edgeRows[$i]->strength !== 0) {
+                if ($edgeRows[$i]->is_tree !== 0 || $edgeRows[$i]->strength !== 0) {
                     continue;
                 }
-                $child = (int)$edgeRows[$i]->child_node_id;
+                $child = $edgeRows[$i]->child_node_id;
                 if ($child < 0 || $child >= $nodeSizesSlots) {
                     continue;
                 }
@@ -489,7 +489,7 @@ final class BinaryReportDataProvider
                 if ($size <= 0) {
                     continue;
                 }
-                $key = (int)$edgeRows[$i]->link_name_id . ':' . $size;
+                $key = $edgeRows[$i]->link_name_id . ':' . $size;
                 if (!isset($groups[$key])) {
                     continue;
                 }
@@ -661,9 +661,9 @@ final class BinaryReportDataProvider
         $nodeRows = $reader->castSection(Format::SECTION_NODES, 'NodeRow');
         if ($nodeRows !== null) {
             for ($i = 0; $i < $node_count; $i++) {
-                $type = $dict->lookup((int)$nodeRows[$i]->type_id);
+                $type = $dict->lookup($nodeRows[$i]->type_id);
                 if ($type !== null && isset($target_types[$type])) {
-                    $is_def_node[(int)$nodeRows[$i]->node_id] = true;
+                    $is_def_node[$nodeRows[$i]->node_id] = true;
                 }
             }
         } else {
@@ -700,13 +700,13 @@ final class BinaryReportDataProvider
         // filter doesn't introduce duplicates.
         if ($edgeRows !== null) {
             for ($i = 0; $i < $edge_count; $i++) {
-                $parent = (int)$edgeRows[$i]->parent_node_id;
+                $parent = $edgeRows[$i]->parent_node_id;
                 if (!isset($is_def_node[$parent])) {
                     continue;
                 }
-                $link = $dict->lookup((int)$edgeRows[$i]->link_name_id);
+                $link = $dict->lookup($edgeRows[$i]->link_name_id);
                 if ($link === 'name') {
-                    $name_child_of[$parent] = (int)$edgeRows[$i]->child_node_id;
+                    $name_child_of[$parent] = $edgeRows[$i]->child_node_id;
                 }
             }
         } else {
@@ -743,11 +743,11 @@ final class BinaryReportDataProvider
         $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
         if ($locRows !== null) {
             for ($i = 0; $i < $loc_count; $i++) {
-                $node_id = (int)$locRows[$i]->node_id;
+                $node_id = $locRows[$i]->node_id;
                 if (!isset($defs_for_child[$node_id])) {
                     continue;
                 }
-                $sv_id = (int)$locRows[$i]->string_value_id;
+                $sv_id = $locRows[$i]->string_value_id;
                 if ($sv_id === Format::NULL_STRING_ID) {
                     continue;
                 }
@@ -862,12 +862,12 @@ final class BinaryReportDataProvider
         if ($li < 0) {
             return $meta;
         }
-        $meta['location_type'] = $dict->lookup((int)$locRows[$li]->location_type_id);
-        $classId = (int)$locRows[$li]->class_id;
+        $meta['location_type'] = $dict->lookup($locRows[$li]->location_type_id);
+        $classId = $locRows[$li]->class_id;
         if ($classId !== Format::NULL_STRING_ID) {
             $meta['class_name'] = $dict->lookup($classId);
         }
-        $svId = (int)$locRows[$li]->string_value_id;
+        $svId = $locRows[$li]->string_value_id;
         if ($svId !== Format::NULL_STRING_ID) {
             $meta['string_value_id'] = $svId;
         }
@@ -898,22 +898,22 @@ final class BinaryReportDataProvider
         $coarse = [];
         if ($edgeRows !== null) {
             for ($i = 0; $i < $edge_count; $i++) {
-                if ((int)$edgeRows[$i]->is_tree !== 0 || (int)$edgeRows[$i]->strength !== 0) {
+                if ($edgeRows[$i]->is_tree !== 0 || $edgeRows[$i]->strength !== 0) {
                     continue;
                 }
-                $child = (int)$edgeRows[$i]->child_node_id;
+                $child = $edgeRows[$i]->child_node_id;
                 $meta = $node_meta[$child] ?? null;
                 if ($meta === null || $meta['size'] <= 0) {
                     continue;
                 }
-                $lid = (int)$edgeRows[$i]->link_name_id;
+                $lid = $edgeRows[$i]->link_name_id;
                 $key = $lid . ':' . $meta['size'];
                 if (!isset($coarse[$key])) {
                     $coarse[$key] = [
                         'link_name_id' => $lid,
                         'size' => $meta['size'],
                         'ref_count' => 0,
-                        'sample_parent_node_id' => (int)$edgeRows[$i]->parent_node_id,
+                        'sample_parent_node_id' => $edgeRows[$i]->parent_node_id,
                         'sample_child_node_id' => $child,
                     ];
                 }
@@ -992,15 +992,15 @@ final class BinaryReportDataProvider
         }
         if ($edgeRows !== null) {
             for ($i = 0; $i < $edge_count; $i++) {
-                if ((int)$edgeRows[$i]->is_tree !== 0 || (int)$edgeRows[$i]->strength !== 0) {
+                if ($edgeRows[$i]->is_tree !== 0 || $edgeRows[$i]->strength !== 0) {
                     continue;
                 }
-                $child = (int)$edgeRows[$i]->child_node_id;
+                $child = $edgeRows[$i]->child_node_id;
                 $meta = $node_meta[$child] ?? null;
                 if ($meta === null || $meta['size'] <= 0) {
                     continue;
                 }
-                $key = (int)$edgeRows[$i]->link_name_id . ':' . $meta['size'];
+                $key = $edgeRows[$i]->link_name_id . ':' . $meta['size'];
                 if (!isset($groups[$key])) {
                     continue;
                 }
@@ -1083,7 +1083,7 @@ final class BinaryReportDataProvider
         $meta = [];
         if ($locRows !== null) {
             for ($i = 0; $i < $count; $i++) {
-                $node_id = (int)$locRows[$i]->node_id;
+                $node_id = $locRows[$i]->node_id;
                 if (!isset($meta[$node_id])) {
                     $meta[$node_id] = [
                         'size' => 0,
@@ -1092,21 +1092,21 @@ final class BinaryReportDataProvider
                         'string_value_id' => null,
                     ];
                 }
-                $meta[$node_id]['size'] += (int)$locRows[$i]->size;
+                $meta[$node_id]['size'] += $locRows[$i]->size;
                 if ($meta[$node_id]['location_type'] === null) {
-                    $meta[$node_id]['location_type'] = $dict->lookup((int)$locRows[$i]->location_type_id);
+                    $meta[$node_id]['location_type'] = $dict->lookup($locRows[$i]->location_type_id);
                 }
                 if (
                     $meta[$node_id]['class_name'] === null
-                    && (int)$locRows[$i]->class_id !== Format::NULL_STRING_ID
+                    && $locRows[$i]->class_id !== Format::NULL_STRING_ID
                 ) {
-                    $meta[$node_id]['class_name'] = $dict->lookup((int)$locRows[$i]->class_id);
+                    $meta[$node_id]['class_name'] = $dict->lookup($locRows[$i]->class_id);
                 }
                 if (
                     $meta[$node_id]['string_value_id'] === null
-                    && (int)$locRows[$i]->string_value_id !== Format::NULL_STRING_ID
+                    && $locRows[$i]->string_value_id !== Format::NULL_STRING_ID
                 ) {
-                    $meta[$node_id]['string_value_id'] = (int)$locRows[$i]->string_value_id;
+                    $meta[$node_id]['string_value_id'] = $locRows[$i]->string_value_id;
                 }
             }
         } else {

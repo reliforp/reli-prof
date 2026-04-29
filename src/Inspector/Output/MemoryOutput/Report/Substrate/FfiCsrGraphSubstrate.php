@@ -206,7 +206,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $all_node_ids = [];
         if ($nodeRows !== null) {
             for ($i = 0; $i < $nodeRowCount; $i++) {
-                $all_node_ids[(int)$nodeRows[$i]->node_id] = true;
+                $all_node_ids[$nodeRows[$i]->node_id] = true;
             }
         } else {
             $nodeData = $reader->getSectionData(Format::SECTION_NODES);
@@ -285,9 +285,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
         for ($i = 0; $i < $nodeRowCount; $i++) {
             if ($nodeRows !== null) {
-                $node_id = (int)$nodeRows[$i]->node_id;
-                $type_id = (int)$nodeRows[$i]->type_id;
-                $canonical_id = (int)$nodeRows[$i]->canonical_id;
+                $node_id = $nodeRows[$i]->node_id;
+                $type_id = $nodeRows[$i]->type_id;
+                $canonical_id = $nodeRows[$i]->canonical_id;
             } else {
                 $row = unpack('Vnode_id/Vcanonical_id/Vtype_id/Vclass_id', $nodeData, $i * Format::NODE_ROW_SIZE);
                 $node_id = (int)$row['node_id'];
@@ -411,11 +411,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             }
             for ($i = 0; $i < $locCount; $i++) {
                 if ($locRows !== null) {
-                    $node_id = (int)$locRows[$i]->node_id;
-                    $address = (int)$locRows[$i]->address;
+                    $node_id = $locRows[$i]->node_id;
+                    $address = $locRows[$i]->address;
                     if (!$sizesLoaded) {
-                        $class_id = (int)$locRows[$i]->class_id;
-                        $size = (int)$locRows[$i]->size;
+                        $class_id = $locRows[$i]->class_id;
+                        $size = $locRows[$i]->size;
                     }
                 } else {
                     $off = $i * Format::LOCATION_ROW_SIZE;
@@ -585,11 +585,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $edgeData = $edgeRows === null ? $reader->getSectionData(Format::SECTION_EDGES) : null;
         for ($i = 0; $i < $edgeCount; $i++) {
             if ($edgeRows !== null) {
-                $raw_parent = (int)$edgeRows[$i]->parent_node_id;
-                $child = (int)$edgeRows[$i]->child_node_id;
-                $link_name_id = (int)$edgeRows[$i]->link_name_id;
-                $is_tree = (int)$edgeRows[$i]->is_tree;
-                $is_strong = (int)$edgeRows[$i]->strength === 0;
+                $raw_parent = $edgeRows[$i]->parent_node_id;
+                $child = $edgeRows[$i]->child_node_id;
+                $link_name_id = $edgeRows[$i]->link_name_id;
+                $is_tree = $edgeRows[$i]->is_tree;
+                $is_strong = $edgeRows[$i]->strength === 0;
             } else {
                 $row = unpack(
                     'Vparent_node_id/Vchild_node_id/Vlink_name_id/Cis_tree/Cstrength',
@@ -1108,7 +1108,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     #[\Override]
     public function getCanonicalGroup(int $nodeId): array
     {
-        if ($this->canonIdxFfi === null || $this->origOffsets === null) {
+        if (
+            $this->canonIdxFfi === null
+            || $this->origOffsets === null
+            || $this->origData === null
+        ) {
             return parent::getCanonicalGroup($nodeId);
         }
         $idx = $this->nodeIdToIndex($nodeId);
@@ -1996,15 +2000,28 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     private function computeSccFfi(): void
     {
         $nc = $this->nodeCount;
-        $has_canonical = $this->canonIdxFfi !== null;
 
         $strongAllOffsets = $this->strongAllOffsets;
         $strongAllEdges = $this->strongAllEdges;
         $indexToNodeFfi = $this->indexToNodeFfi;
 
+        // The three canonical-mapping arrays are set together by
+        // buildCanonical() iff $this->canonical was non-empty. We re-
+        // express that group invariant via a local null-narrowing pair
+        // so Psalm tracks each access point: when $canonIdxFfi is
+        // non-null, the other two are too.
         $canonIdxFfi = $this->canonIdxFfi;
         $origOffsets = $this->origOffsets;
         $origData = $this->origData;
+        $has_canonical = $canonIdxFfi !== null;
+        if ($has_canonical && ($origOffsets === null || $origData === null)) {
+            // Should be unreachable per buildCanonical's invariant; assert
+            // it loudly so a future refactor that breaks the invariant
+            // surfaces as an AssertionError instead of silent wrong output.
+            throw new \LogicException(
+                'FfiCsrGraphSubstrate: canonIdxFfi set without origOffsets/origData'
+            );
+        }
 
         /** @var array<int, list<int>> $canonical_neighbors canonical csrIdx => canonical neighbor csrIdx list */
         $canonical_neighbors = [];
