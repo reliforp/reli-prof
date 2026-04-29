@@ -82,7 +82,7 @@ class MemoryDumpReaderFactoryTest extends TestCase
     #[Test]
     public function testInvalidMagicThrows(): void
     {
-        file_put_contents($this->tmp_file, "NOTRELIMEM");
+        file_put_contents($this->tmp_file, "NOTRDUMP\0\0");
 
         $factory = new MemoryDumpReaderFactory(new ContainerBuilder());
 

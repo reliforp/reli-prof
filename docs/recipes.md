@@ -39,10 +39,10 @@ Dump now (short stop), analyse offline, look at the prioritised report:
 
 ```bash
 # 1. Take a fast binary dump (target stopped only briefly)
-sudo reli inspector:memory:dump --pid=<pid> --output=worker.relimem
+sudo reli inspector:memory:dump --pid=<pid> --output=worker.rdump
 
 # 2. Analyse the dump into a .rmem snapshot
-reli inspector:memory:analyze worker.relimem -f binary -o worker.rmem
+reli inspector:memory:analyze worker.rdump -f binary -o worker.rmem
 
 # 3. Read the prioritised findings (dominant classes, cycles, choke points, …)
 reli inspector:memory:report worker.rmem

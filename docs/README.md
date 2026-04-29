@@ -46,7 +46,7 @@ A memory graph is reli's PHP heap reconstruction — values (objects, arrays, st
 
 | I want to... | Use | More |
 |---|---|---|
-| Dump now (short stop), analyse offline **(recommended)** | `inspector:memory:dump -p <pid> -o dump.relimem` → `inspector:memory:analyze dump.relimem -f binary -o snap.rmem` | [memory/memory-dump.md](memory/memory-dump.md) |
+| Dump now (short stop), analyse offline **(recommended)** | `inspector:memory:dump -p <pid> -o dump.rdump` → `inspector:memory:analyze dump.rdump -f binary -o snap.rmem` | [memory/memory-dump.md](memory/memory-dump.md) |
 | One-shot live capture (longer stop, one command) | `inspector:memory -p <pid> -f binary -o snap.rmem` | [memory/memory-profiler.md](memory/memory-profiler.md) |
 | From a core file (crashed / post-mortem) | `inspector:coredump` | [memory/coredump.md](memory/coredump.md) |
 

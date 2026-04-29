@@ -127,7 +127,7 @@ class MemoryDumpRoundtripTest extends TestCase
 
         // Skip header
         $magic = fread($fp, 8);
-        $this->assertSame("RELIMEM\0", $magic);
+        $this->assertSame("RDUMP\0\0\0", $magic);
 
         // version
         $ver = unpack('Vval', fread($fp, 4));

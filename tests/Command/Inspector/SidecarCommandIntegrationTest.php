@@ -149,7 +149,7 @@ class SidecarCommandIntegrationTest extends BaseTestCase
         // Verify dump file
         $this->assertFileExists($response->path);
         $magic = file_get_contents($response->path, false, null, 0, 8);
-        $this->assertSame("RELIMEM\0", $magic);
+        $this->assertSame("RDUMP\0\0\0", $magic);
         $this->tmp_files[] = $response->path;
 
         // Verify .meta.json

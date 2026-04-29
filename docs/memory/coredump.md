@@ -161,7 +161,7 @@ See `man 5 core` for the full bitmask.
 - [`inspector:memory`](memory-profiler.md) — the live-process
   equivalent. Output format and downstream pipeline are shared.
 - [`inspector:memory:dump`](memory-dump.md) — reli's own compact
-  `.relimem` dump format for offline analysis; prefer it over
+  `.rdump` dump format for offline analysis; prefer it over
   `gcore + inspector:coredump` when the target is still alive and
   reli can attach.
 - [`inspector:memory:report`](memory-report.md) — generate an

@@ -145,7 +145,7 @@ class MemoryDumpCommandTest extends BaseTestCase
         $this->assertFileExists($output_path);
         $this->assertGreaterThan(0, filesize($output_path));
         $magic = file_get_contents($output_path, false, null, 0, 8);
-        $this->assertSame("RELIMEM\0", $magic);
+        $this->assertSame("RDUMP\0\0\0", $magic);
 
         // Verify the dump can be parsed back via MemoryDumpReaderFactory
         $reader_factory = $container->make(MemoryDumpReaderFactory::class);
@@ -185,7 +185,7 @@ class MemoryDumpCommandTest extends BaseTestCase
         // Verify valid dump file
         $this->assertGreaterThan(0, filesize($output_path));
         $magic = file_get_contents($output_path, false, null, 0, 8);
-        $this->assertSame("RELIMEM\0", $magic);
+        $this->assertSame("RDUMP\0\0\0", $magic);
     }
 
     #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
