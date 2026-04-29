@@ -145,15 +145,15 @@ final class RmemModel
 
         if ($locRows !== null) {
             for ($i = 0; $i < $count; $i++) {
-                $nid = (int)$locRows[$i]->node_id;
+                $nid = $locRows[$i]->node_id;
                 if (!isset($addresses[$nid])) {
-                    $addr = (int)$locRows[$i]->address;
+                    $addr = $locRows[$i]->address;
                     if ($addr !== 0) {
                         $addresses[$nid] = $addr;
                     }
                 }
                 if (!isset($stringValues[$nid])) {
-                    $svId = (int)$locRows[$i]->string_value_id;
+                    $svId = $locRows[$i]->string_value_id;
                     if ($svId !== Format::NULL_STRING_ID) {
                         $sv = $dict->lookup($svId);
                         if ($sv !== null) {
@@ -162,13 +162,13 @@ final class RmemModel
                     }
                 }
                 if (!isset($refcounts[$nid])) {
-                    $rc = (int)$locRows[$i]->refcount;
+                    $rc = $locRows[$i]->refcount;
                     if ($rc > 0) {
                         $refcounts[$nid] = $rc;
                     }
                 }
                 if (!isset($classes[$nid])) {
-                    $cid = (int)$locRows[$i]->class_id;
+                    $cid = $locRows[$i]->class_id;
                     if ($cid !== Format::NULL_STRING_ID) {
                         $cn = $dict->lookup($cid);
                         if ($cn !== null) {

@@ -295,7 +295,11 @@ final class RmemMcpCommand extends ReliCommand
 
         // Format as text for MCP
         $text = (string)json_encode($result, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
-        $isError = !($result['ok'] ?? false);
+        // RmemQueryService and RmemServeCommand always set $result['ok'] to a
+        // literal true/false; use a strict comparison so a non-bool entry
+        // (which would only happen if the backend contract is broken) is
+        // also treated as an error rather than coerced silently.
+        $isError = ($result['ok'] ?? false) !== true;
 
         return $this->makeToolResult($id, $text, $isError);
     }

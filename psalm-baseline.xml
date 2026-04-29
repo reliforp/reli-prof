@@ -39,9 +39,6 @@
       <code><![CDATA[$resp]]></code>
       <code><![CDATA[$value]]></code>
     </MixedAssignment>
-    <RiskyTruthyFalsyComparison>
-      <code><![CDATA[!($result['ok'] ?? false)]]></code>
-    </RiskyTruthyFalsyComparison>
   </file>
   <file src="src/Command/Rmem/RmemQueryCommand.php">
     <MixedAssignment>
@@ -60,45 +57,12 @@
       <code><![CDATA[$running]]></code>
     </RedundantCondition>
   </file>
-  <file src="src/Inspector/CoreDumpReader/CoreDumpReaderFactory.php">
-    <TypeDoesNotContainNull>
-      <code><![CDATA[is_null($buf)]]></code>
-      <code><![CDATA[is_null($cdata_buffer)]]></code>
-      <code><![CDATA[is_null($cdata_buffer)]]></code>
-    </TypeDoesNotContainNull>
-  </file>
-  <file src="src/Inspector/MemoryDump/DumpFileMemoryReader.php">
-    <TypeDoesNotContainNull>
-      <code><![CDATA[is_null($cdata_buffer)]]></code>
-      <code><![CDATA[is_null($cdata_buffer)]]></code>
-    </TypeDoesNotContainNull>
-  </file>
   <file src="src/Inspector/MemoryDump/MemoryDumpReaderFactory.php">
     <PossiblyNullArgument>
       <code><![CDATA[$fast_path_class]]></code>
     </PossiblyNullArgument>
   </file>
-  <file src="src/Inspector/MemoryDump/MemoryDumper.php">
-    <TypeDoesNotContainNull>
-      <code><![CDATA[$buf === null]]></code>
-    </TypeDoesNotContainNull>
-  </file>
   <file src="src/Inspector/Output/MemoryOutput/BinaryFormat/DerivedCacheReader.php">
-    <PossiblyInvalidArgument>
-      <code><![CDATA[$buf[$elemOffset]]]></code>
-    </PossiblyInvalidArgument>
-    <PossiblyInvalidArrayAccess>
-      <code><![CDATA[unpack('P', $headerBytes, 16)[1]]]></code>
-      <code><![CDATA[unpack('P', $headerBytes, 8)[1]]]></code>
-      <code><![CDATA[unpack('P', $rmemHeader, 16)[1]]]></code>
-      <code><![CDATA[unpack('P', $tocBytes, $pos)[1]]]></code>
-      <code><![CDATA[unpack('P', $tocBytes, $pos)[1]]]></code>
-      <code><![CDATA[unpack('P', $tocBytes, $pos)[1]]]></code>
-      <code><![CDATA[unpack('V', $headerBytes, 24)[1]]]></code>
-      <code><![CDATA[unpack('V', $headerBytes, 28)[1]]]></code>
-      <code><![CDATA[unpack('V', $headerBytes, 4)[1]]]></code>
-      <code><![CDATA[unpack('V', $rmemHeader, 12)[1]]]></code>
-    </PossiblyInvalidArrayAccess>
     <RedundantConditionGivenDocblockType>
       <code><![CDATA[is_resource($this->fh)]]></code>
     </RedundantConditionGivenDocblockType>
@@ -235,11 +199,11 @@
     </RedundantConditionGivenDocblockType>
   </file>
   <file src="src/Lib/PhpInternals/Types/Zend/ZendOp.php">
-    <TypeDoesNotContainNull>
-      <code><![CDATA[FFIHelper::cast('int', $this->casted_cdata->casted->op1)]]></code>
-      <code><![CDATA[FFIHelper::cast('int', $this->casted_cdata->casted->op2)]]></code>
-      <code><![CDATA[FFIHelper::cast('int', $this->casted_cdata->casted->result)]]></code>
-    </TypeDoesNotContainNull>
+    <MixedAssignment>
+      <code><![CDATA[$this->op1]]></code>
+      <code><![CDATA[$this->op2]]></code>
+      <code><![CDATA[$this->result]]></code>
+    </MixedAssignment>
   </file>
   <file src="src/Lib/PhpInternals/Types/Zend/ZendOpArray.php">
     <RedundantCondition>
@@ -294,12 +258,11 @@
   </file>
   <file src="src/Lib/PhpProcessReader/PhpMemoryReader/MemoryLocationsCollector.php">
     <InvalidOperand>
-      <code><![CDATA[$cached_chunks_size / 1024 / 1024]]></code>
-      <code><![CDATA[$captured_bytes / 1024 / 1024]]></code>
-      <code><![CDATA[$huge_total_bytes / 1024 / 1024]]></code>
-      <code><![CDATA[$memory_get_usage_real_size * 0.5]]></code>
-      <code><![CDATA[$memory_get_usage_real_size / 1024 / 1024]]></code>
-      <code><![CDATA[$walked_chunk_bytes / 1024 / 1024]]></code>
+      <code><![CDATA[Cast::toFloat($cached_chunks_size) / 1024]]></code>
+      <code><![CDATA[Cast::toFloat($captured_bytes) / 1024]]></code>
+      <code><![CDATA[Cast::toFloat($huge_total_bytes) / 1024]]></code>
+      <code><![CDATA[Cast::toFloat($memory_get_usage_real_size) / 1024]]></code>
+      <code><![CDATA[Cast::toFloat($walked_chunk_bytes) / 1024]]></code>
     </InvalidOperand>
   </file>
   <file src="src/Rbt/Analyze/TraceAggregator.php">
@@ -384,13 +347,6 @@
     <MixedPropertyTypeCoercion>
       <code><![CDATA[$frameLabels]]></code>
     </MixedPropertyTypeCoercion>
-    <RedundantCast>
-      <code><![CDATA[(int)$locRows[$i]->address]]></code>
-      <code><![CDATA[(int)$locRows[$i]->class_id]]></code>
-      <code><![CDATA[(int)$locRows[$i]->node_id]]></code>
-      <code><![CDATA[(int)$locRows[$i]->refcount]]></code>
-      <code><![CDATA[(int)$locRows[$i]->string_value_id]]></code>
-    </RedundantCast>
   </file>
   <file src="src/Rmem/Serve/RmemQueryService.php">
     <MixedReturnTypeCoercion>

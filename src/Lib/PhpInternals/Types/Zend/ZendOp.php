@@ -107,11 +107,12 @@ final class ZendOp implements LazyDereferencable, CDataDereferencable
     {
         assert($this->casted_cdata !== null);
         return match ($field_name) {
-            'op1' => $this->op1 = (int)(FFIHelper::cast('int', $this->casted_cdata->casted->op1)?->cdata ?? -1),
-            'op2' => $this->op2 = (int)(FFIHelper::cast('int', $this->casted_cdata->casted->op2)?->cdata ?? -1),
-            'result' => $this->result = (int)(
-                FFIHelper::cast('int', $this->casted_cdata->casted->result)?->cdata ?? -1
-            ),
+            'op1' => $this->op1 = FFIHelper::cast('int', $this->casted_cdata->casted->op1)->cdata,
+            'op2' => $this->op2 = FFIHelper::cast('int', $this->casted_cdata->casted->op2)->cdata,
+            'result' => $this->result = FFIHelper::cast(
+                'int',
+                $this->casted_cdata->casted->result
+            )->cdata,
             'op1_type' => $this->op1_type = $this->casted_cdata->casted->op1_type,
             'op2_type' => $this->op2_type = $this->casted_cdata->casted->op2_type,
             'result_type' => $this->result_type = $this->casted_cdata->casted->result_type,
