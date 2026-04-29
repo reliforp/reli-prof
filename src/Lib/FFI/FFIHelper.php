@@ -153,6 +153,39 @@ final class FFIHelper
     }
 
     /**
+     * Cast a CData pointer to an `int*` (a `\FFI\CInteger`-shaped view).
+     * Typed wrapper around `cast('int', …)` so callers reading `->cdata`
+     * get a plain int back instead of mixed.
+     *
+     * The PHP-level return type stays `\FFI\CData` because `\FFI\CInteger`
+     * is a project-side Psalm stub (see tools/stubs/ffi/scalar.php), not
+     * a runtime class — declaring it on the signature raises TypeError
+     * the same way `\FFI\CArray` does. The `@return` docblock carries
+     * the narrowed type for Psalm.
+     *
+     * @param CData|CInteger|CPointer $ptr
+     * @return CInteger
+     */
+    public static function castToInt(CData &$ptr): CData
+    {
+        /** @var CInteger */
+        return self::cast('int', $ptr);
+    }
+
+    /**
+     * Cast a CData pointer to a `long*` view. Same role as castToInt
+     * but for the wider integer width some stubbed structs declare.
+     *
+     * @param CData|CInteger|CPointer $ptr
+     * @return CInteger
+     */
+    public static function castToLong(CData &$ptr): CData
+    {
+        /** @var CInteger */
+        return self::cast('long', $ptr);
+    }
+
+    /**
      * Cast a C pointer to its integer address value.
      *
      * WARNING: Do NOT pass a void* CData to this method. PHP FFI internally

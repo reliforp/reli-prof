@@ -102,15 +102,13 @@ final class ZendOp implements LazyDereferencable, CDataDereferencable
         };
     }
 
-    /** @psalm-suppress PropertyTypeCoercion -- CData from FFIHelper::cast is always valid */
     private function getFieldEager(string $field_name): mixed
     {
         assert($this->casted_cdata !== null);
         return match ($field_name) {
-            'op1' => $this->op1 = FFIHelper::cast('int', $this->casted_cdata->casted->op1)->cdata,
-            'op2' => $this->op2 = FFIHelper::cast('int', $this->casted_cdata->casted->op2)->cdata,
-            'result' => $this->result = FFIHelper::cast(
-                'int',
+            'op1' => $this->op1 = FFIHelper::castToInt($this->casted_cdata->casted->op1)->cdata,
+            'op2' => $this->op2 = FFIHelper::castToInt($this->casted_cdata->casted->op2)->cdata,
+            'result' => $this->result = FFIHelper::castToInt(
                 $this->casted_cdata->casted->result
             )->cdata,
             'op1_type' => $this->op1_type = $this->casted_cdata->casted->op1_type,

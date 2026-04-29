@@ -149,11 +149,11 @@
     </RedundantConditionGivenDocblockType>
   </file>
   <file src="src/Lib/PhpInternals/Types/Zend/ZendOp.php">
-    <MixedAssignment>
-      <code><![CDATA[$this->op1]]></code>
-      <code><![CDATA[$this->op2]]></code>
-      <code><![CDATA[$this->result]]></code>
-    </MixedAssignment>
+    <PropertyTypeCoercion>
+      <code><![CDATA[$this->casted_cdata->casted->op1]]></code>
+      <code><![CDATA[$this->casted_cdata->casted->op2]]></code>
+      <code><![CDATA[$this->casted_cdata->casted->result]]></code>
+    </PropertyTypeCoercion>
   </file>
   <file src="src/Lib/PhpInternals/Types/Zend/ZendOpArray.php">
     <RedundantCondition>
