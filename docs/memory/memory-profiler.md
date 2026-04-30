@@ -524,7 +524,7 @@ This section contains the summary of the memory usage of the target process. The
 
 #### possible_allocation_overhead_total
 - ZendMM normally allocates memory space in `chunk`s of 2MB from the OS and divides each `chunk` into 4KB `page`s. Each `page` has a range of allocation sizes that it is responsible for, and for allocations of 3KB or less, each `page` is further divided into fixed-size areas called `bin`s. A `bin` size can be one of 30 different sizes, and the `bin` which can hold the requested size is used for each allocation. If the requested size for the allocation does not exactly match the size of the `bin`, the remaining area is wasted. Also, for allocations that are larger than 3KB and fit in a `chunk`, they are allocated in `page`s. So if the requested size is not a multiple of the `page` size, the remainder is wasted. This field is the sum of such possible wasted areas.
-- Note that this does not necessarily mean that this size of area is truly unused; Reli collects various address and size information from the memory of the target process, checks which `bin` or `page` the address is from and accounts for the difference with the size as wasted area. But each `zend_object` corresponding to an instance of a built-in class is often allocated with subsequent areas for internal use, so a `bin` larger than the one corresponding to the `sizeof zend_object` is chosen by ZendMM. As Reli does not yet have much information on built-in classes, such actually used subsequent areas are also included in the calculation of the wasted area.
+- Note that this does not necessarily mean that this size of area is truly unused; Reli collects various address and size information from the memory of the target process, checks which `bin` or `page` the address is from and accounts for the difference with the size as wasted area. But each `zend_object` corresponding to an instance of a built-in class is often allocated with subsequent areas for internal use, so a `bin` larger than the one corresponding to the `sizeof zend_object` is chosen by ZendMM. Reli now knows about the layouts of `\Closure`, `\Fiber`, `\Generator`, `\WeakReference`, `\WeakMap`, `\PDO`, `\PDOStatement`, `SimpleXMLElement`, `SimpleXMLIterator`, and `FFI\CData`, so their subsequent areas are accounted for. For other built-in classes Reli still does not have layout information, so their actually-used subsequent areas are included in the calculation of the wasted area.
 
 #### possible_array_overhead_total
 - This field is the sum of the possible wasted areas for the `zend_array` structure. The `zend_array` structure is used for the implementation of PHP arrays. Each `zend_array` has a pointer to a table for storing elements. And the table grows as the number of elements increases. When the table grows, the table size is increased by a factor of two to avoid performance degradation due to too many reallocations. So often an area considerably larger than the actual number of elements used is reserved for the table. Reli accounts for the difference between the actual area used in the table and the table size as wasted area.
@@ -545,7 +545,7 @@ cat memory_analyzed.json | jq .class_objects_summary
 ```
 This section contains the summary of the objects memory usage of the target process, grouped by the class of the objects and sorted by total size.
 
-Currently, only the sizes of the user-defined classes are calculated correctly.
+Currently, the sizes are calculated correctly for user-defined classes and for the built-in classes Reli has explicit layout knowledge of (`\Closure`, `\Fiber`, `\Generator`, `\WeakReference`, `\WeakMap`, `\PDO`, `\PDOStatement`, `SimpleXMLElement`, `SimpleXMLIterator`, and `FFI\CData`). Other built-in classes are still reported with the bare `zend_object` size, so their per-class extension data is missed.
 
 ### The `"context"` field (the context tree)
 The `context` field in the output JSON indicates in which context each memory area is referenced.
@@ -754,7 +754,7 @@ The references in the objects_store don't add refcount to the objects.
 
 # Currently not yet supported
 - TMP/VARs in PHP 7.0 target
-- internal classes other than `\Closure`, `\Fiber`, and `\Generator`
+- internal classes other than `\Closure`, `\Fiber`, `\Generator`, `\WeakReference`, `\WeakMap`, `\PDO`, `\PDOStatement`, `SimpleXMLElement`, `SimpleXMLIterator`, and `FFI\CData`
 - The contents of resources
 - Data that can only be reached from circular references that don't contain any objects
 - Support for the opcache SHM
