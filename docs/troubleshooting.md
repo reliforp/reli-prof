@@ -102,7 +102,9 @@ Every top-level command accepts `--memory-limit` for this:
 ./reli rmem:explore huge.rmem --memory-limit=4G
 ```
 
-Prefer `--memory-limit=2G` over `php -d memory_limit=2G ./reli …`: the option goes through `ini_set` after bootstrap, so it survives any inner reli launches (e.g. `inspector:trace -- php ./reli ...`) and is visible in `--help`.
+`--memory-limit=2G` is generally what you want: it shows up in `--help`, works through the Docker wrapper, and (for daemon-style commands) is propagated to the spawned worker processes via the `RELI_MEMORY_LIMIT` env var so the readers raise their limit too. Use `php -d memory_limit=2G ./reli ...` only when reli is dying *before* it parses options — e.g. during PHP startup or `composer` autoload.
+
+> `--memory-limit` only affects the current reli invocation. If you launch a *separate* reli process from inside another (e.g. `inspector:trace -- php ./reli inspector:trace ...`), pass `--memory-limit` to that inner command separately — `ini_set` does not cross the `proc_open` boundary, and `--` arguments are not interpreted by the outer reli.
 
 For the sidecar specifically, the value also has a sizing rule (target heap + ~80 MB headroom) — see [monitoring/sidecar.md § Sizing `--memory-limit`](monitoring/sidecar.md#sizing---memory-limit).
 

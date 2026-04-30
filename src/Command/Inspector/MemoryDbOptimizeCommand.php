@@ -45,23 +45,14 @@ final class MemoryDbOptimizeCommand extends ReliCommand
                 InputOption::VALUE_REQUIRED,
                 'run ID to materialize (default: all runs)',
             )
-            ->addOption(
-                'memory-limit',
-                null,
-                InputOption::VALUE_REQUIRED,
-                'set PHP memory_limit for analysis (e.g. 2G, 512M)',
-            )
+            ->addMemoryLimitOption()
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
-        /** @var string|null $memory_limit */
-        $memory_limit = $input->getOption('memory-limit');
-        if (is_string($memory_limit) && $memory_limit !== '') {
-            ini_set('memory_limit', $memory_limit);
-        }
+        $this->applyMemoryLimit($input, $output);
 
         $db_path = $input->getArgument('db-path');
         assert(is_string($db_path));

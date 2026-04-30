@@ -71,12 +71,7 @@ final class MemoryDumpCommand extends ReliCommand
             InputOption::VALUE_NONE,
             'disable the binary analysis cache',
         );
-        $this->addOption(
-            'memory-limit',
-            null,
-            InputOption::VALUE_REQUIRED,
-            'set PHP memory_limit for analysis (e.g. 2G, 512M)',
-        );
+        $this->addMemoryLimitOption();
     }
 
     #[\Override]
@@ -84,11 +79,7 @@ final class MemoryDumpCommand extends ReliCommand
         InputInterface $input,
         OutputInterface $output,
     ): int {
-        /** @var string|null $memory_limit */
-        $memory_limit = $input->getOption('memory-limit');
-        if (is_string($memory_limit) && $memory_limit !== '') {
-            ini_set('memory_limit', $memory_limit);
-        }
+        $this->applyMemoryLimit($input, $output);
         if ($input->getOption('no-cache')) {
             $this->binary_analysis_cache->disable();
         }
