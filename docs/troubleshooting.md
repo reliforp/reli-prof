@@ -2,7 +2,7 @@
 
 ## "regex used to filter /proc/{pid}/maps matched nothing" / "php module not found"
 
-Both of these surface the same root cause: reli's default `--php-regex` (`/php$`) did not match any module in the target's `/proc/<pid>/maps`. Distro builds with versioned binary names (`php8.4`, `php8.5`), embedded interpreters (FrankenPHP's `libphp.so`), and any other non-standard layout will hit this. Use `--php-regex` to specify the executable (or shared object) that contains the PHP interpreter:
+Both of these surface the same root cause: reli's default `--php-regex` did not match any module in the target's `/proc/<pid>/maps`. The default is wide enough to cover unversioned (`php`, `php-fpm`), versioned (`php7.4`, `php8.4`, `php-fpm8.4`), and shared-library (`libphp.so`, `libphp7.so`, `libphp8.so`) layouts, but anything else — a custom `php-cli-foo` rename, a build whose libphp is named without the `libphp` prefix, or a target that mounts the interpreter at a non-standard path — will hit this. Use `--php-regex` to specify the executable (or shared object) that contains the PHP interpreter:
 
 ```bash
 # Inspect the target's maps to see what to match against
