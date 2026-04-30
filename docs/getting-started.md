@@ -67,7 +67,7 @@ installs a shell function `reli` so the rest of this doc works
 exactly as written, with no docker flag incantations to remember:
 
 ```bash
-eval "$(docker run --rm reliforp/reli-prof docker:print-wrapper)"
+eval "$(docker run --rm --pull=always reliforp/reli-prof docker:print-wrapper)"
 ```
 
 Then, still in the same shell:
@@ -75,6 +75,15 @@ Then, still in the same shell:
 ```bash
 reli --version
 ```
+
+`--pull=always` forces Docker to refresh `reliforp/reli-prof:latest`
+before running `docker:print-wrapper`. Without it, a previously
+cached `:latest` from an older release can be missing this command
+(or other newer features) and the bootstrap fails with
+`There are no commands defined in the "docker" namespace.` Once
+the wrapper is installed, the per-invocation `reli` calls use the
+specific tag baked into the wrapper instead of `:latest`, so this
+flag matters only at install time.
 
 To keep it across shells, **don't** paste the `eval "$(docker run ...)"`
 line into your `~/.bashrc` / `~/.zshrc` directly — that re-runs
@@ -84,7 +93,7 @@ source that instead:
 
 ```bash
 mkdir -p ~/.local/share/reli
-docker run --rm reliforp/reli-prof docker:print-wrapper > ~/.local/share/reli/wrapper.sh
+docker run --rm --pull=always reliforp/reli-prof docker:print-wrapper > ~/.local/share/reli/wrapper.sh
 echo 'source ~/.local/share/reli/wrapper.sh' >> ~/.bashrc   # or ~/.zshrc
 ```
 
@@ -93,6 +102,9 @@ The wrapper's baked-in image tag matches the version of reli the
 to upgrade, re-run whichever install command you used (the `eval`
 form for the current shell only, or the `docker run ... > ...wrapper.sh`
 form to refresh the saved file that future shells will source).
+`--pull=always` makes that re-run actually fetch the newest
+`:latest` rather than reusing the cached image from the previous
+install.
 
 The wrapper runs each `reli` invocation as a container with
 `--cap-add=SYS_PTRACE --pid=host --network=host`, which gives reli
@@ -102,7 +114,7 @@ and for the lower-privilege `reli-view` variant (viewer-only, safe
 on shared hosts):
 
 ```bash
-eval "$(docker run --rm reliforp/reli-prof docker:print-wrapper --profile=minimal)"
+eval "$(docker run --rm --pull=always reliforp/reli-prof docker:print-wrapper --profile=minimal)"
 ```
 
 The minimal profile installs the shell function as `reli-view` (not
