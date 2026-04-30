@@ -67,10 +67,23 @@ sudo php ./reli inspector:trace -p 12345 \
 A few realities on FrankenPHP that the snippet above is built around:
 
 - **Skip `php-main`.** It also matches `^php-` but is the
-  bootstrap thread — its executor globals do not point at a
-  populated request heap, so memory commands fail with
-  "failed to find ZendMM main chunk". `^php-[0-9a-f]+$` excludes
-  it.
+  bootstrap thread: FrankenPHP's `php_main` initialises the TSRM
+  subsystem itself but never calls `ts_resource(0)` for the
+  bootstrap thread, and `php-main` does not service requests
+  that would populate TSRM later. The exact error reli prints
+  depends on the FrankenPHP / PHP build:
+  - On current builds (verified against `dunglas/frankenphp:latest`
+    PHP 8.5 and `dunglas/frankenphp:php8.3` as of 2026-04), the
+    brute-force TLS scan returns nothing and the call fails at
+    TSRM resolution with `_tsrm_ls_cache slot is uninitialized
+    -- typical of an idle FrankenPHP worker`.
+  - On older builds where reli's scan happened to land on a
+    neighbouring thread's TLS pattern, the call progressed past
+    TSRM and failed downstream with `failed to find ZendMM main
+    chunk` instead.
+
+  In either case the recovery is the same: `^php-[0-9a-f]+$`
+  excludes `php-main` and selects a hex-named worker.
 - **First attach is slower than subsequent ones.** The first attach
   to a given `libphp.so` parses the dynamic symbol table, reads
   PT_TLS, and brute-forces `_tsrm_ls_cache` out of the TLS block.
