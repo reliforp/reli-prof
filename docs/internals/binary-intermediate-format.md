@@ -539,8 +539,8 @@ side, no path-dependent feature gaps.
 
 Once Stage 2 is solid:
 
-- analyze defaults to `--format=binary`. SQLite is opt-in via
-  `--format=sqlite`.
+- analyze defaults to `--format=rmem`. SQLite is opt-in via
+  `--format=sqlite3`.
 - Update README / docs.
 - Ship a release note explaining the break.
 
