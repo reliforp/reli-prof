@@ -161,12 +161,18 @@ UNIX-`top`-style aggregated view, updated live as samples come in.
 Useful as a quick "what is this pool doing right now?" check:
 
 ```bash
+# Across a pool of processes
 sudo php ./reli inspector:top -P "^php-fpm"
+
+# Or against a single PID — same output, no regex needed
+sudo php ./reli inspector:top -p <pid>
 ```
 
-Flags are the regex/pool subset of `inspector:daemon`:
-`-P/--target-regex`, `-T/--threads`, `-d/--depth`, `-s/--sleep-ns`,
-`--with-native-trace`.
+`-p` and `-P` are interchangeable target selectors here (the `--help`
+text marks `-P` as required, but `-p <pid>` is also accepted and goes
+through the same aggregation path). Other flags are the regex/pool
+subset of `inspector:daemon`: `-T/--threads`, `-d/--depth`,
+`-s/--sleep-ns`, `--with-native-trace`.
 
 ## `inspector:eg_address`
 

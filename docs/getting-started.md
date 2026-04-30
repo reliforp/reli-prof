@@ -185,8 +185,12 @@ php ./your-script.php
 
 # Terminal B: attach and capture for ~10 s, then Ctrl-C
 # (-f rbt is implied by the .rbt extension on -o)
-# pgrep -n picks the newest match — avoids passing multiple PIDs when several commands match.
-reli inspector:trace -p "$(pgrep -nf your-script.php)" -o trace.rbt
+# pgrep -fx matches the full command line exactly — avoids picking up the
+# enclosing shell (whose own /proc/<pid>/cmdline can contain "your-script.php"
+# when this line is run via `bash -c`, a Make rule, an editor task runner, etc).
+# Plain `pgrep -nf your-script.php` works in an interactive shell but silently
+# returns the wrong PID inside those wrappers.
+reli inspector:trace -p "$(pgrep -fx 'php ./your-script.php')" -o trace.rbt
 ```
 
 The target process must be reachable with `ptrace(2)`. Under the

@@ -47,12 +47,11 @@ that the dump may contain inconsistent state.
 ## Options
 
 ```
---pid, -p           Target process PID (or pass a `cmd` after `--` to spawn one)
---output, -o        Output file path
---stop-process      Stop the target during dump (default: on)
---no-stop-process   Don't stop the target
---include-binary    Include read-only binary segments (self-contained dump)
---exclude-heap      Exclude [heap] and anonymous mmap regions (see below)
+--pid, -p                          Target process PID (or pass a `cmd` after `--` to spawn one)
+--output, -o                       Output file path
+--stop-process | --no-stop-process Stop the target during dump (default: on)
+--include-binary                   Include read-only binary segments (self-contained dump)
+--exclude-heap                     Exclude [heap] and anonymous mmap regions (see below)
 ```
 
 `./reli inspector:memory:dump --help` is the source of truth for the
@@ -117,4 +116,10 @@ php ./reli inspector:memory:analyze snapshot.rdump \
 - [memory-report.md](memory-report.md) — automated analysis reports
 - [watch-command.md](../monitoring/watch-command.md) — condition-triggered dumps
 - [sidecar.md](../monitoring/sidecar.md) — daemon mode for on-demand dumps
-- [internals/memory-dump-inspect.md](../internals/memory-dump-inspect.md) — `inspector:memory:dump:inspect`, a developer tool that prints the `.rdump` header / memory map / region list (output schema is unstable, intended for debugging the capture pipeline itself)
+
+For developers debugging the capture pipeline itself,
+`inspector:memory:dump:inspect` prints the `.rdump` header, memory
+map, and region list. Its output schema is unstable and is **not**
+intended for end-user analysis (use `inspector:memory:analyze` /
+`inspector:memory:report` for that). Notes:
+[internals/memory-dump-inspect.md](../internals/memory-dump-inspect.md).
