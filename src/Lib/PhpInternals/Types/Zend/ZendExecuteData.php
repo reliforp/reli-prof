@@ -424,9 +424,11 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
         assert(!is_null($this->opline));
         $current_op_num = $func->op_array->getOpNumFromOpline($this->opline);
         $live_tmp_vars = $func->op_array->findLiveTmpVars($current_op_num, $dereferencer);
-        $live_tmp_vars_map = array_flip(array_map($this->liveTmpVarToNum(...), $live_tmp_vars));
+        $live_tmp_vars_map = $live_tmp_vars === null
+            ? null
+            : array_flip(array_map($this->liveTmpVarToNum(...), $live_tmp_vars));
         for ($i = $compiled_variables_num; $i < $compiled_variables_num + $tmp_num; $i++) {
-            if (!isset($live_tmp_vars_map[$i])) {
+            if ($live_tmp_vars_map !== null and !isset($live_tmp_vars_map[$i])) {
                 continue;
             }
             $name = '$_T[' . ($i - $compiled_variables_num) . ']';

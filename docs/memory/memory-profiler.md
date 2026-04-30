@@ -753,7 +753,6 @@ The `objects_store` is an important table that holds references to all objects i
 The references in the objects_store don't add refcount to the objects.
 
 # Currently not yet supported
-- TMP/VARs in PHP 7.0 target
 - internal classes other than `\Closure`, `\Fiber`, `\Generator`, `\WeakReference`, `\WeakMap`, `\PDO`, `\PDOStatement`, `SimpleXMLElement`, `SimpleXMLIterator`, and `FFI\CData`
 - The contents of resources
 - Data that can only be reached from circular references that don't contain any objects

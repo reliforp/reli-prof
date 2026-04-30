@@ -246,10 +246,28 @@ final class ZendOpArray
         return Cast::toInt(($opline->address - $this->opcodes->address) / $opline->size);
     }
 
+    public function hasLiveRangeSupport(): bool
+    {
+        return in_array(
+            'live_range',
+            \FFI::typeof($this->cdata->casted)->getStructFieldNames(),
+            true,
+        );
+    }
+
+    /**
+     * @return list<int>|null Byte-offset list of live TMP/VAR slots at $op_num,
+     *                       or null when the target PHP has no live_range table
+     *                       (PHP 7.0). A null return means liveness is unknown,
+     *                       and callers should fall back to iterating all TMPs.
+     */
     public function findLiveTmpVars(
         int $op_num,
         Dereferencer $dereferencer,
-    ): array {
+    ): ?array {
+        if (!$this->hasLiveRangeSupport()) {
+            return null;
+        }
         if ($this->live_range === null) {
             return [];
         }
