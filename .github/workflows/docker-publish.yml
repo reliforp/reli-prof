@@ -1,6 +1,6 @@
 name: Publish Docker image
 
-# Three trigger shapes, three tag shapes:
+# Three trigger shapes, four tag shapes:
 #
 #   1. Tag push (e.g. `0.12.0`, set by laminas/automatic-releases on milestone
 #      close). Stable release. Pushes `:0.12.0`, `:0.12`, and `:latest`.
@@ -11,11 +11,24 @@ name: Publish Docker image
 #      not-yet-tagged fixes from the active release line. Never touches
 #      `:latest`.
 #
-#   3. Manual `workflow_dispatch` for any ref (PR branch, feature branch,
-#      SHA). Pushes a SHA-pinned `:manual-sha-<short>` tag — no floating
-#      tags, so PR / experimental builds never overwrite anything stable.
-#      Use this to share a one-off image of a PR with a reviewer or to
-#      reproduce a specific commit's behaviour.
+#   3. Manual `workflow_dispatch`. Two sub-shapes depending on `inputs.ref`:
+#
+#      3a. `inputs.ref` is a release tag like `0.12.0` or `0.12.0-rc1`
+#          (matches `^[0-9]+\.[0-9]+\.[0-9]+(-.+)?$`). Treated as a
+#          republish of that release: emits the same `:<version>`,
+#          `:<major>.<minor>` (stable only), and `:latest` (stable only)
+#          tags as a real tag push, with `COMPOSER_ROOT_VERSION` set to
+#          the tag value so `reli --version` reports it correctly.
+#          Use this to recover from a missed laminas/automatic-releases
+#          tag-push trigger without faking a tag delete + re-create.
+#          A SHA-pinned `:manual-sha-<short>` is also emitted for
+#          back-reference.
+#
+#      3b. Anything else (PR branch, feature branch, full SHA). Emits
+#          only `:manual-sha-<short>` — no floating tags, so PR /
+#          experimental builds never overwrite anything stable. Use
+#          this to share a one-off image of a PR with a reviewer or to
+#          reproduce a specific commit's behaviour.
 #
 # Required repo secrets:
 #   DOCKERHUB_USERNAME — Docker Hub account with push access to reliforp/reli-prof
@@ -26,8 +39,9 @@ name: Publish Docker image
 # external help Composer can't infer the root package version inside the
 # build and falls back to `1.0.0+no-version-set`, which makes
 # `reli --version` lie. We compute the right Composer version per trigger
-# (semver tag for stable, `<branch>-dev` alias for floating release-branch
-# builds, `dev-manual-<sha>` for dispatch) and pass it through.
+# (semver tag for stable / republish, `<branch>-dev` alias for floating
+# release-branch builds, `dev-manual-<sha>` for non-release dispatch) and
+# pass it through.
 
 on:
   push:
@@ -62,10 +76,25 @@ jobs:
         run: |
           set -euo pipefail
           short_sha="$(git rev-parse --short HEAD)"
+          # Outputs that downstream steps read to decide whether this run
+          # is a "release publish" (needs :<version> / :<major>.<minor>
+          # tags and, for stable, :latest), or a dev / manual build
+          # (SHA-pinned only).
+          release_ref=""
+          is_release_publish=false
+          is_stable_release_publish=false
           case "${{ github.event_name }}" in
             push)
               if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
                 composer_version="${GITHUB_REF_NAME}"
+                release_ref="${GITHUB_REF_NAME}"
+                is_release_publish=true
+                # Stable = no pre-release suffix. Pre-release tags like
+                # `0.12.0-rc1` are still release publishes (semver tags
+                # get pushed) but skip `:latest` / `:<major>.<minor>`.
+                if [[ ! "${GITHUB_REF_NAME}" =~ - ]]; then
+                  is_stable_release_publish=true
+                fi
               else
                 # Release branch like `0.12.x` becomes the Composer dev
                 # alias `0.12.x-dev`, which is exactly what
@@ -75,11 +104,34 @@ jobs:
               fi
               ;;
             workflow_dispatch)
-              # `dev-<branch>` is Composer's canonical "this is a dev
-              # build of branch <branch>" form. `manual-<sha>` as the
-              # synthetic branch name keeps the Docker tag and the
-              # Composer version visibly correlated.
-              composer_version="dev-manual-${short_sha}"
+              # If `inputs.ref` names a release tag (e.g. `0.12.0` or
+              # `0.12.0-rc1`), treat this run as a republish of that
+              # release. Without this branch, a manual re-run after a
+              # missed tag-push trigger would publish only
+              # `manual-sha-<sha>` and leave the human-readable
+              # `:<version>` / `:latest` tags stale — which is exactly
+              # the foot-gun that motivated this code path. Republish
+              # uses the tag value verbatim as `COMPOSER_ROOT_VERSION`
+              # so `reli --version` reports the release name and the
+              # wrapper's baked-in image tag (`defaultImage()` in
+              # PrintWrapperCommand) stays version-pinned instead of
+              # falling through to `:latest`.
+              ref_input="${{ github.event.inputs.ref }}"
+              if [[ "${ref_input}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
+                composer_version="${ref_input}"
+                release_ref="${ref_input}"
+                is_release_publish=true
+                if [[ ! "${ref_input}" =~ - ]]; then
+                  is_stable_release_publish=true
+                fi
+              else
+                # Non-release ref (branch, SHA, feature ref): SHA-pinned
+                # tag only. `dev-manual-<sha>` is Composer's canonical
+                # "this is a dev build" form; `manual-<sha>` as the
+                # synthetic branch name keeps the Docker tag and the
+                # Composer version visibly correlated.
+                composer_version="dev-manual-${short_sha}"
+              fi
               ;;
             *)
               echo "unsupported event: ${{ github.event_name }}" >&2
@@ -88,8 +140,14 @@ jobs:
           esac
           echo "composer=${composer_version}" >> "$GITHUB_OUTPUT"
           echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "release_ref=${release_ref}" >> "$GITHUB_OUTPUT"
+          echo "is_release_publish=${is_release_publish}" >> "$GITHUB_OUTPUT"
+          echo "is_stable_release_publish=${is_stable_release_publish}" >> "$GITHUB_OUTPUT"
           echo "Composer root version: ${composer_version}"
           echo "Short SHA: ${short_sha}"
+          echo "Release ref: ${release_ref:-<none>}"
+          echo "Is release publish: ${is_release_publish}"
+          echo "Is stable release publish: ${is_stable_release_publish}"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -113,14 +171,28 @@ jobs:
           flavor: |
             latest=false
           tags: |
-            # --- Trigger 1: stable tag push -------------------------------
+            # --- Trigger 1a: tag push (semver derived from refs/tags/...) -
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ steps.ver.outputs.is_stable_release_publish == 'true' }}
+            # --- Trigger 1b: workflow_dispatch republish of a release ---
+            # When inputs.ref names an existing release tag (handled in
+            # the version step), drive the same human-readable tags off
+            # of `release_ref` so the run is functionally equivalent to a
+            # tag push. `value=...` overrides the source string the
+            # semver matcher parses, since on dispatch `github.ref` is
+            # the dispatch-source branch, not a tag.
+            type=semver,pattern={{version}},value=${{ steps.ver.outputs.release_ref }},enable=${{ github.event_name == 'workflow_dispatch' && steps.ver.outputs.is_release_publish == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.ver.outputs.release_ref }},enable=${{ github.event_name == 'workflow_dispatch' && steps.ver.outputs.is_stable_release_publish == 'true' }}
+            # `:latest` — gated to stable releases only (no pre-release
+            # suffix), reachable from both tag push and dispatch republish.
+            type=raw,value=latest,enable=${{ steps.ver.outputs.is_stable_release_publish == 'true' }}
             # --- Trigger 2: release-branch dev push -----------------------
             type=raw,value=${{ github.ref_name }}-dev,enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/') }}
             # --- Trigger 3: manual dispatch (SHA-pinned, sourced from the
-            # actually-checked-out HEAD, not the workflow trigger ref) ----
+            # actually-checked-out HEAD, not the workflow trigger ref).
+            # Always emitted on dispatch — even on a release republish —
+            # so the run produces a SHA-anchored back-reference next to
+            # the human-readable tags. -----------------------------------
             type=raw,value=manual-sha-${{ steps.ver.outputs.short_sha }},enable=${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Build and push
