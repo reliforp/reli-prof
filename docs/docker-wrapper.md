@@ -17,12 +17,15 @@ eval "$(docker run --rm --pull=always reliforp/reli-prof docker:print-wrapper --
 
 `--pull=always` forces Docker to refresh `reliforp/reli-prof:latest`
 before invoking `docker:print-wrapper`. Without it, a previously
-cached `:latest` from an older release can be missing this command
-(or other newer features) and the bootstrap fails with
-`There are no commands defined in the "docker" namespace.` It only
-matters at install time — once the wrapper is installed, the
-per-invocation `reli` calls use the specific tag baked into the
-wrapper rather than `:latest`.
+cached `:latest` falls into one of two failure modes: a pre-0.12
+cache lacks `docker:print-wrapper` entirely and the bootstrap fails
+with `There are no commands defined in the "docker" namespace.`,
+while a more recent but stale cache silently emits a wrapper baked
+with the older image's tag — pinning you to a previous reli release
+without any error. Once the wrapper is installed, per-invocation
+`reli` calls use the specific tag baked into the wrapper rather
+than `:latest`, so the flag only matters at install / upgrade time
+— but it matters at *every* install or upgrade.
 
 For persistence across shells, save the emitted wrapper to a file once
 and `source` it from your rc — pasting the `eval "$(docker run ...)"`
