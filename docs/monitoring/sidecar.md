@@ -98,7 +98,7 @@ it keeps the application's dependency graph free of FFI / PCNTL.
   so it runs anywhere your application does:
 
   ```bash
-  composer require 'reliforp/reli-prof-sidecar-client:^0.12'
+  composer require "reliforp/reli-prof-sidecar-client:^0.12"
   ```
 
   The mirror tag tracks the upstream `reliforp/reli-prof` tag exactly,

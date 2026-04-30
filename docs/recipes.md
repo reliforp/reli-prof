@@ -88,7 +88,7 @@ standalone client mirror; downgraded to PHP 7.0+ so it runs anywhere
 your application does):
 
 ```bash
-composer require 'reliforp/reli-prof-sidecar-client:^0.12'
+composer require "reliforp/reli-prof-sidecar-client:^0.12"
 ```
 
 Other install paths (full `reliforp/reli-prof` or vendoring the three
