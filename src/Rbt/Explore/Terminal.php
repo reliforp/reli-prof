@@ -63,7 +63,7 @@ final class Terminal implements TerminalInterface
         $out = @fopen('/dev/tty', 'wb');
         if ($in === false || $out === false) {
             throw new \RuntimeException(
-                'rbt:explore requires a terminal — /dev/tty could not be opened.'
+                'a terminal is required — /dev/tty could not be opened.'
             );
         }
         $this->tty_in = $in;
