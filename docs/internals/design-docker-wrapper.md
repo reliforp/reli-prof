@@ -28,18 +28,38 @@ eval "$(docker run --rm --pull=always reliforp/reli-prof docker:print-wrapper)"
 ```
 
 This defines `reli` as a shell function in the current session. To persist,
-users append the command to their `~/.bashrc` / `~/.zshrc`.
+users save the emitted snippet to a file (e.g.
+`~/.local/share/reli/wrapper.sh`) once and source that file from
+`~/.bashrc` / `~/.zshrc`. **Don't** paste the `eval "$(docker run ...)"`
+line directly into rc files — combined with `--pull=always` (below) it
+would Docker-pull on every shell startup, which is slow and breaks shell
+startup outright if the Docker daemon is down. The save-and-source form
+is the recommended persistence shape across all the user-facing docs
+(getting-started.md, docker-wrapper.md).
 
 `--pull=always` is a deliberate part of the bootstrap recipe rather than
-optional polish: a previously cached `reliforp/reli-prof:latest` from an
-older release lacks `docker:print-wrapper` itself (the command only exists
-in 0.12.0+), and `docker run` with the default `--pull=missing` happily
-reuses that stale image. The bootstrap then fails with
-`There are no commands defined in the "docker" namespace.`, which reads
-like a reli bug rather than a Docker cache miss. Forcing a pull at install
-time sidesteps the trap. The flag only matters at install time — the
-emitted wrapper bakes a concrete image tag and never re-pulls per
-invocation.
+optional polish. A previously cached `reliforp/reli-prof:latest` produces
+two distinct failure modes depending on its age:
+
+1. **Pre-0.12 cache** — the image lacks `docker:print-wrapper` itself
+   (the command was added in 0.12.0). `docker run` with the default
+   `--pull=missing` reuses the stale image and the bootstrap fails with
+   `There are no commands defined in the "docker" namespace.`, which
+   reads like a reli bug rather than a Docker cache miss. This is the
+   failure mode that motivated adding the flag in the first place.
+2. **Stale-but-recent cache** — the image has `docker:print-wrapper`
+   but predates the most recent release (e.g. you pulled `:latest`
+   while 0.12.0 was current and 0.13.0 has since shipped). The
+   bootstrap "succeeds" silently, but `defaultImage()` bakes the older
+   image's tag into the emitted wrapper, leaving the user pinned to a
+   previous reli release with no error to flag the drift. This is the
+   quieter failure mode; the user only notices when a feature they
+   expect from the new release is missing or behaves unexpectedly.
+
+Forcing a pull at install time sidesteps both. The flag matters only
+at install / upgrade time — the emitted wrapper bakes a concrete image
+tag and never re-pulls per invocation — but it matters at *every*
+install or upgrade, not just the first.
 
 ### Why a CLI subcommand (not a standalone script / README snippet)
 

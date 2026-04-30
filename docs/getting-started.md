@@ -78,12 +78,18 @@ reli --version
 
 `--pull=always` forces Docker to refresh `reliforp/reli-prof:latest`
 before running `docker:print-wrapper`. Without it, a previously
-cached `:latest` from an older release can be missing this command
-(or other newer features) and the bootstrap fails with
-`There are no commands defined in the "docker" namespace.` Once
-the wrapper is installed, the per-invocation `reli` calls use the
-specific tag baked into the wrapper instead of `:latest`, so this
-flag matters only at install time.
+cached `:latest` falls into one of two failure modes depending on
+its age. A pre-0.12 cache lacks `docker:print-wrapper` entirely and
+the bootstrap fails outright with
+`There are no commands defined in the "docker" namespace.` A more
+recent but still stale cache (e.g. you pulled `:latest` while 0.12.0
+was current and 0.13.0 has since shipped) "succeeds" silently but
+emits a wrapper baked with the older image's tag — leaving you
+pinned to a previous reli release without any error to flag the
+drift. Once the wrapper is installed, the per-invocation `reli`
+calls use the specific tag baked into the wrapper instead of
+`:latest`, so this flag matters only at install / upgrade time —
+but it matters at *every* install or upgrade, not just the first.
 
 To keep it across shells, **don't** paste the `eval "$(docker run ...)"`
 line into your `~/.bashrc` / `~/.zshrc` directly — that re-runs
