@@ -58,7 +58,7 @@ final class CoreDumpCommand extends ReliCommand
         $this->setName('inspector:coredump')
             ->setDescription('get memory usage from a core dump file')
         ;
-        $this->memory_profiler_settings_from_console_input->setOptions($this);
+        $this->memory_profiler_settings_from_console_input->setOptions($this, include_stop_process: false);
         $this->target_php_settings_from_console_input->setOptions($this);
         $this->addOption(
             'pid',

@@ -137,8 +137,10 @@ reli inspector:daemon \
 For attaching to a single worker (`inspector:trace`), pass the PHP
 worker **TID** rather than the FrankenPHP parent PID. The pattern
 below intentionally excludes `php-main` — that's the bootstrap
-thread, not a worker, and attaching to it produces empty traces /
-"failed to find ZendMM main chunk" on memory commands. See
+thread, not a worker, and attaching to it fails (the exact message
+varies by FrankenPHP / PHP build; current builds typically print
+`_tsrm_ls_cache slot is uninitialized`, older ones
+`failed to find ZendMM main chunk`). See
 [tracing/frankenphp.md](tracing/frankenphp.md) for the full story.
 
 ```bash

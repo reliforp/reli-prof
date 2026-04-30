@@ -90,7 +90,9 @@ echo 'source ~/.local/share/reli/wrapper.sh' >> ~/.bashrc   # or ~/.zshrc
 
 The wrapper's baked-in image tag matches the version of reli the
 `docker run` invocation pulled, so there's no `:latest` drift —
-re-run the first command above to upgrade.
+to upgrade, re-run whichever install command you used (the `eval`
+form for the current shell only, or the `docker run ... > ...wrapper.sh`
+form to refresh the saved file that future shells will source).
 
 The wrapper runs each `reli` invocation as a container with
 `--cap-add=SYS_PTRACE --pid=host --network=host`, which gives reli
