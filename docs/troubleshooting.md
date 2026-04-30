@@ -44,7 +44,7 @@ First, try `cat /proc/<pid>/maps` to check the memory map of the target PHP proc
 Re-install with the full profile and retry:
 
 ```bash
-eval "$(docker run --rm reliforp/reli-prof docker:print-wrapper)"
+eval "$(docker run --rm --pull=always reliforp/reli-prof docker:print-wrapper)"
 ```
 
 The two profiles can coexist — see [docker-wrapper.md](docker-wrapper.md) for the side-by-side install pattern (`--name=reli` / `--name=reliv`).

@@ -9,11 +9,23 @@ routed through `docker run` transparently.
 
 ```bash
 # Full profile (default) — attaches to live processes.
-eval "$(docker run --rm reliforp/reli-prof docker:print-wrapper)"
+eval "$(docker run --rm --pull=always reliforp/reli-prof docker:print-wrapper)"
 
 # Minimal profile — viewers / converters only, lower privilege.
-eval "$(docker run --rm reliforp/reli-prof docker:print-wrapper --profile=minimal)"
+eval "$(docker run --rm --pull=always reliforp/reli-prof docker:print-wrapper --profile=minimal)"
 ```
+
+`--pull=always` forces Docker to refresh `reliforp/reli-prof:latest`
+before invoking `docker:print-wrapper`. Without it, a previously
+cached `:latest` falls into one of two failure modes: a pre-0.12
+cache lacks `docker:print-wrapper` entirely and the bootstrap fails
+with `There are no commands defined in the "docker" namespace.`,
+while a more recent but stale cache silently emits a wrapper baked
+with the older image's tag — pinning you to a previous reli release
+without any error. Once the wrapper is installed, per-invocation
+`reli` calls use the specific tag baked into the wrapper rather
+than `:latest`, so the flag only matters at install / upgrade time
+— but it matters at *every* install or upgrade.
 
 For persistence across shells, save the emitted wrapper to a file once
 and `source` it from your rc — pasting the `eval "$(docker run ...)"`
@@ -23,13 +35,15 @@ down:
 
 ```bash
 mkdir -p ~/.local/share/reli
-docker run --rm reliforp/reli-prof docker:print-wrapper > ~/.local/share/reli/wrapper.sh
+docker run --rm --pull=always reliforp/reli-prof docker:print-wrapper > ~/.local/share/reli/wrapper.sh
 echo 'source ~/.local/share/reli/wrapper.sh' >> ~/.bashrc   # or ~/.zshrc
 ```
 
 The image tag is baked into the emitted wrapper (matching the image
 the `docker run` pulled), so you don't get accidental `:latest` drift —
-re-run the snippet above to upgrade.
+re-run the snippet above to upgrade. `--pull=always` makes that re-run
+actually fetch the newest `:latest` rather than reusing the cached
+image from the previous install.
 
 ## Profiles
 
