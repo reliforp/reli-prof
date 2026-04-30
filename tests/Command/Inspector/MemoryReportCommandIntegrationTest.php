@@ -137,6 +137,184 @@ class MemoryReportCommandIntegrationTest extends BaseTestCase
         yield from TargetPhpVmProvider::from(ZendTypeReader::V72);
     }
 
+    public static function provideFromV80(): \Generator
+    {
+        yield from TargetPhpVmProvider::from(ZendTypeReader::V80);
+    }
+
+    /**
+     * @return array{resource, int, array<int, resource>}
+     */
+    private function startWeakMapTargetProcess(string $docker_image_name): array
+    {
+        // Just `new WeakMap()` — no entries. This used to surface as a
+        // phantom `cycle_cluster: 1x WeakMap` finding because the inline
+        // HashTable header (offset 0 of zend_weakmap) shared its base
+        // address with the WeakMap object node, and
+        // `PdoMemoryOutput::computeCanonicalNodeIds` (and the binary
+        // canonical map) merged them on `(address)` keying.
+        $target_script = <<<'PHP'
+        <?php
+        $wm = new WeakMap();
+        fputs(STDOUT, "ready\n");
+        fgets(STDIN);
+        PHP;
+
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes,
+        );
+        $ready = fgets($pipes[1]);
+        $this->assertSame("ready\n", $ready);
+
+        return [$this->child, $pid, $pipes];
+    }
+
+    /**
+     * Empty WeakMap must not produce a phantom cycle finding.
+     *
+     * Regression test: see EmitWeakMapJob — the inner ht is INLINE in
+     * `zend_weakmap = { HashTable ht; zend_object std; }` (`ht` at offset 0),
+     * so the WeakMap object node and the inline ht header would otherwise
+     * share their base address and get unified by the canonical-node-id
+     * pipeline, closing the (object → weak_map → entries) chain into a
+     * phantom 1x WeakMap cycle_cluster.
+     */
+    #[DataProvider('provideFromV80')]
+    public function testEmptyWeakMapProducesNoCycleFinding(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('no target version');
+        }
+
+        $dump_path = $this->createTmpFile();
+        $db_path = $this->createTmpFile('.db');
+        $report_path = $this->createTmpFile('.json');
+        $container = $this->createContainer();
+        [, $pid, ] = $this->startWeakMapTargetProcess($docker_image_name);
+
+        /** @var MemoryDumpCommand $dump_command */
+        $dump_command = $container->make(MemoryDumpCommand::class);
+        $dump_input = new ArrayInput([
+            '--pid' => (string)$pid,
+            '--output' => $dump_path,
+            '--include-binary' => true,
+        ]);
+        $dump_input->setInteractive(false);
+        $this->assertSame(0, $dump_command->run($dump_input, new BufferedOutput()));
+
+        /** @var MemoryAnalyzeCommand $analyze_command */
+        $analyze_command = $container->make(MemoryAnalyzeCommand::class);
+        $analyze_input = new ArrayInput([
+            'dump-file' => $dump_path,
+            '--output-format' => 'sqlite3',
+            '--output' => $db_path,
+        ]);
+        $analyze_input->setInteractive(false);
+        ob_start();
+        try {
+            $this->assertSame(0, $analyze_command->run($analyze_input, new BufferedOutput()));
+        } finally {
+            ob_end_clean();
+        }
+
+        /** @var MemoryReportCommand $report_command */
+        $report_command = $container->make(MemoryReportCommand::class);
+        $report_input = new ArrayInput([
+            'db-file' => $db_path,
+            '--output-format' => 'report-json',
+            '--output' => $report_path,
+        ]);
+        $report_input->setInteractive(false);
+        $this->assertSame(0, $report_command->run($report_input, new BufferedOutput()));
+
+        $json = file_get_contents($report_path);
+        $this->assertNotFalse($json);
+        $decoded = json_decode($json, true);
+        $this->assertIsArray($decoded);
+        /** @var array{findings?: list<array{kind: string, facts?: array{composition?: string}}>} $decoded */
+
+        $weakmap_cycles = array_filter(
+            $decoded['findings'] ?? [],
+            static fn(array $f): bool =>
+                in_array($f['kind'], ['cycle_cluster', 'micro_cycle', 'di_container_cycle'], true)
+                && isset($f['facts']['composition'])
+                && str_contains((string)$f['facts']['composition'], 'WeakMap'),
+        );
+
+        $this->assertEmpty(
+            $weakmap_cycles,
+            'Empty WeakMap must not surface as a cycle finding;'
+            . ' got: '
+            . json_encode(array_values($weakmap_cycles)),
+        );
+    }
+
+    /**
+     * Same regression test, but on the rmem (binary) report path. The
+     * canonical map there is computed by BinaryContextTreeSink, so this
+     * exercises a separate code path from the SQLite test above.
+     */
+    #[DataProvider('provideFromV80')]
+    public function testEmptyWeakMapProducesNoCycleFindingOnRmemPath(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('no target version');
+        }
+
+        $rmem_path = $this->createTmpFile('.rmem');
+        $report_path = $this->createTmpFile('.json');
+        $container = $this->createContainer();
+        [, $pid, ] = $this->startWeakMapTargetProcess($docker_image_name);
+
+        /** @var MemoryCommand $memory_command */
+        $memory_command = $container->make(MemoryCommand::class);
+        $memory_input = new ArrayInput([
+            '--pid' => (string)$pid,
+            '--output' => $rmem_path,
+            '--output-format' => 'rmem',
+        ]);
+        $memory_input->setInteractive(false);
+        $this->assertSame(0, $memory_command->run($memory_input, new BufferedOutput()));
+
+        /** @var MemoryReportCommand $report_command */
+        $report_command = $container->make(MemoryReportCommand::class);
+        $report_input = new ArrayInput([
+            'db-file' => $rmem_path,
+            '--output-format' => 'report-json',
+            '--output' => $report_path,
+        ]);
+        $report_input->setInteractive(false);
+        $this->assertSame(0, $report_command->run($report_input, new BufferedOutput()));
+
+        $json = file_get_contents($report_path);
+        $this->assertNotFalse($json);
+        $decoded = json_decode($json, true);
+        $this->assertIsArray($decoded);
+        /** @var array{findings?: list<array{kind: string, facts?: array{composition?: string}}>} $decoded */
+
+        $weakmap_cycles = array_filter(
+            $decoded['findings'] ?? [],
+            static fn(array $f): bool =>
+                in_array($f['kind'], ['cycle_cluster', 'micro_cycle', 'di_container_cycle'], true)
+                && isset($f['facts']['composition'])
+                && str_contains((string)$f['facts']['composition'], 'WeakMap'),
+        );
+
+        $this->assertEmpty(
+            $weakmap_cycles,
+            'Empty WeakMap must not surface as a cycle finding (rmem path);'
+            . ' got: '
+            . json_encode(array_values($weakmap_cycles)),
+        );
+    }
+
     #[DataProvider('provideFromV72')]
     public function testReportContainsRankingSections(
         string $php_version,
