@@ -81,12 +81,23 @@ final class RmemMcpCommand extends ReliCommand
                 InputOption::VALUE_REQUIRED,
                 'base URL of an rmem:live / explore --http-bridge server; enables rmem_navigate to broadcast focus events to browsers',
             )
+            ->addOption(
+                'memory-limit',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'set PHP memory_limit for analysis (e.g. 2G, 512M)',
+            )
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        /** @var string|null $memory_limit */
+        $memory_limit = $input->getOption('memory-limit');
+        if (is_string($memory_limit) && $memory_limit !== '') {
+            ini_set('memory_limit', $memory_limit);
+        }
         /** @var string|null $rmemPath */
         $rmemPath = $input->getOption('rmem');
         /** @var string|null $socketPath */

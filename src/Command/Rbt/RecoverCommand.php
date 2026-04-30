@@ -42,12 +42,23 @@ final class RecoverCommand extends ReliCommand
                 'Output format: rbt (re-encoded binary trace) or phpspy (text)',
                 'rbt',
             )
+            ->addOption(
+                'memory-limit',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'set PHP memory_limit for analysis (e.g. 2G, 512M)',
+            )
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        /** @var string|null $memory_limit */
+        $memory_limit = $input->getOption('memory-limit');
+        if (is_string($memory_limit) && $memory_limit !== '') {
+            ini_set('memory_limit', $memory_limit);
+        }
         /** @var string $format */
         $format = $input->getOption('format');
         $reader = new BinaryTraceReader();

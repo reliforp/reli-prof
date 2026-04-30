@@ -19,6 +19,7 @@ use Reli\Command\DockerProfile;
 use Reli\Command\ReliCommand;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
@@ -50,12 +51,23 @@ final class MemoryDumpNormalizeCommand extends ReliCommand
                 InputArgument::OPTIONAL,
                 'path for the output file (default: overwrite input)',
             )
+            ->addOption(
+                'memory-limit',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'set PHP memory_limit for analysis (e.g. 2G, 512M)',
+            )
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        /** @var string|null $memory_limit */
+        $memory_limit = $input->getOption('memory-limit');
+        if (is_string($memory_limit) && $memory_limit !== '') {
+            ini_set('memory_limit', $memory_limit);
+        }
         $input_path = (string) $input->getArgument('input');
         /** @var string|null $output_arg */
         $output_arg = $input->getArgument('output');

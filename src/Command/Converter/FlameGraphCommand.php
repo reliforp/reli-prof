@@ -20,6 +20,7 @@ use Reli\Command\ReliCommand;
 use Reli\Converter\PhpSpyCompatibleFormatter;
 use Reli\Converter\TraceInputReader;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 
 final class FlameGraphCommand extends ReliCommand
@@ -41,12 +42,23 @@ final class FlameGraphCommand extends ReliCommand
     {
         $this->setName('converter:flamegraph')
             ->setDescription('convert traces to flamegraph SVG (auto-detects rbt or phpspy input)')
+            ->addOption(
+                'memory-limit',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'set PHP memory_limit for analysis (e.g. 2G, 512M)',
+            )
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        /** @var string|null $memory_limit */
+        $memory_limit = $input->getOption('memory-limit');
+        if (is_string($memory_limit) && $memory_limit !== '') {
+            ini_set('memory_limit', $memory_limit);
+        }
         $tools_path = Cast::toString($this->config->get('paths.tools'));
 
         $flamegraph = "{$tools_path}/flamegraph/flamegraph.pl";

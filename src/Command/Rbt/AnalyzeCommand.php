@@ -141,12 +141,23 @@ final class AnalyzeCommand extends ReliCommand
                 . ' Example: "self+total,tail"',
                 SectionLayout::DEFAULT_SPEC,
             )
+            ->addOption(
+                'memory-limit',
+                null,
+                InputOption::VALUE_REQUIRED,
+                'set PHP memory_limit for analysis (e.g. 2G, 512M)',
+            )
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        /** @var string|null $memory_limit */
+        $memory_limit = $input->getOption('memory-limit');
+        if (is_string($memory_limit) && $memory_limit !== '') {
+            ini_set('memory_limit', $memory_limit);
+        }
         $top = max(0, (int) $input->getOption('top'));
         /** @var string|null $callers_pattern */
         $callers_pattern = $input->getOption('callers');
