@@ -67,7 +67,7 @@ installs a shell function `reli` so the rest of this doc works
 exactly as written, with no docker flag incantations to remember:
 
 ```bash
-eval "$(docker run --rm reliforp/reli-prof docker:print-wrapper)"
+eval "$(docker run --rm --pull=always reliforp/reli-prof docker:print-wrapper)"
 ```
 
 Then, still in the same shell:
@@ -76,23 +76,28 @@ Then, still in the same shell:
 reli --version
 ```
 
-To keep it across shells, **don't** paste the `eval "$(docker run ...)"`
-line into your `~/.bashrc` / `~/.zshrc` directly — that re-runs
-`docker run` on every shell start (slow, and breaks shell startup
-if the Docker daemon is down). Save the wrapper to a file once and
-source that instead:
+`--pull=always` is required, not optional polish: a stale local
+`:latest` either lacks `docker:print-wrapper` outright (pre-0.12) or
+silently emits a wrapper pinned to an older reli release. See
+[docker-wrapper.md § Install](docker-wrapper.md#install) for the full
+breakdown — the short version is "always pass the flag at first
+install and at every upgrade".
+
+To keep the wrapper across shells, save the emitted snippet to a file
+once and `source` that file from your rc — **don't** paste the
+`eval "$(docker run ...)"` line into `~/.bashrc` / `~/.zshrc`
+directly, that re-runs `docker run` on every shell start (slow, and
+breaks shell startup if the Docker daemon is down):
 
 ```bash
 mkdir -p ~/.local/share/reli
-docker run --rm reliforp/reli-prof docker:print-wrapper > ~/.local/share/reli/wrapper.sh
+docker run --rm --pull=always reliforp/reli-prof docker:print-wrapper > ~/.local/share/reli/wrapper.sh
 echo 'source ~/.local/share/reli/wrapper.sh' >> ~/.bashrc   # or ~/.zshrc
 ```
 
-The wrapper's baked-in image tag matches the version of reli the
-`docker run` invocation pulled, so there's no `:latest` drift —
-to upgrade, re-run whichever install command you used (the `eval`
-form for the current shell only, or the `docker run ... > ...wrapper.sh`
-form to refresh the saved file that future shells will source).
+To upgrade, re-run the same command — the wrapper bakes a concrete
+image tag at install time, so re-running with `--pull=always` is the
+canonical upgrade path.
 
 The wrapper runs each `reli` invocation as a container with
 `--cap-add=SYS_PTRACE --pid=host --network=host`, which gives reli
@@ -102,7 +107,7 @@ and for the lower-privilege `reli-view` variant (viewer-only, safe
 on shared hosts):
 
 ```bash
-eval "$(docker run --rm reliforp/reli-prof docker:print-wrapper --profile=minimal)"
+eval "$(docker run --rm --pull=always reliforp/reli-prof docker:print-wrapper --profile=minimal)"
 ```
 
 The minimal profile installs the shell function as `reli-view` (not
