@@ -23,7 +23,7 @@ shapes — see [Memory and watch commands](#memory-and-watch-commands).
 
 | Flag | Value | Why |
 |---|---|---|
-| `--php-regex` | `.*/libphp\.so$` | PHP is loaded as a shared library; the default (`/php$`) never matches |
+| `--php-regex` | `.*/libphp\.so$` | PHP is loaded as a shared library. The default regex would match `libphp.so` on its own, but the tighter pattern is recommended on FrankenPHP to pin the resolver to libphp without relying on the `libphp[78]?.*\.so$` branch of the default and to avoid accidental matches against other `.so`s that happen to fit it. |
 | `--libpthread-regex` | `.*/libc\.so.*` | pthread functions live in libc, not in a separate libpthread |
 | `--target-thread-regex` (daemon/top/watch) | `^php-[0-9a-f]+$` | Restricts sampling to PHP worker threads; see [Thread filtering](#thread-filtering) |
 
