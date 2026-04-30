@@ -33,12 +33,14 @@ final class FoldedCommand extends ReliCommand
     {
         $this->setName('converter:folded')
             ->setDescription('convert traces to folded stacks format (auto-detects rbt or phpspy input)')
+            ->addMemoryLimitOption()
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         $reader = new TraceInputReader();
         $formatter = new FoldedStacksFormatter();
 

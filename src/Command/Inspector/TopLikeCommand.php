@@ -93,11 +93,13 @@ final class TopLikeCommand extends ReliCommand
         $this->trace_loop_settings_from_console_input->setOptions($this);
         $this->target_php_settings_from_console_input->setOptions($this);
         $this->addOption('no-cache', null, InputOption::VALUE_NONE, 'disable the binary analysis cache');
+        $this->addMemoryLimitOption();
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         $target_regex = $input->getOption('target-regex');
         if ($target_regex !== null) {
             return $this->executeDaemonMode($input, $output);

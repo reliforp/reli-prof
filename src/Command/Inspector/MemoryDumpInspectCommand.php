@@ -46,11 +46,13 @@ final class MemoryDumpInspectCommand extends ReliCommand
             InputArgument::REQUIRED,
             'path to the memory dump file'
         );
+        $this->addMemoryLimitOption();
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         /** @var string $dump_file */
         $dump_file = $input->getArgument('dump-file');
 

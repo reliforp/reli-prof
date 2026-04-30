@@ -80,11 +80,13 @@ final class DaemonCommand extends ReliCommand
         $this->target_php_settings_from_console_input->setOptions($this);
         $this->output_settings_from_console_input->setOptions($this);
         $this->addOption('no-cache', null, InputOption::VALUE_NONE, 'disable the binary analysis cache');
+        $this->addMemoryLimitOption();
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         $no_cache = (bool)$input->getOption('no-cache');
         $get_trace_settings = $this->get_trace_settings_from_console_input->createSettings($input);
         $daemon_settings = $this->daemon_settings_from_console_input->createSettings($input);

@@ -33,12 +33,14 @@ final class PprofCommand extends ReliCommand
     {
         $this->setName('converter:pprof')
             ->setDescription('convert traces to pprof protobuf (auto-detects rbt or phpspy input)')
+            ->addMemoryLimitOption()
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         $reader = new TraceInputReader();
         $encoder = new PprofEncoder();
 

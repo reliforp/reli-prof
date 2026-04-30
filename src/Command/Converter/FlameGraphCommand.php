@@ -41,12 +41,14 @@ final class FlameGraphCommand extends ReliCommand
     {
         $this->setName('converter:flamegraph')
             ->setDescription('convert traces to flamegraph SVG (auto-detects rbt or phpspy input)')
+            ->addMemoryLimitOption()
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         $tools_path = Cast::toString($this->config->get('paths.tools'));
 
         $flamegraph = "{$tools_path}/flamegraph/flamegraph.pl";

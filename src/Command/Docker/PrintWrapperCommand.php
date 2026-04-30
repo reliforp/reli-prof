@@ -62,12 +62,14 @@ final class PrintWrapperCommand extends ReliCommand
                 'target shell dialect (bash|zsh|posix) — currently informational',
                 'bash',
             )
+            ->addMemoryLimitOption()
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         $profile = DockerProfile::tryFrom((string)$input->getOption('profile'));
         if ($profile === null) {
             $output->writeln(

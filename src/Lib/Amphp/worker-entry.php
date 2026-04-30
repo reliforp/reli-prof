@@ -20,6 +20,17 @@ use Reli\Lib\Log\StateCollector\StateCollector;
 use Psr\Log\LoggerInterface;
 
 return function (Channel $channel) use ($argv): void {
+    // Inherit the reli parent's --memory-limit. ini_set() in the parent
+    // does not cross the proc_open boundary, so ReliCommand pushes the
+    // value through env (RELI_MEMORY_LIMIT) and we reapply it here at
+    // worker startup. Without this, daemon-style readers keep the
+    // bootstrap default and OOM independently of what the user passed
+    // on the command line.
+    $worker_memory_limit = getenv('RELI_MEMORY_LIMIT');
+    if (is_string($worker_memory_limit) && $worker_memory_limit !== '') {
+        ini_set('memory_limit', $worker_memory_limit);
+    }
+
     // Worker is spawned by reli's parent with exactly 4 argv entries; a
     // mismatch means either the launcher contract changed or the worker
     // was invoked manually. Without this guard, the destructuring below

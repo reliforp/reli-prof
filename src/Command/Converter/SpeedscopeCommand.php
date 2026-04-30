@@ -43,11 +43,13 @@ final class SpeedscopeCommand extends ReliCommand
             ->setDescription('convert traces to the speedscope file format (auto-detects rbt or phpspy input)')
         ;
         $this->settings_from_console_input->setOptions($this);
+        $this->addMemoryLimitOption();
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         $settings = $this->settings_from_console_input->createSettings($input);
         $reader = new TraceInputReader();
 

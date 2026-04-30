@@ -54,12 +54,14 @@ final class RbtCommand extends ReliCommand
                 InputOption::VALUE_NONE,
                 'Gzip-compress the output (.rbt.gz)',
             )
+            ->addMemoryLimitOption()
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         $sampling_period = (int)$input->getOption('sampling-period');
         $has_timestamps = $input->getOption('rbt-timestamps') === 'delta';
         $compress = (bool)$input->getOption('compress');

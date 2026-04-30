@@ -33,12 +33,14 @@ final class PhpspyCommand extends ReliCommand
     {
         $this->setName('converter:phpspy')
             ->setDescription('convert traces to phpspy-compatible text (auto-detects rbt or phpspy input)')
+            ->addMemoryLimitOption()
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         $reader = new TraceInputReader();
         $formatter = new PhpSpyCompatibleFormatter();
 

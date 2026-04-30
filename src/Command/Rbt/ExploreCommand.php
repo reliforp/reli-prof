@@ -77,12 +77,14 @@ final class ExploreCommand extends ReliCommand
                 . ' or --path-map /var/www/html=. for project-relative paths).'
                 . ' May be specified multiple times; longest prefix wins',
             )
+            ->addMemoryLimitOption()
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         if ((bool) $input->getOption('diagnose')) {
             return $this->runDiagnose($output);
         }

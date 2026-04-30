@@ -66,11 +66,13 @@ final class PhpSpyDaemonCommand extends ReliCommand
             InputOption::VALUE_REQUIRED,
             'output file path (default: stdout)'
         );
+        $this->addMemoryLimitOption();
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         $no_cache = (bool)$input->getOption('no-cache');
         $daemon_settings = $this->daemon_settings_from_console_input->createSettings($input);
         $get_trace_settings = $this->get_trace_settings_from_console_input->createSettings($input);

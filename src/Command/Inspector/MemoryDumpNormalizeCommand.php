@@ -50,12 +50,14 @@ final class MemoryDumpNormalizeCommand extends ReliCommand
                 InputArgument::OPTIONAL,
                 'path for the output file (default: overwrite input)',
             )
+            ->addMemoryLimitOption()
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         $input_path = (string) $input->getArgument('input');
         /** @var string|null $output_arg */
         $output_arg = $input->getArgument('output');

@@ -77,6 +77,7 @@ final class PhpSpyTraceCommand extends ReliCommand
             InputOption::VALUE_REQUIRED,
             'output file path (default: stdout)'
         );
+        $this->addMemoryLimitOption();
     }
 
     /**
@@ -89,6 +90,7 @@ final class PhpSpyTraceCommand extends ReliCommand
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         if ($input->getOption('no-cache')) {
             $this->binary_analysis_cache->disable();
         }

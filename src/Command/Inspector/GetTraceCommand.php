@@ -92,6 +92,7 @@ final class GetTraceCommand extends ReliCommand
         $this->target_php_settings_from_console_input->setOptions($this);
         $this->output_settings_from_console_input->setOptions($this);
         $this->addOption('no-cache', null, InputOption::VALUE_NONE, 'disable the binary analysis cache');
+        $this->addMemoryLimitOption();
     }
 
     /**
@@ -104,6 +105,7 @@ final class GetTraceCommand extends ReliCommand
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         if ($input->getOption('no-cache')) {
             $this->binary_analysis_cache->disable();
         }

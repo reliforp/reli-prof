@@ -59,11 +59,13 @@ final class PhpSpyInstallCommand extends ReliCommand
             InputOption::VALUE_REQUIRED,
             'path to an existing phpspy binary to check'
         );
+        $this->addMemoryLimitOption();
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         $check_only = (bool)$input->getOption('check');
         /** @var string|null $phpspy_path_option */
         $phpspy_path_option = $input->getOption('phpspy-path');

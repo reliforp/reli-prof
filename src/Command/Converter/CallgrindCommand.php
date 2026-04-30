@@ -33,12 +33,14 @@ final class CallgrindCommand extends ReliCommand
     {
         $this->setName('converter:callgrind')
             ->setDescription('convert traces to the callgrind file format (auto-detects rbt or phpspy input)')
+            ->addMemoryLimitOption()
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         $reader = new TraceInputReader();
         $output->writeln('# format callgrind');
         $output->writeln('events: Samples');

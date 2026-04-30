@@ -38,12 +38,14 @@ final class ClearCommand extends ReliCommand
     {
         $this->setName('cache:clear')
             ->setDescription('clear the binary analysis cache')
+            ->addMemoryLimitOption()
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         $count = $this->binary_analysis_cache->clear();
         $output->writeln("cleared {$count} cached entries");
         return 0;

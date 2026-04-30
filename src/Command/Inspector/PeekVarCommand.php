@@ -89,11 +89,13 @@ final class PeekVarCommand extends ReliCommand
             InputOption::VALUE_NONE,
             'disable the binary analysis cache',
         );
+        $this->addMemoryLimitOption();
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         if ($input->getOption('no-cache')) {
             $this->binary_analysis_cache->disable();
         }

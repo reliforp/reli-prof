@@ -141,12 +141,14 @@ final class AnalyzeCommand extends ReliCommand
                 . ' Example: "self+total,tail"',
                 SectionLayout::DEFAULT_SPEC,
             )
+            ->addMemoryLimitOption()
         ;
     }
 
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         $top = max(0, (int) $input->getOption('top'));
         /** @var string|null $callers_pattern */
         $callers_pattern = $input->getOption('callers');

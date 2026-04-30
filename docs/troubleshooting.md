@@ -82,6 +82,32 @@ Recovery:
 
 > **Note:** older versions of reli could persist `has_tsrm_ls_cache: false` for a ZTS binary the first time an idle worker was hit. The current code re-checks the binary's PT_TLS on every cache read and drops the entry if the binary is in fact ZTS, so upgraders do not need to `./reli cache:clear` — the stale entry self-heals on the next attach.
 
+## "Allowed memory size of N bytes exhausted" — reli itself OOMs
+
+reli analyses the target's binaries and heap inside its own PHP process, so it is bound by its own `memory_limit`. Big targets — FrankenPHP / statically-linked `libphp` (tens of thousands of ELF symbols), large `.rmem` snapshots, multi-GB ZendMM heaps — can blow past the default limit during cold attach or analysis. The symptom is a fatal `Allowed memory size of … bytes exhausted` from reli, **not** from the target.
+
+Every top-level command accepts `--memory-limit` for this:
+
+```bash
+# Trace commands (cold-attach a big binary)
+./reli inspector:trace -p <tid> --memory-limit=2G ...
+./reli inspector:daemon --target-regex=... --memory-limit=2G
+
+# Memory analysis
+./reli inspector:memory -p <pid> --memory-limit=4G
+./reli inspector:memory:analyze dump.rdump --memory-limit=4G
+
+# Post-processing big traces / snapshots
+./reli rbt:analyze --memory-limit=2G < big.rbt
+./reli rmem:explore huge.rmem --memory-limit=4G
+```
+
+`--memory-limit=2G` is generally what you want: it shows up in `--help`, works through the Docker wrapper, and (for daemon-style commands) is propagated to the spawned worker processes via the `RELI_MEMORY_LIMIT` env var so the readers raise their limit too. Use `php -d memory_limit=2G ./reli ...` only when reli is dying *before* it parses options — e.g. during PHP startup or `composer` autoload.
+
+> `--memory-limit` only affects the current reli invocation. If you launch a *separate* reli process from inside another (e.g. `inspector:trace -- php ./reli inspector:trace ...`), pass `--memory-limit` to that inner command separately — `ini_set` does not cross the `proc_open` boundary, and `--` arguments are not interpreted by the outer reli.
+
+For the sidecar specifically, the value also has a sizing rule (target heap + ~80 MB headroom) — see [monitoring/sidecar.md § Sizing `--memory-limit`](monitoring/sidecar.md#sizing---memory-limit).
+
 ## Something seems stale after a PHP upgrade or container rebuild.
 
 reli caches expensive binary-analysis results (ELF symbol resolution, ZTS TLS offsets, PHP version detection) under `~/.cache/reli/binary-analysis/`. If you suspect a stale entry is being served — after upgrading the target PHP, rebuilding a container image, or any other "shouldn't that have worked?" moment — drop or bypass the cache:

@@ -82,6 +82,7 @@ final class RmemQueryCommand extends ReliCommand
                 InputOption::VALUE_NONE,
                 'validate string_dict and other sections for truncation or corruption',
             )
+            ->addMemoryLimitOption()
         ;
     }
 
@@ -91,6 +92,7 @@ final class RmemQueryCommand extends ReliCommand
     #[\Override]
     public function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->applyMemoryLimit($input, $output);
         /** @var string|null $serverPath */
         $serverPath = $input->getOption('server');
         if ($serverPath !== null) {
