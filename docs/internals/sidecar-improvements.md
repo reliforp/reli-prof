@@ -1,9 +1,9 @@
 # Sidecar — Improvement Notes
 
 Design and follow-up notes for `inspector:sidecar` and the standalone
-`reliforp/reli-prof-sidecar-client` package, accumulated alongside
-the 0.12.0 launch. Items marked `[x]` shipped with the launch batch;
-the rest are tracked candidates for 0.12.x.
+`reliforp/reli-prof-sidecar-client` package, accumulated around the
+0.12.0 launch. Items marked `[x]` shipped in 0.12.0; the rest are
+tracked candidates for 0.12.x.
 
 This document is in the spirit of `future-ideas.md` — opinionated
 design discussion rather than a contract — and is organised around
@@ -13,7 +13,7 @@ terms of *what currently happens* and *what we want instead*, so
 future revisions can re-evaluate the trade-off when the surrounding
 code shifts.
 
-## Shipped on this branch (0.12.0 release-blocker batch)
+## Shipped in 0.12.0 (release-blocker batch)
 
 The following landed together as the "0.12.0 launch polish" change:
 
@@ -419,10 +419,9 @@ response and very much do want to release the worker slot.
 
 ## F. Documentation gaps
 
-> **Status update:** F1 and F3 shipped on this branch. F2 (Packagist
-> path) is deliberately deferred — it depends on tagging the
-> `reliforp/reli-prof-sidecar-client` mirror, which we want to do
-> alongside the actual 0.12.0 tag rather than a step ahead of it.
+> **Status update:** F1, F2, and F3 all shipped in 0.12.0. The mirror
+> is tagged on the same `0.12.0` version as upstream and the docs
+> recommend the `^0.12` install constraint.
 
 ### F1. Socket parent directory requirement in Quick Start
 
@@ -444,20 +443,14 @@ default `$XDG_RUNTIME_DIR/reli/sidecar.sock`.
 
 ### F2. Packagist install path
 
-[x] **Docs side shipped on this branch.** "Installing the client code
-in your application" in `docs/monitoring/sidecar.md` now lists three
-options and recommends the standalone
-`reliforp/reli-prof-sidecar-client` package over the full
-`reliforp/reli-prof` dependency or hand-vendoring. The example shows
-the `dev-main` pin + `minimum-stability: dev` until a tag exists.
-
-[ ] **Residual:** tag the
-`reliforp/reli-prof-sidecar-client` mirror and update the docs
-snippet from `:dev-main` to a `^0.x` constraint. This is what gets
-recommended-by-default rather than an explicit `dev-main` pin
-+ stability flag. Tagging policy itself still needs sorting
-(semver, presumably starting at `0.12.0` to track the upstream tag,
-or `0.1.0` if we want the mirror's version line to be independent).
+[x] **Shipped in 0.12.0.** "Installing the client code in your
+application" in `docs/monitoring/sidecar.md` lists three options and
+recommends the standalone `reliforp/reli-prof-sidecar-client` package
+over the full `reliforp/reli-prof` dependency or hand-vendoring. The
+mirror is tagged on the same `0.12.0` version as upstream (policy:
+mirror tag = upstream tag, exactly — see
+`docs/internals/sidecar-release-process.md`), and the install snippet
+uses the `^0.12` constraint without `minimum-stability: dev`.
 
 ### F3. Operations section
 
@@ -479,7 +472,7 @@ A single "Operations" section in `sidecar.md` to consolidate:
 Add `tests/e2e/sidecar-client/` containing:
 
 1. `composer.json` — either a path repository pointing to
-   `../../reli-prof-sidecar-client`, or pinning Packagist's `dev-main`.
+   `../../reli-prof-sidecar-client`, or pinning Packagist's `^0.12`.
 2. A bootstrap + benchmark fixture (the moral equivalent of the
    `bench.php` we used during this check).
 3. A PHPUnit case that boots `dockerd`, starts the sidecar in the
@@ -502,10 +495,8 @@ each are different. Useful as a fixture for G1.
 
 ## Suggested PR ordering
 
-**Shipped on this branch (release-blocker batch for 0.12.0):**
-A1, B1, B2, C1, C2, E1, E2, F1, F3, plus the docs portion of F2
-(standalone-client install route documented; mirror tagging is the
-remaining residual).
+**Shipped in 0.12.0 (release-blocker batch):**
+A1, B1, B2, C1, C2, E1, E2, F1, F2, F3.
 
 **Remaining for 0.12.x:**
 
@@ -519,15 +510,10 @@ remaining residual).
    `MemoryLimitHandler` argument). Mostly relevant once someone hits
    the B1 pre-flight wall on a sidecar they cannot reasonably
    resize.
-3. **F2 (residual)** — the docs now recommend
-   `reliforp/reli-prof-sidecar-client` as the primary install route,
-   pinned to `dev-main`. Remaining work is to tag the mirror and
-   replace the `dev-main` pin in the docs snippet with the first
-   release tag.
-4. **H4 + H5** — queue depth reporting / rejection. Optional.
-5. **D1** — `on_error` signature extension. Optional-parameter
+3. **H4 + H5** — queue depth reporting / rejection. Optional.
+4. **D1** — `on_error` signature extension. Optional-parameter
    addition, fully BC. Useful but not urgent.
-6. **G1 + G2** — E2E test infrastructure and bench demo. Best after
+5. **G1 + G2** — E2E test infrastructure and bench demo. Best after
    A2-A4 land so the test fixture covers all dump modes.
 
 C3 (raising the default timeout to 60 s) and D2 (sentinel error
@@ -538,9 +524,10 @@ type) remain open discussion items rather than tracked tasks.
 ## Operational notes that informed this document
 
 - The Packagist mirror at `reliforp/reli-prof-sidecar-client`
-  currently exposes `dev-main` only and tracks the upstream
-  `main` branch via the GitHub → Packagist webhook. F2 is what
-  closes the gap to a tagged version.
+  tracks the upstream maintenance branch via the GitHub → Packagist
+  webhook and is tagged in lockstep with upstream
+  (`reli 0.12.x ⇒ client 0.12.x`); see
+  `docs/internals/sidecar-release-process.md`.
 - `/tmp/reli-dumps/` (or whatever `--output-dir` points at) is
   auto-rotated by `--disk-usage-limit` (default `1G`). Stress
   testing for the H series should keep an eye on this — when the

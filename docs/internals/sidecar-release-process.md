@@ -84,7 +84,7 @@ In `docs/monitoring/sidecar.md`, swap the install snippet from the
 
 ```diff
 -  composer require reliforp/reli-prof-sidecar-client:dev-main
-+  composer require 'reliforp/reli-prof-sidecar-client:^0.12'
++  composer require "reliforp/reli-prof-sidecar-client:^0.12"
 ```
 
 Drop the `Until the first tagged release …` paragraph and the
