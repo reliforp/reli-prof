@@ -88,9 +88,7 @@ standalone client mirror; downgraded to PHP 7.0+ so it runs anywhere
 your application does):
 
 ```bash
-# Until the first tagged release, the package is dev-main only —
-# requires "minimum-stability": "dev" + "prefer-stable": true in composer.json.
-composer require reliforp/reli-prof-sidecar-client:dev-main
+composer require 'reliforp/reli-prof-sidecar-client:^0.12'
 ```
 
 Other install paths (full `reliforp/reli-prof` or vendoring the three

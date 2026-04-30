@@ -98,20 +98,14 @@ it keeps the application's dependency graph free of FFI / PCNTL.
   so it runs anywhere your application does:
 
   ```bash
-  composer require reliforp/reli-prof-sidecar-client
+  composer require 'reliforp/reli-prof-sidecar-client:^0.12'
   ```
 
-  Until the first tagged release, the package is published as
-  `dev-main` only. Pin it explicitly and allow dev stability:
-
-  ```bash
-  composer require reliforp/reli-prof-sidecar-client:dev-main
-  ```
-
-  with `"minimum-stability": "dev"` and `"prefer-stable": true` in
-  `composer.json`. **Do not open PRs against the mirror repo** — its
-  contents are regenerated from `src/Sidecar/Client/` in
-  `reliforp/reli-prof` by the Rector-based downgrade pipeline.
+  The mirror tag tracks the upstream `reliforp/reli-prof` tag exactly,
+  so `^0.12` pairs with `reli` 0.12.x. **Do not open PRs against the
+  mirror repo** — its contents are regenerated from
+  `src/Sidecar/Client/` in `reliforp/reli-prof` by the Rector-based
+  downgrade pipeline.
 
 - **Composer, full reli-prof** — strongly discouraged for
   application-only deploys. `reliforp/reli-prof`'s `composer.json`
