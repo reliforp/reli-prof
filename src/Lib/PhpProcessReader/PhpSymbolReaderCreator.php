@@ -91,22 +91,30 @@ final class PhpSymbolReaderCreator
 
         $root_link_map_address = null;
         if (!is_null($libpthread_symbol_reader)) {
-            $executable_path = readlink("/proc/{$pid}/exe");
-            if ($executable_path === false) {
-                throw new ProcessSymbolReaderException('failed to readlink /proc/' . $pid . '/exe');
+            // We use the executable path here only to obtain the
+            // root link-map address for TLS resolution (ZTS targets,
+            // libthread_db). NTS targets do not consult this — they
+            // resolve `executor_globals` via static symbol lookup —
+            // so a missing executable path is recoverable downstream
+            // for NTS even though it disables the TLS path. Make this
+            // step fail-soft so post-mortem core analysis (where
+            // /proc/<pid>/exe no longer exists) keeps progressing for
+            // the NTS case; ZTS readers will fail later when they try
+            // to walk the link map.
+            $executable_path = @readlink("/proc/{$pid}/exe");
+            if ($executable_path !== false) {
+                $full_executable_path = "/proc/{$pid}/root{$executable_path}";
+                $main_executable_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
+                    $pid,
+                    $process_memory_map,
+                    $executable_path,
+                    $full_executable_path,
+                    $libpthread_symbol_reader,
+                );
+                if (!is_null($main_executable_reader)) {
+                    $root_link_map_address = $main_executable_reader->getLinkMapAddress();
+                }
             }
-            $full_executable_path = "/proc/{$pid}/root{$executable_path}";
-            $main_executable_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
-                $pid,
-                $process_memory_map,
-                $executable_path,
-                $full_executable_path,
-                $libpthread_symbol_reader,
-            );
-            if (is_null($main_executable_reader)) {
-                throw new ProcessSymbolReaderException('main executable not found');
-            }
-            $root_link_map_address = $main_executable_reader->getLinkMapAddress();
         }
 
         $php_symbol_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
