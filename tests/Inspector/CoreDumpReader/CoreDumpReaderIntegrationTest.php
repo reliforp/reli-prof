@@ -174,6 +174,96 @@ class CoreDumpReaderIntegrationTest extends BaseTestCase
         $this->assertGreaterThanOrEqual(0, $summary['chunks_mostly_empty_count']);
     }
 
+    /**
+     * `inspector:coredump -f rmem` previously failed at the
+     * `BinaryMemoryOutput::output()` boundary (BinaryMemoryOutput
+     * only supports the streaming sink path, but the coredump
+     * reader was always going through the PDO temp-DB path and
+     * then asking the factory for a non-streaming output).
+     * CoreDumpReader now branches on isRmemFormat() and uses
+     * createBinaryStreamingSink() / finalizeStreaming(),
+     * mirroring the pattern in MemoryDumpReader.
+     */
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testReadFromCoreDumpToRmem(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        ini_set('memory_limit', '2G');
+
+        // ZTS PHP 8.2+: same skip rationale as testReadFromCoreDump.
+        if (
+            str_contains($docker_image_name, '-zts')
+            && $php_version >= 'v82'
+        ) {
+            $this->markTestSkipped(
+                'ZTS PHP 8.2+ coredump: _tsrm_ls_cache not found in TLS block'
+            );
+        }
+
+        $target_script = <<<'CODE'
+            <?php
+            $data = array_fill(0, 1000, str_repeat('x', 100));
+            $obj = new stdClass();
+            $obj->items = range(1, 50);
+            fputs(STDOUT, "ready\n");
+            fgets(STDIN);
+            CODE;
+
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes,
+        );
+
+        $s = fgets($pipes[1]);
+        $this->assertSame("ready\n", $s);
+
+        $this->core_file = $this->takeCoreDump($pid);
+        $this->assertFileExists($this->core_file);
+
+        $integer_reader = new LittleEndianReader();
+        $elf64_parser = new Elf64Parser($integer_reader);
+        $container_builder = new ContainerBuilder();
+        $factory = new CoreDumpReaderFactory($container_builder, $elf64_parser);
+
+        $path_mapping = ['/' => "/proc/{$pid}/root"];
+        $core_dump_reader = $factory->createFromPath($this->core_file, $path_mapping);
+
+        // Output format: rmem (.rmem binary) — exercises the
+        // createBinaryStreamingSink / finalizeStreaming path.
+        $this->output_file = tempnam('/tmp/reli-test', 'coredump-test-rmem-');
+        $target_php_settings = new TargetPhpSettings(
+            php_version: $php_version,
+        );
+        $memory_profiler_settings = new MemoryProfilerSettings(
+            stop_process: false,
+            pretty_print: false,
+            output_format: 'rmem',
+            output_path: $this->output_file,
+        );
+
+        $core_dump_reader->read(
+            $pid,
+            $target_php_settings,
+            $memory_profiler_settings,
+        );
+
+        // Verify the output is a real .rmem file: non-empty, starts
+        // with the RMEM magic. Full structural validation is covered
+        // by the BinaryFormat reader tests; here we just guard against
+        // a zero-byte file or a regression to "BinaryMemoryOutput
+        // does not support the non-streaming output() path".
+        $this->assertFileExists($this->output_file);
+        $size = filesize($this->output_file);
+        $this->assertNotFalse($size);
+        $this->assertGreaterThan(0, $size);
+
+        $magic = file_get_contents($this->output_file, false, null, 0, 4);
+        $this->assertSame('RMEM', $magic);
+    }
+
     private function takeCoreDump(int $pid): string
     {
         // Include all memory pages in the coredump (file-backed pages are needed
