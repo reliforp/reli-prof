@@ -24,11 +24,22 @@ The wrapper is a **shell function**, emitted by a new reli CLI subcommand
 that prints a shell snippet to stdout. Install with one command:
 
 ```bash
-eval "$(docker run --rm reliforp/reli-prof docker:print-wrapper)"
+eval "$(docker run --rm --pull=always reliforp/reli-prof docker:print-wrapper)"
 ```
 
 This defines `reli` as a shell function in the current session. To persist,
 users append the command to their `~/.bashrc` / `~/.zshrc`.
+
+`--pull=always` is a deliberate part of the bootstrap recipe rather than
+optional polish: a previously cached `reliforp/reli-prof:latest` from an
+older release lacks `docker:print-wrapper` itself (the command only exists
+in 0.12.0+), and `docker run` with the default `--pull=missing` happily
+reuses that stale image. The bootstrap then fails with
+`There are no commands defined in the "docker" namespace.`, which reads
+like a reli bug rather than a Docker cache miss. Forcing a pull at install
+time sidesteps the trap. The flag only matters at install time — the
+emitted wrapper bakes a concrete image tag and never re-pulls per
+invocation.
 
 ### Why a CLI subcommand (not a standalone script / README snippet)
 
