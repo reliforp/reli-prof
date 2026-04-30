@@ -295,6 +295,7 @@ final class VizHtmlBuilder
      */
     private const STRUCTURAL_NODE_TYPES = [
         'ArrayHeaderContext',
+        'InlineArrayHeaderContext',
         'ArrayPossibleOverheadContext',
     ];
 
