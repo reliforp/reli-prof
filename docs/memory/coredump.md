@@ -54,7 +54,7 @@ and `rmem:mcp` read `.rmem` only.
 The output of `inspector:coredump` uses the same
 [`MemoryProfilerSettings`](../../src/Inspector/Settings/MemoryProfilerSettings/MemoryProfilerSettingsFromConsoleInput.php)
 as `inspector:memory`, so every output format (`json`, `sqlite3`,
-`binary`, `mysql`, `postgresql`, `report`, `report-json`) is supported.
+`rmem`, `mysql`, `postgresql`, `report`, `report-json`) is supported.
 Which downstream tool you can feed depends on the format:
 
 - `inspector:memory:report` and `inspector:memory:compare` accept

@@ -45,8 +45,8 @@ recommended install paths (Docker wrapper, Composer, Git).
 flag list and defaults. The flags you most often reach for:
 
 - `-p, --pid <PID>` — target process id (or pass a `cmd` after `--` to spawn one)
-- `-f, --output-format <fmt>` — `json` (default), `sqlite3`, `binary` (`.rmem`),
-  `report`, `report-json`, `mysql`, `postgresql`. `binary` / `sqlite3` /
+- `-f, --output-format <fmt>` — `json` (default), `sqlite3`, `rmem` (`.rmem`),
+  `report`, `report-json`, `mysql`, `postgresql`. `rmem` / `sqlite3` /
   `mysql` / `postgresql` require `-o` (or `--db-*`).
 - `-o, --output <path>` — write to a file instead of stdout
 - `--pretty-print` — pretty-print the JSON output (default: off)
