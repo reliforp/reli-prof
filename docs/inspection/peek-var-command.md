@@ -131,6 +131,15 @@ Variables not found in the target process show `<not found>`.
 {"global::$counter":{"type":"long","value":42,"array_count":null},"global::$name":{"type":"string","value":"hello_world","array_count":null},"global::$items":{"type":"array","value":null,"array_count":10}}
 ```
 
+Variables that aren't found in the target are emitted as plain
+`null` (not an object with `type`/`value`/`array_count`), so when
+scripting around the JSON output use a presence check rather than
+indexing into `.type` directly:
+
+```json
+{"global::$missing":null,"memory::memory_get_usage":{"type":"long","value":398968,"array_count":null}}
+```
+
 ## Repeat Mode
 
 With `--repeat=<ms>`, the command polls the target process at the given

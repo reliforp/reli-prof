@@ -47,7 +47,7 @@ final class MemoryAnalyzeCommand extends ReliCommand
         $this->setName('inspector:memory:analyze')
             ->setDescription('analyze a memory dump file created by inspector:memory:dump')
         ;
-        $this->memory_profiler_settings_from_console_input->setOptions($this);
+        $this->memory_profiler_settings_from_console_input->setOptions($this, include_stop_process: false);
         $this->addArgument(
             'dump-file',
             InputArgument::REQUIRED,

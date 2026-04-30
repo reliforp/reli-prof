@@ -22,15 +22,17 @@ use Symfony\Component\Console\Input\InputOption;
 final class MemoryProfilerSettingsFromConsoleInput
 {
     /** @codeCoverageIgnore */
-    public function setOptions(Command $command): void
+    public function setOptions(Command $command, bool $include_stop_process = true): void
     {
-        $command->addOption(
-            'stop-process',
-            null,
-            InputOption::VALUE_NEGATABLE,
-            'stop the process while inspecting (default: on)',
-            true,
-        );
+        if ($include_stop_process) {
+            $command->addOption(
+                'stop-process',
+                null,
+                InputOption::VALUE_NEGATABLE,
+                'stop the process while inspecting (default: on)',
+                true,
+            );
+        }
         $command->addOption(
             'pretty-print',
             null,
@@ -106,7 +108,9 @@ final class MemoryProfilerSettingsFromConsoleInput
 
     public function createSettings(InputInterface $input): MemoryProfilerSettings
     {
-        $stop_process = Cast::toBool($input->getOption('stop-process'));
+        $stop_process = $input->hasOption('stop-process')
+            ? Cast::toBool($input->getOption('stop-process'))
+            : true;
         $pretty_print = Cast::toBool($input->getOption('pretty-print'));
         $memory_exhaustion_error_details = null;
         if (

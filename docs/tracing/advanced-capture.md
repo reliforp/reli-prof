@@ -11,6 +11,14 @@ can attach three extra layers of detail to each sample:
 All three work with every output format (`.rbt`, `template:phpspy*`,
 `json_lines`) and on top of `inspector:daemon` the same way.
 
+> **`template:json_lines` opcode field is a placeholder today.**
+> Each frame carries an `opline` object whose `opcode` sub-field is
+> currently always emitted as `{}` — opcode-name resolution into the
+> JSON template is not wired up yet. For opcode-aware analysis prefer
+> `.rbt` (`rbt:analyze --with-opcode` / `c` in `rbt:explore`) or
+> `template:phpspy_with_opcode`, both of which surface the opcode
+> name (`ZEND_DO_FCALL`, `ZEND_ASSIGN`, …) directly.
+
 ## Executing opcode
 
 Useful when you want to know not only which line is slow but which
