@@ -31,6 +31,9 @@ namespace Reli\Inspector\Output\MemoryOutput\SqliteRaw;
  * @psalm-suppress MixedArgumentTypeCoercion
  * @psalm-suppress RedundantCast
  * @psalm-suppress MissingConstructor
+ * @psalm-suppress InvalidArrayOffset
+ * @psalm-suppress MixedReturnStatement
+ * @psalm-suppress PropertyTypeCoercion
  */
 final class Writer
 {
