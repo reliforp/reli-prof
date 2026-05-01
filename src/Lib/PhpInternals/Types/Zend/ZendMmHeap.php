@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Zend;
 
+use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Dereferencer;
@@ -226,6 +227,36 @@ final class ZendMmHeap implements LazyDereferencable, CDataDereferencable
     public function getPointer(): Pointer
     {
         return $this->pointer;
+    }
+
+    /**
+     * Read the heads of `free_slot[ZEND_MM_BINS]` as raw addresses.
+     *
+     * Only meaningful when this heap was loaded eagerly (the chunk-walker
+     * path always loads the main chunk eagerly so that path is fine).
+     * Returns an empty array if no eager CData is attached.
+     *
+     * The FFI Psalm stub for `zend_mm_heap` does not declare `free_slot`
+     * (the project's stubs cover only the reli-touched fields), so the
+     * field-fetch + array-access here are necessarily mixed; suppress
+     * narrowly rather than fattening the stub for one read site.
+     *
+     * @return list<int>
+     * @psalm-suppress UndefinedPropertyFetch, MixedArrayAccess, MixedArgument
+     */
+    public function getFreeSlotHeads(): array
+    {
+        if ($this->casted_cdata === null) {
+            return [];
+        }
+        $heads = [];
+        // ZEND_MM_BINS is 30 across all supported PHP versions.
+        for ($i = 0; $i < 30; $i++) {
+            $heads[] = FFIHelper::castPointerToInt(
+                $this->casted_cdata->casted->free_slot[$i],
+            );
+        }
+        return $heads;
     }
 
     /**

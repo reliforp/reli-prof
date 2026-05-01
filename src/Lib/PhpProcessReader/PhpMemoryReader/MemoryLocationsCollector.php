@@ -25,6 +25,8 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
 use Reli\Lib\PhpInternals\Types\Zend\ZendMmChunk;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\BinWalkResult;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\ZendMmBinWalker;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\VmStackMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArenaMemoryLocation;
@@ -158,6 +160,22 @@ final class MemoryLocationsCollector
             }
             $walked_chunk_count++;
         }
+        // Walk the small-bin freelists + chunk page maps to recover the
+        // per-bin live-allocation histogram and any periodic same-shape
+        // groups. This is the foundation for the orphan-allocation
+        // analysis path (see docs/internals/design-orphan-allocation-analysis.md).
+        // Non-fatal — a failure here must not abort the analyze run.
+        $bin_walk_result = null;
+        try {
+            $bin_walk_result = (new ZendMmBinWalker($this->memory_reader))->walk(
+                $pid,
+                $zend_mm_main_chunk,
+                $dereferencer,
+            );
+        } catch (\Throwable $e) {
+            Log::debug('ZendMmBinWalker failed', ['exception' => $e]);
+        }
+
         $huge_memory_locations = new MemoryLocations();
         $huge_total_bytes = 0;
         foreach ($zend_mm_main_chunk->heap_slot->iterateHugeList($dereferencer) as $huge_list) {
@@ -383,6 +401,7 @@ final class MemoryLocationsCollector
             $last_chunks_delete_count,
             $chunks_total_free_bytes,
             $chunks_mostly_empty_count,
+            $bin_walk_result,
         );
     }
 

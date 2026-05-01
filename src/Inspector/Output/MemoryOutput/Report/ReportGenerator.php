@@ -14,6 +14,8 @@ declare(strict_types=1);
 namespace Reli\Inspector\Output\MemoryOutput\Report;
 
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\PassInterface;
+use Reli\Inspector\Output\MemoryOutput\Report\Pass\BinHistogramPass;
+use Reli\Inspector\Output\MemoryOutput\Report\Pass\BinPeriodicityPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\BlameAllocationPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\CallStackPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\ChokePointPass;
@@ -111,6 +113,8 @@ final class ReportGenerator
         $findings = array_merge($findings, (new CompanionDetectionPass($class_objects))->analyze());
         $findings = array_merge($findings, (new ChunkCacheHeuristicPass($summary))->analyze());
         $findings = array_merge($findings, (new ChunkFragmentationPass($summary))->analyze());
+        $findings = array_merge($findings, (new BinHistogramPass($summary))->analyze());
+        $findings = array_merge($findings, (new BinPeriodicityPass($summary))->analyze());
 
         // Phase 2: SQL-based passes (< 500K nodes, or --full-analysis)
         $run_phase3 = $full_analysis ? $edge_count > 0 : ($edge_count > 0 && $edge_count < 500000);
@@ -342,6 +346,8 @@ final class ReportGenerator
         $findings = array_merge($findings, (new CompanionDetectionPass($class_objects))->analyze());
         $findings = array_merge($findings, (new ChunkCacheHeuristicPass($summary))->analyze());
         $findings = array_merge($findings, (new ChunkFragmentationPass($summary))->analyze());
+        $findings = array_merge($findings, (new BinHistogramPass($summary))->analyze());
+        $findings = array_merge($findings, (new BinPeriodicityPass($summary))->analyze());
 
         // Phase 3: Substrate passes — binary goes straight here.
         //

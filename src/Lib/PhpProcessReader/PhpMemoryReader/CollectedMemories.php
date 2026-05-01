@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\BinWalkResult;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
 
 final class CollectedMemories
@@ -35,6 +36,7 @@ final class CollectedMemories
         public int $last_chunks_delete_count = 0,
         public int $chunks_total_free_bytes = 0,
         public int $chunks_mostly_empty_count = 0,
+        public ?BinWalkResult $bin_walk_result = null,
     ) {
     }
 }

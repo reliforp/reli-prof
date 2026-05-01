@@ -231,6 +231,16 @@ final class MemoryDumpReader
                 'chunks_total_free_bytes' => $collected_memories->chunks_total_free_bytes,
                 'chunks_mostly_empty_count' => $collected_memories->chunks_mostly_empty_count,
             ]
+            + ($collected_memories->bin_walk_result !== null
+                ? [
+                    // Non-scalar values are JSON-encoded by the summary
+                    // writer (PDO + binary paths both call json_encode).
+                    'bin_walk' => $collected_memories->bin_walk_result->toSummaryHistogramArray(),
+                    'bin_walk_periodic_groups'
+                        => $collected_memories->bin_walk_result->toSummaryPeriodicGroupsArray(),
+                ]
+                : []
+            )
             + ($rss_bytes !== null ? ['rss' => $rss_bytes] : [])
             + [
                 'heap_memory_analyzed_percentage' =>

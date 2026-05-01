@@ -259,6 +259,14 @@ final class MemoryCommand extends ReliCommand
                 'chunks_total_free_bytes' => $collected_memories->chunks_total_free_bytes,
                 'chunks_mostly_empty_count' => $collected_memories->chunks_mostly_empty_count,
             ]
+            + ($collected_memories->bin_walk_result !== null
+                ? [
+                    'bin_walk' => $collected_memories->bin_walk_result->toSummaryHistogramArray(),
+                    'bin_walk_periodic_groups'
+                        => $collected_memories->bin_walk_result->toSummaryPeriodicGroupsArray(),
+                ]
+                : []
+            )
             + [
                 'heap_memory_analyzed_percentage' =>
                     (float)$summary_base['zend_mm_heap_usage']

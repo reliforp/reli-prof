@@ -42,6 +42,9 @@ final class ComparisonGenerator
         'class_ranking',
         'retained_exact',
         'retained_approximate',
+        'bin_histogram_overview',
+        'bin_histogram_entry',
+        'bin_periodic_group',
     ];
 
     public function compare(
