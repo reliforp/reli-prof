@@ -18,13 +18,18 @@ use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
+use Reli\Inspector\Output\MemoryOutput\SqliteRaw\CellTooLargeException;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\IntegerIndexMerger;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\OverflowNotSupportedException;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\Reader as SqliteRawReader;
+use Reli\Inspector\Output\MemoryOutput\SqliteRaw\SharedMmapPlan;
+use Reli\Inspector\Output\MemoryOutput\SqliteRaw\SharedMmapTableWriter;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\SortRunReader;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\SortRunWriter;
+use Reli\Inspector\Output\MemoryOutput\SqliteRaw\SqliteFileMaintainer;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\TableMerger;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\Writer as SqliteRawWriter;
+use Reli\Lib\File\LibcFileWriter;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
@@ -164,10 +169,22 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             && function_exists('pcntl_fork')
             && function_exists('pcntl_waitpid')
         ) {
+            if (
+                self::sharedMmapIngestEnabled()
+                && extension_loaded('ffi')
+                && $this->ingestFromRmemSharedMmap($rmem_path, $summary)
+            ) {
+                return;
+            }
             $this->ingestFromRmemParallel($rmem_path, $summary);
             return;
         }
         $this->ingestFromRmemSerial($rmem_path, $summary);
+    }
+
+    private static function sharedMmapIngestEnabled(): bool
+    {
+        return getenv('RELI_SHARED_MMAP_INGEST') === '1';
     }
 
     /**
@@ -339,6 +356,505 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         } finally {
             $this->cleanupSortRuns($shard_paths);
             $this->cleanupShards($shard_paths);
+        }
+    }
+
+    /**
+     * Shared-mmap parallel rmem -> SQLite bulk-load.
+     *
+     * Replaces the shard-SQLite + ATTACH/MERGE pipeline with direct
+     * page-level writes. Forked workers each fill a pre-assigned
+     * range of leaf pages of the same `mmap`'d main DB file (no
+     * shard files, no merge phase). Parent then assembles each
+     * table's interior b-tree from the worker leaves and places the
+     * root at the table's existing `sqlite_master.rootpage`. The
+     * remaining serial work — REINDEX of autoindexes, CREATE INDEX
+     * for user indexes, summaries, canonical IDs — is identical to
+     * the other paths.
+     *
+     * Returns `true` on success, `false` to signal "fell back, caller
+     * should run the regular parallel path". Reasons we bail:
+     *   - rmem references a string too long for inline cell payload
+     *     (overflow chains aren't supported yet);
+     *   - a worker raised CellTooLargeException at runtime;
+     *   - any worker exited non-zero for another reason.
+     *
+     * Gated by `RELI_SHARED_MMAP_INGEST=1` while we evaluate whether
+     * the wall-clock win justifies maintaining the second ingest
+     * path. Not the default yet.
+     *
+     * @param array<int, array<string, mixed>> $summary
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidPropertyFetch
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress MixedArgument
+     * @psalm-suppress MixedReturnTypeCoercion
+     * @psalm-suppress UnusedFunctionCall
+     */
+    public function ingestFromRmemSharedMmap(
+        string $rmem_path,
+        array $summary,
+        ?int $worker_count = null,
+    ): bool {
+        if (!$this->driver instanceof SqliteDriver) {
+            return false;
+        }
+        $worker_count = $worker_count ?? $this->defaultWorkerCount();
+
+        $reader = BinaryReader::open($rmem_path);
+        $section_counts = [
+            'context_nodes' => $reader->hasSection(Format::SECTION_NODES)
+                ? $reader->getSectionElementCount(Format::SECTION_NODES) : 0,
+            'context_edges' => $reader->hasSection(Format::SECTION_EDGES)
+                ? $reader->getSectionElementCount(Format::SECTION_EDGES) : 0,
+            'context_node_locations' => $reader->hasSection(Format::SECTION_LOCATIONS)
+                ? $reader->getSectionElementCount(Format::SECTION_LOCATIONS) : 0,
+            'context_node_attributes' => $reader->hasSection(Format::SECTION_ATTRIBUTES)
+                ? $reader->getSectionElementCount(Format::SECTION_ATTRIBUTES) : 0,
+        ];
+
+        // Pre-flight: any string longer than 1 KiB risks overflowing
+        // an inline cell once combined with the rest of a row.
+        // Cheaper to fall back than to discover this mid-fork.
+        $dict = $reader->getStringDict();
+        $max_string_len = 0;
+        for ($i = 0, $n = $dict->count(); $i < $n; $i++) {
+            $s = $dict->lookup($i);
+            if ($s !== null) {
+                $len = strlen($s);
+                if ($len > $max_string_len) {
+                    $max_string_len = $len;
+                }
+            }
+        }
+        unset($reader);
+        if ($max_string_len > 1024) {
+            return false;
+        }
+
+        $run_id = $this->allocateRun($summary);
+
+        $db = $this->driver->createConnection();
+        $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $rootpages = [];
+        $stmt = $db->query(
+            "SELECT name, rootpage FROM sqlite_master WHERE type='table' AND name LIKE 'context_%'"
+        );
+        if ($stmt !== false) {
+            /** @var array{name: string, rootpage: int} $row */
+            foreach ($stmt as $row) {
+                $rootpages[(string)$row['name']] = (int)$row['rootpage'];
+            }
+        }
+        $current_pages = (int)$db->query('PRAGMA page_count')->fetchColumn();
+        unset($stmt, $db);
+
+        // Plan layout. Conservative estimate: 100 bytes/row average,
+        // ~35 cells/page → ~30 leaves per 1k rows. Pad 50% for safety.
+        $tables = [];
+        foreach ($section_counts as $name => $count) {
+            if ($count === 0) {
+                continue;
+            }
+            if (!isset($rootpages[$name])) {
+                return false;
+            }
+            $rows_per_worker = (int)ceil($count / $worker_count);
+            $est_leaves = (int)ceil(($rows_per_worker * 100) / 3500);
+            $est_leaves = max(1, (int)ceil((float)$est_leaves * 1.5));
+            $tables[$name] = [$count, $est_leaves];
+        }
+        if ($tables === []) {
+            return true;
+        }
+
+        $plan = SharedMmapTableWriter::plan(
+            tables: $tables,
+            first_pgno: $current_pages + 1,
+            worker_count: $worker_count,
+            interior_reserve_per_table: 32,
+        );
+        $total_pages = $current_pages + $plan->totalPagesUsed();
+
+        $db_path = $this->driver->path();
+        $meta_path = $db_path . '.smtw_meta';
+
+        // Pre-grow the DB file via libc ftruncate.
+        $libc = \FFI::cdef('int open(const char *, int, int);', null);
+        /** @var int $fd */
+        $fd = $libc->open($db_path, 2, 0);
+        if ($fd < 0 || !LibcFileWriter::ftruncate($fd, $total_pages * 4096)) {
+            if ($fd >= 0) {
+                LibcFileWriter::close($fd);
+            }
+            return false;
+        }
+        LibcFileWriter::close($fd);
+
+        // Pre-grow the meta file.
+        file_put_contents($meta_path, str_repeat("\x00", $plan->metaTotalBytes()));
+
+        $data_res = LibcFileWriter::mmapShared($db_path, $total_pages * 4096);
+        $meta_res = LibcFileWriter::mmapShared($meta_path, $plan->metaTotalBytes());
+        if ($data_res === null || $meta_res === null) {
+            if ($data_res !== null) {
+                LibcFileWriter::munmap($data_res[0], $data_res[1]);
+                LibcFileWriter::close($data_res[2]);
+            }
+            if ($meta_res !== null) {
+                LibcFileWriter::munmap($meta_res[0], $meta_res[1]);
+                LibcFileWriter::close($meta_res[2]);
+            }
+            @unlink($meta_path);
+            return false;
+        }
+        [$data_ptr, $data_len, $data_fd] = $data_res;
+        [$meta_ptr, $meta_len, $meta_fd] = $meta_res;
+
+        $had_overflow = false;
+        $other_failure = false;
+        try {
+            $pids = [];
+            for ($w = 0; $w < $worker_count; $w++) {
+                $pid = pcntl_fork();
+                if ($pid === -1) {
+                    foreach ($pids as $p) {
+                        posix_kill($p, SIGTERM);
+                        pcntl_waitpid($p, $_status);
+                    }
+                    $other_failure = true;
+                    break;
+                }
+                if ($pid === 0) {
+                    try {
+                        $this->workerWriteAllTables(
+                            $data_ptr,
+                            $meta_ptr,
+                            $plan,
+                            $rmem_path,
+                            $w,
+                            $worker_count,
+                            $section_counts,
+                            $run_id,
+                        );
+                        exit(0);
+                    } catch (CellTooLargeException $e) {
+                        fwrite(STDERR, "shared-mmap worker {$w} overflow: " . $e->getMessage() . "\n");
+                        exit(2);
+                    } catch (\Throwable $e) {
+                        fwrite(STDERR, "shared-mmap worker {$w} failed: " . $e->getMessage() . "\n");
+                        exit(1);
+                    }
+                }
+                $pids[] = $pid;
+            }
+            foreach ($pids as $pid) {
+                pcntl_waitpid($pid, $status);
+                $code = pcntl_wifexited($status) ? pcntl_wexitstatus($status) : 1;
+                if ($code === 2) {
+                    $had_overflow = true;
+                } elseif ($code !== 0) {
+                    $other_failure = true;
+                }
+            }
+            if ($had_overflow || $other_failure) {
+                return false;
+            }
+
+            $all_unused = [];
+            foreach ($plan->tableNames() as $table_name) {
+                $unused = SharedMmapTableWriter::mainAssembleInteriorTree(
+                    data_ptr: $data_ptr,
+                    meta_ptr: $meta_ptr,
+                    plan: $plan,
+                    table_name: $table_name,
+                    worker_count: $worker_count,
+                    existing_rootpage: $rootpages[$table_name],
+                    first_mapped_pgno: 1,
+                );
+                $all_unused = array_merge($all_unused, $unused);
+            }
+            SqliteFileMaintainer::finalize(
+                data_ptr: $data_ptr,
+                first_mapped_pgno: 1,
+                total_pages: $total_pages,
+                unused_pgnos: $all_unused,
+            );
+            LibcFileWriter::msync($data_ptr, $data_len);
+        } finally {
+            LibcFileWriter::munmap($data_ptr, $data_len);
+            LibcFileWriter::close($data_fd);
+            LibcFileWriter::munmap($meta_ptr, $meta_len);
+            LibcFileWriter::close($meta_fd);
+            @unlink($meta_path);
+        }
+
+        // Post-passes via PDO. REINDEX rebuilds the autoindexes for
+        // PRIMARY KEY constraints; createIndexes adds the user-
+        // defined indexes; the summary/canonical helpers do the
+        // serial cross-table work.
+        $db = $this->driver->createConnection();
+        $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $db->exec('PRAGMA synchronous = OFF');
+        $db->exec('PRAGMA temp_store = MEMORY');
+        foreach ($plan->tableNames() as $table_name) {
+            $db->exec("REINDEX {$table_name}");
+        }
+        $this->insertLocationTypesSummaryFromDb($db, $run_id);
+        $this->insertClassObjectsSummaryFromDb($db, $run_id);
+        $this->computeCanonicalNodeIds($db, $run_id);
+        $this->driver->afterBulkInsert($db);
+        $this->createIndexes($db);
+        $this->createViews($db);
+
+        return true;
+    }
+
+    /**
+     * Worker entry point for the shared-mmap path: open the rmem,
+     * compute this worker's row slice for every section, encode each
+     * row as a SQLite cell and stream 4 KiB leaf pages straight into
+     * the parent's mmap via {@see SharedMmapTableWriter::workerWriteTable}.
+     *
+     * @param array<string, int> $section_counts
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidPropertyFetch
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress MixedArgument
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    private function workerWriteAllTables(
+        \FFI\CData $data_ptr,
+        \FFI\CData $meta_ptr,
+        SharedMmapPlan $plan,
+        string $rmem_path,
+        int $worker_index,
+        int $worker_count,
+        array $section_counts,
+        int $run_id,
+    ): void {
+        $reader = BinaryReader::open($rmem_path);
+        $dict = $reader->getStringDict();
+
+        $sections = [
+            'context_nodes' => [Format::SECTION_NODES, [$this, 'rowsForNodes']],
+            'context_edges' => [Format::SECTION_EDGES, [$this, 'rowsForEdges']],
+            'context_node_locations' => [Format::SECTION_LOCATIONS, [$this, 'rowsForLocations']],
+            'context_node_attributes' => [Format::SECTION_ATTRIBUTES, [$this, 'rowsForAttributes']],
+        ];
+
+        foreach ($sections as $table_name => [$section_id, $rows_factory]) {
+            $count = $section_counts[$table_name] ?? 0;
+            if ($count === 0) {
+                continue;
+            }
+            [$start, $slice] = $this->computeRowSlice($worker_index, $worker_count, $count);
+            if ($slice === 0) {
+                continue;
+            }
+            /** @var \Generator<int, array{int, list<int|string|null>}> $rows */
+            $rows = $rows_factory($reader, $dict, $run_id, $start, $slice);
+            SharedMmapTableWriter::workerWriteTable(
+                data_ptr: $data_ptr,
+                meta_ptr: $meta_ptr,
+                plan: $plan,
+                table_name: $table_name,
+                worker_index: $worker_index,
+                rows: $rows,
+                first_mapped_pgno: 1,
+            );
+        }
+    }
+
+    /**
+     * @return \Generator<int, array{int, list<int|string|null>}>
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidPropertyFetch
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    private function rowsForNodes(
+        BinaryReader $reader,
+        \Reli\Inspector\Output\MemoryOutput\BinaryFormat\StringDict $dict,
+        int $run_id,
+        int $start,
+        int $count,
+    ): \Generator {
+        $end = $start + $count;
+        $rows = $reader->castSection(Format::SECTION_NODES, 'NodeRow');
+        if ($rows !== null) {
+            for ($i = $start; $i < $end; $i++) {
+                $type = $dict->lookup($rows[$i]->type_id) ?? '';
+                yield [$i + 1, [$run_id, $rows[$i]->node_id, $type, null]];
+            }
+            return;
+        }
+        $data = $reader->getSectionData(Format::SECTION_NODES);
+        for ($i = $start; $i < $end; $i++) {
+            $row = unpack(
+                'Vnode_id/Vcanonical_id/Vtype_id',
+                $data,
+                $i * Format::NODE_ROW_SIZE,
+            );
+            $type = $dict->lookup((int)$row['type_id']) ?? '';
+            yield [$i + 1, [$run_id, (int)$row['node_id'], $type, null]];
+        }
+    }
+
+    /**
+     * @return \Generator<int, array{int, list<int|string|null>}>
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidPropertyFetch
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    private function rowsForEdges(
+        BinaryReader $reader,
+        \Reli\Inspector\Output\MemoryOutput\BinaryFormat\StringDict $dict,
+        int $run_id,
+        int $start,
+        int $count,
+    ): \Generator {
+        $end = $start + $count;
+        $strengths = ['strong', 'weak', 'structural'];
+        $rows = $reader->castSection(Format::SECTION_EDGES, 'EdgeRow');
+        if ($rows !== null) {
+            for ($i = $start; $i < $end; $i++) {
+                $parent = $rows[$i]->parent_node_id;
+                // First null is the rowid-alias `id` column placeholder
+                // — SQLite stores INTEGER PRIMARY KEY columns as a
+                // type-0 NULL in the record because the real value
+                // lives in the cell's rowid varint.
+                yield [$i + 1, [
+                    null,
+                    $run_id,
+                    $parent === Format::NULL_STRING_ID ? null : $parent,
+                    $rows[$i]->child_node_id,
+                    $dict->lookup($rows[$i]->link_name_id) ?? '',
+                    $rows[$i]->is_tree,
+                    $strengths[$rows[$i]->strength] ?? 'strong',
+                ]];
+            }
+            return;
+        }
+        $data = $reader->getSectionData(Format::SECTION_EDGES);
+        for ($i = $start; $i < $end; $i++) {
+            $row = unpack(
+                'Vparent/Vchild/Vlid/Cis_tree/Cstrength',
+                $data,
+                $i * Format::EDGE_ROW_SIZE,
+            );
+            $parent = (int)$row['parent'];
+            yield [$i + 1, [
+                null,
+                $run_id,
+                $parent === Format::NULL_STRING_ID ? null : $parent,
+                (int)$row['child'],
+                $dict->lookup((int)$row['lid']) ?? '',
+                (int)$row['is_tree'],
+                $strengths[(int)$row['strength']] ?? 'strong',
+            ]];
+        }
+    }
+
+    /**
+     * @return \Generator<int, array{int, list<int|string|null>}>
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidPropertyFetch
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    private function rowsForLocations(
+        BinaryReader $reader,
+        \Reli\Inspector\Output\MemoryOutput\BinaryFormat\StringDict $dict,
+        int $run_id,
+        int $start,
+        int $count,
+    ): \Generator {
+        $end = $start + $count;
+        $rows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
+        if ($rows !== null) {
+            for ($i = $start; $i < $end; $i++) {
+                $class_id = $rows[$i]->class_id;
+                $sv_id = $rows[$i]->string_value_id;
+                $region_id = $rows[$i]->region_id;
+                yield [$i + 1, [
+                    null,
+                    $run_id,
+                    $rows[$i]->node_id,
+                    $rows[$i]->address,
+                    $rows[$i]->size,
+                    $dict->lookup($rows[$i]->location_type_id) ?? '',
+                    $class_id === Format::NULL_STRING_ID ? null : $dict->lookup($class_id),
+                    $sv_id === Format::NULL_STRING_ID ? null : $dict->lookup($sv_id),
+                    $rows[$i]->refcount,
+                    $rows[$i]->type_info,
+                    $region_id === Format::NULL_STRING_ID ? null : $dict->lookup($region_id),
+                    $rows[$i]->bin_overhead,
+                ]];
+            }
+            return;
+        }
+        $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
+        for ($i = $start; $i < $end; $i++) {
+            $row = unpack(
+                'Vnode_id/Vlocation_type_id/Vclass_id/Paddress/Psize'
+                . '/Vstring_value_id/Vrefcount/Vtype_info/Vregion_id/Vbin_overhead',
+                $data,
+                $i * Format::LOCATION_ROW_SIZE,
+            );
+            $class_id = (int)$row['class_id'];
+            $sv_id = (int)$row['string_value_id'];
+            $region_id = (int)$row['region_id'];
+            yield [$i + 1, [
+                null,
+                $run_id,
+                (int)$row['node_id'],
+                (int)$row['address'],
+                (int)$row['size'],
+                $dict->lookup((int)$row['location_type_id']) ?? '',
+                $class_id === Format::NULL_STRING_ID ? null : $dict->lookup($class_id),
+                $sv_id === Format::NULL_STRING_ID ? null : $dict->lookup($sv_id),
+                (int)$row['refcount'],
+                (int)$row['type_info'],
+                $region_id === Format::NULL_STRING_ID ? null : $dict->lookup($region_id),
+                (int)$row['bin_overhead'],
+            ]];
+        }
+    }
+
+    /**
+     * @return \Generator<int, array{int, list<int|string|null>}>
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    private function rowsForAttributes(
+        BinaryReader $reader,
+        \Reli\Inspector\Output\MemoryOutput\BinaryFormat\StringDict $dict,
+        int $run_id,
+        int $start,
+        int $count,
+    ): \Generator {
+        $end = $start + $count;
+        $data = $reader->getSectionData(Format::SECTION_ATTRIBUTES);
+        $offset = $start * 12;
+        for ($i = $start; $i < $end; $i++) {
+            $row = unpack('Vnode_id/Vkey_id/Vvalue_id', $data, $offset);
+            $offset += 12;
+            $key = $dict->lookup((int)$row['key_id']);
+            if ($key === null) {
+                continue;
+            }
+            $value_id = (int)$row['value_id'];
+            $value = $value_id === Format::NULL_STRING_ID ? null : $dict->lookup($value_id);
+            yield [$i + 1, [null, $run_id, (int)$row['node_id'], $key, $value]];
         }
     }
 
