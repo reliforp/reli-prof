@@ -1212,14 +1212,21 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     }
 
     /**
-     * Pick a default worker count. Capped at 4 for now to match the
-     * old table-grain implementation's parallelism floor — the merge
-     * phase is still serial, so spinning up more workers just inflates
-     * the merge cost without gaining anything until the format-direct
-     * merge lands.
+     * Pick a default worker count. Honours `RELI_INGEST_WORKERS` if
+     * set, otherwise scales with the available CPU count. The
+     * earlier 4-worker cap was a holdover from the table-grain
+     * shard merge era — both the shared-mmap data load and the
+     * parallel CREATE INDEX path scale with cores beyond 4 (data
+     * load is ~linear, parallel CREATE INDEX has ~50% efficiency
+     * up to a disk-bound ceiling), so we let users with bigger
+     * boxes use them.
      */
     private function defaultWorkerCount(): int
     {
+        $env = getenv('RELI_INGEST_WORKERS');
+        if (is_string($env) && ctype_digit($env) && (int)$env > 0) {
+            return (int)$env;
+        }
         $cores = 4;
         if (is_readable('/proc/cpuinfo')) {
             $cpuinfo = @file_get_contents('/proc/cpuinfo');
@@ -1227,7 +1234,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 $cores = max(1, substr_count($cpuinfo, "\nprocessor\t") + 1);
             }
         }
-        return min(4, max(1, $cores));
+        return max(1, $cores);
     }
 
     /**
