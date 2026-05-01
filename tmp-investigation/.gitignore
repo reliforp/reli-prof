@@ -1,0 +1,6 @@
+dumps/
+sessions/
+sock/
+sidecar.log
+*.rmem
+*.rmem.derived
