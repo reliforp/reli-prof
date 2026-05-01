@@ -214,43 +214,111 @@ final class IntegerIndexMerger
      * K-way merge generator. Yields each (key, rowid) in ascending
      * order across all sort runs.
      *
+     * Uses a manual array-backed binary min-heap with three parallel
+     * arrays (keys / rowids / source-indexes) instead of
+     * SplPriorityQueue. SPL's compare() trampoline crosses the
+     * PHP↔C boundary on every sift-up/sift-down step; for k=4 sort
+     * runs and 300K total entries (3 indexes × 100K rows) that
+     * dominates the merge time. The manual heap stays in pure PHP
+     * but does only int comparisons inline, no method dispatch.
+     *
      * @return \Generator<int, array{int, int}>
      */
     private function mergeStream(): \Generator
     {
-        // Use a flat min-heap of (key, rowid, source_idx) tuples.
-        $heap = new class extends \SplPriorityQueue {
-            #[\Override]
-            public function compare(mixed $priority1, mixed $priority2): int
-            {
-                /** @var array{int,int,int} $priority1 */
-                /** @var array{int,int,int} $priority2 */
-                if ($priority1[0] !== $priority2[0]) {
-                    return $priority1[0] < $priority2[0] ? 1 : -1;
-                }
-                if ($priority1[1] !== $priority2[1]) {
-                    return $priority1[1] < $priority2[1] ? 1 : -1;
-                }
-                return 0;
-            }
-        };
+        /** @var list<int> $keys */
+        $keys = [];
+        /** @var list<int> $rowids */
+        $rowids = [];
+        /** @var list<int> $sources */
+        $sources = [];
+
         foreach ($this->sort_runs as $i => $run) {
             if ($run->hasMore()) {
                 [$k, $r] = $run->peek();
-                $heap->insert([$k, $r, $i], [$k, $r, $i]);
+                $keys[] = $k;
+                $rowids[] = $r;
+                $sources[] = $i;
             }
         }
-        while (!$heap->isEmpty()) {
-            /** @var array{int,int,int} $top */
-            $top = $heap->extract();
-            $i = (int)$top[2];
-            yield [(int)$top[0], (int)$top[1]];
-            $this->sort_runs[$i]->advance();
-            if ($this->sort_runs[$i]->hasMore()) {
-                [$nk, $nr] = $this->sort_runs[$i]->peek();
-                $heap->insert([$nk, $nr, $i], [$nk, $nr, $i]);
+        $size = count($keys);
+        // No initial sift-up needed: source iterators were inserted
+        // in worker order, but the merge contract only requires the
+        // heap property eventually. Heapify the array.
+        for ($i = ($size >> 1) - 1; $i >= 0; $i--) {
+            $this->siftDown($keys, $rowids, $sources, $i, $size);
+        }
+
+        while ($size > 0) {
+            $top_key = $keys[0];
+            $top_rowid = $rowids[0];
+            $top_source = $sources[0];
+            yield [$top_key, $top_rowid];
+
+            $this->sort_runs[$top_source]->advance();
+            if ($this->sort_runs[$top_source]->hasMore()) {
+                [$nk, $nr] = $this->sort_runs[$top_source]->peek();
+                $keys[0] = $nk;
+                $rowids[0] = $nr;
+                // sources[0] stays the same — we're just replacing the
+                // top with the next element from the same source.
+                $this->siftDown($keys, $rowids, $sources, 0, $size);
+            } else {
+                $size--;
+                if ($size > 0) {
+                    $keys[0] = $keys[$size];
+                    $rowids[0] = $rowids[$size];
+                    $sources[0] = $sources[$size];
+                    $this->siftDown($keys, $rowids, $sources, 0, $size);
+                }
             }
         }
+    }
+
+    /**
+     * Standard binary-heap sift-down keyed by (key, rowid). Operates
+     * on three parallel arrays in lock-step.
+     *
+     * @param list<int> $keys
+     * @param list<int> $rowids
+     * @param list<int> $sources
+     */
+    private function siftDown(array &$keys, array &$rowids, array &$sources, int $i, int $size): void
+    {
+        $k = $keys[$i];
+        $r = $rowids[$i];
+        $s = $sources[$i];
+        while (true) {
+            $left = ($i << 1) + 1;
+            if ($left >= $size) {
+                break;
+            }
+            $right = $left + 1;
+            $best = $left;
+            if (
+                $right < $size
+                && (
+                    $keys[$right] < $keys[$left]
+                    || ($keys[$right] === $keys[$left] && $rowids[$right] < $rowids[$left])
+                )
+            ) {
+                $best = $right;
+            }
+            if (
+                $keys[$best] < $k
+                || ($keys[$best] === $k && $rowids[$best] < $r)
+            ) {
+                $keys[$i] = $keys[$best];
+                $rowids[$i] = $rowids[$best];
+                $sources[$i] = $sources[$best];
+                $i = $best;
+            } else {
+                break;
+            }
+        }
+        $keys[$i] = $k;
+        $rowids[$i] = $r;
+        $sources[$i] = $s;
     }
 
     /**
