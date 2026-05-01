@@ -13,12 +13,18 @@ declare(strict_types=1);
 
 namespace Reli\Command\PhpSpy;
 
+use Reli\Converter\ParsedCallTrace;
 use Reli\Inspector\Daemon\Dispatcher\TargetProcessDescriptor;
 use Reli\Inspector\Daemon\PhpSpy\PhpSpyProcessPool;
 use Reli\Inspector\Daemon\Searcher\Context\PhpSearcherContextCreator;
+use Reli\Inspector\Daemon\Searcher\Controller\PhpSearcherControllerInterface;
+use Reli\Inspector\Settings\DaemonSettings\DaemonSettings;
 use Reli\Inspector\Settings\DaemonSettings\DaemonSettingsFromConsoleInput;
+use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
+use Reli\Inspector\Settings\PhpSpySettings\PhpSpySettings;
 use Reli\Inspector\Settings\PhpSpySettings\PhpSpySettingsFromConsoleInput;
+use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use Reli\Lib\PhpSpy\PhpSpyFinder;
 use Reli\Command\DockerProfile;
@@ -66,6 +72,19 @@ final class PhpSpyDaemonCommand extends ReliCommand
             InputOption::VALUE_REQUIRED,
             'output file path (default: stdout)'
         );
+        $this->addOption(
+            'format',
+            'F',
+            InputOption::VALUE_REQUIRED,
+            'output format: phpspy (passthrough, default) or rbt',
+            'phpspy',
+        );
+        $this->addOption(
+            'compress',
+            null,
+            InputOption::VALUE_NONE,
+            'gzip-compress the output (rbt format only)',
+        );
         $this->addMemoryLimitOption();
     }
 
@@ -85,6 +104,52 @@ final class PhpSpyDaemonCommand extends ReliCommand
 
         /** @var string|null $output_path */
         $output_path = $input->getOption('output');
+        /** @var string $format */
+        $format = $input->getOption('format');
+        $compress = (bool) $input->getOption('compress');
+
+        if ($format !== 'phpspy' && $format !== 'rbt') {
+            throw new \InvalidArgumentException(
+                "unknown format '{$format}': expected 'phpspy' or 'rbt'"
+            );
+        }
+        if ($compress && $format !== 'rbt') {
+            throw new \InvalidArgumentException('--compress requires --format=rbt');
+        }
+
+        if ($format === 'rbt') {
+            return $this->runRbt(
+                $output,
+                $no_cache,
+                $daemon_settings,
+                $get_trace_settings,
+                $target_php_settings,
+                $phpspy_settings,
+                $output_path,
+                $compress,
+            );
+        }
+
+        return $this->runPassthrough(
+            $output,
+            $no_cache,
+            $daemon_settings,
+            $get_trace_settings,
+            $target_php_settings,
+            $phpspy_settings,
+            $output_path,
+        );
+    }
+
+    private function runPassthrough(
+        OutputInterface $output,
+        bool $no_cache,
+        DaemonSettings $daemon_settings,
+        GetTraceSettings $get_trace_settings,
+        TargetPhpSettings $target_php_settings,
+        PhpSpySettings $phpspy_settings,
+        ?string $output_path,
+    ): int {
         $output_stream = \STDOUT;
         if (is_string($output_path)) {
             $stream = fopen($output_path, 'w');
@@ -95,7 +160,90 @@ final class PhpSpyDaemonCommand extends ReliCommand
         }
 
         $process_pool = new PhpSpyProcessPool($this->phpspy_finder);
+        $interrupted = $this->installSignalHandlers();
+        $this->startSearcher($daemon_settings, $target_php_settings, $no_cache);
 
+        $output->writeln('<info>searching for target processes...</info>');
+
+        while (!$interrupted->value) {
+            pcntl_signal_dispatch();
+            $this->reconcileTargets($output, $process_pool, $get_trace_settings, $phpspy_settings);
+            $process_pool->passthroughAll($output_stream);
+            usleep(1000);
+        }
+
+        $output->writeln('<info>stopping all phpspy processes...</info>');
+        $process_pool->stopAll();
+
+        if ($output_stream !== \STDOUT) {
+            fclose($output_stream);
+        }
+
+        return 0;
+    }
+
+    private function runRbt(
+        OutputInterface $output,
+        bool $no_cache,
+        DaemonSettings $daemon_settings,
+        GetTraceSettings $get_trace_settings,
+        TargetPhpSettings $target_php_settings,
+        PhpSpySettings $phpspy_settings,
+        ?string $output_path,
+        bool $compress,
+    ): int {
+        $sink = new PhpSpyRbtSink(
+            $output_path,
+            $compress,
+            PhpSpyRbtSink::derivePeriodUs($phpspy_settings),
+        );
+        $writer = $sink->getWriter();
+        $write_sample = static function (int $pid, ParsedCallTrace $trace) use ($writer): void {
+            $writer->writePidTrace($trace, $pid);
+        };
+
+        $process_pool = new PhpSpyProcessPool($this->phpspy_finder);
+        $interrupted = $this->installSignalHandlers();
+        $this->startSearcher($daemon_settings, $target_php_settings, $no_cache);
+
+        $output->writeln('<info>searching for target processes...</info>');
+
+        try {
+            while (!$interrupted->value) {
+                pcntl_signal_dispatch();
+                $this->reconcileTargets($output, $process_pool, $get_trace_settings, $phpspy_settings);
+                $process_pool->consumeAll($write_sample);
+                usleep(1000);
+            }
+
+            $output->writeln('<info>stopping all phpspy processes...</info>');
+            $process_pool->consumeAll($write_sample);
+            $process_pool->flushParsers($write_sample);
+        } finally {
+            $process_pool->stopAll();
+            $sink->close();
+        }
+
+        return 0;
+    }
+
+    private function installSignalHandlers(): InterruptFlag
+    {
+        $flag = new InterruptFlag();
+        pcntl_signal(SIGINT, static function () use ($flag): void {
+            $flag->value = true;
+        });
+        pcntl_signal(SIGTERM, static function () use ($flag): void {
+            $flag->value = true;
+        });
+        return $flag;
+    }
+
+    private function startSearcher(
+        DaemonSettings $daemon_settings,
+        TargetPhpSettings $target_php_settings,
+        bool $no_cache,
+    ): void {
         $searcher_context = $this->php_searcher_context_creator->create();
         $searcher_context->start();
         $my_pid = getmypid();
@@ -110,78 +258,59 @@ final class PhpSpyDaemonCommand extends ReliCommand
             needs_compiler_globals: false,
             thread_name_regex: $daemon_settings->target_thread_regex,
         );
+        $this->searcher_context = $searcher_context;
+    }
 
-        $interrupted = false;
-        pcntl_signal(SIGINT, function () use (&$interrupted) {
-            $interrupted = true;
-        });
-        pcntl_signal(SIGTERM, function () use (&$interrupted) {
-            $interrupted = true;
-        });
+    private ?PhpSearcherControllerInterface $searcher_context = null;
 
-        $output->writeln('<info>searching for target processes...</info>');
+    private function reconcileTargets(
+        OutputInterface $output,
+        PhpSpyProcessPool $process_pool,
+        GetTraceSettings $get_trace_settings,
+        PhpSpySettings $phpspy_settings,
+    ): void {
+        if ($this->searcher_context === null) {
+            return;
+        }
+        try {
+            $update_message = $this->searcher_context->receivePidList();
+            $target_list = $update_message->target_process_list;
 
-        while (!$interrupted) {
-            pcntl_signal_dispatch();
-
-            // Receive updated process list from searcher (non-blocking via short timeout)
-            try {
-                $update_message = $searcher_context->receivePidList();
-                $target_list = $update_message->target_process_list;
-
-                // Get current target PIDs
-                /** @var list<int> $target_pids */
-                $target_pids = [];
-                foreach ($target_list->getArray() as $descriptor) {
-                    if ($descriptor === TargetProcessDescriptor::getInvalid()) {
-                        continue;
-                    }
-                    $target_pids[] = $descriptor->pid;
-
-                    // Start phpspy for new processes
-                    if (!$process_pool->hasProcess($descriptor->pid)) {
-                        $output->writeln(
-                            '<info>attaching phpspy to pid ' . $descriptor->pid
-                            . ' (EG: 0x' . dechex($descriptor->eg_address) . ')</info>',
-                            OutputInterface::VERBOSITY_VERBOSE,
-                        );
-                        $process_pool->attach(
-                            $descriptor->pid,
-                            $descriptor->eg_address,
-                            $descriptor->sg_address,
-                            $get_trace_settings->depth,
-                            $phpspy_settings,
-                        );
-                    }
+            /** @var list<int> $target_pids */
+            $target_pids = [];
+            foreach ($target_list->getArray() as $descriptor) {
+                if ($descriptor === TargetProcessDescriptor::getInvalid()) {
+                    continue;
                 }
+                $target_pids[] = $descriptor->pid;
 
-                // Detach phpspy from processes that are no longer targets
-                foreach ($process_pool->getActivePids() as $active_pid) {
-                    if (!in_array($active_pid, $target_pids, true)) {
-                        $output->writeln(
-                            '<info>detaching phpspy from pid ' . $active_pid . '</info>',
-                            OutputInterface::VERBOSITY_VERBOSE,
-                        );
-                        $process_pool->detach($active_pid);
-                    }
+                if (!$process_pool->hasProcess($descriptor->pid)) {
+                    $output->writeln(
+                        '<info>attaching phpspy to pid ' . $descriptor->pid
+                        . ' (EG: 0x' . dechex($descriptor->eg_address) . ')</info>',
+                        OutputInterface::VERBOSITY_VERBOSE,
+                    );
+                    $process_pool->attach(
+                        $descriptor->pid,
+                        $descriptor->eg_address,
+                        $descriptor->sg_address,
+                        $get_trace_settings->depth,
+                        $phpspy_settings,
+                    );
                 }
-            } catch (\Throwable $e) {
-                // Searcher may not have results yet, continue
             }
 
-            // Passthrough output from all running phpspy processes
-            $process_pool->passthroughAll($output_stream);
-
-            usleep(1000); // 1ms poll interval
+            foreach ($process_pool->getActivePids() as $active_pid) {
+                if (!in_array($active_pid, $target_pids, true)) {
+                    $output->writeln(
+                        '<info>detaching phpspy from pid ' . $active_pid . '</info>',
+                        OutputInterface::VERBOSITY_VERBOSE,
+                    );
+                    $process_pool->detach($active_pid);
+                }
+            }
+        } catch (\Throwable) {
+            // Searcher may not have results yet, continue
         }
-
-        $output->writeln('<info>stopping all phpspy processes...</info>');
-        $process_pool->stopAll();
-
-        if ($output_stream !== \STDOUT) {
-            fclose($output_stream);
-        }
-
-        return 0;
     }
 }

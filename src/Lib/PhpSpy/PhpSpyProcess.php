@@ -152,6 +152,19 @@ final class PhpSpyProcess
         return false;
     }
 
+    /**
+     * Drain whatever bytes are currently available on the stdout pipe.
+     * Returns '' when nothing is available — the caller polls.
+     */
+    public function readAvailable(): string
+    {
+        if ($this->stdout_pipe === null) {
+            return '';
+        }
+        $data = stream_get_contents($this->stdout_pipe);
+        return $data === false ? '' : $data;
+    }
+
     public function getStderrContents(): string
     {
         if ($this->stderr_pipe === null) {

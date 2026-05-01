@@ -38,7 +38,7 @@ final class PhpSpyCompatibleParser
     }
 
     /** @param array{string, int}[] $buffer */
-    private function parsePhpSpyCompatible(array $buffer): ParsedCallTrace
+    public function parsePhpSpyCompatible(array $buffer): ParsedCallTrace
     {
         $frames = [];
         foreach ($buffer as [$line_buffer, $lineno_before_parse]) {

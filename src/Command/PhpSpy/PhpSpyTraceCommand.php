@@ -16,6 +16,7 @@ namespace Reli\Command\PhpSpy;
 use Reli\Inspector\RetryingLoopProvider;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
 use Reli\Inspector\Settings\InspectorSettingsException;
+use Reli\Inspector\Settings\PhpSpySettings\PhpSpySettings;
 use Reli\Inspector\Settings\PhpSpySettings\PhpSpySettingsFromConsoleInput;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
@@ -30,6 +31,7 @@ use Reli\Lib\PhpSpy\PhpSpyProcess;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Command\DockerProfile;
 use Reli\Command\ReliCommand;
+use Reli\Converter\StreamingPhpSpyParser;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -76,6 +78,19 @@ final class PhpSpyTraceCommand extends ReliCommand
             'o',
             InputOption::VALUE_REQUIRED,
             'output file path (default: stdout)'
+        );
+        $this->addOption(
+            'format',
+            'F',
+            InputOption::VALUE_REQUIRED,
+            'output format: phpspy (passthrough, default) or rbt',
+            'phpspy',
+        );
+        $this->addOption(
+            'compress',
+            null,
+            InputOption::VALUE_NONE,
+            'gzip-compress the output (rbt format only)',
         );
         $this->addMemoryLimitOption();
     }
@@ -136,6 +151,61 @@ final class PhpSpyTraceCommand extends ReliCommand
 
         /** @var string|null $output_path */
         $output_path = $input->getOption('output');
+        /** @var string $format */
+        $format = $input->getOption('format');
+        $compress = (bool) $input->getOption('compress');
+
+        if ($format !== 'phpspy' && $format !== 'rbt') {
+            throw new \InvalidArgumentException(
+                "unknown format '{$format}': expected 'phpspy' or 'rbt'"
+            );
+        }
+        if ($compress && $format !== 'rbt') {
+            throw new \InvalidArgumentException('--compress requires --format=rbt');
+        }
+
+        $interrupted = false;
+        pcntl_signal(SIGINT, function () use (&$interrupted) {
+            $interrupted = true;
+        });
+        pcntl_signal(SIGTERM, function () use (&$interrupted) {
+            $interrupted = true;
+        });
+
+        if ($format === 'rbt') {
+            return $this->runRbt(
+                $process_specifier->pid,
+                $eg_address,
+                $sg_address,
+                $get_trace_settings->depth,
+                $phpspy_settings,
+                $output_path,
+                $compress,
+                $interrupted,
+            );
+        }
+
+        return $this->runPassthrough(
+            $process_specifier->pid,
+            $eg_address,
+            $sg_address,
+            $get_trace_settings->depth,
+            $phpspy_settings,
+            $output_path,
+            $interrupted,
+        );
+    }
+
+    /** @param-out bool $interrupted */
+    private function runPassthrough(
+        int $pid,
+        int $eg_address,
+        int $sg_address,
+        int $depth,
+        PhpSpySettings $phpspy_settings,
+        ?string $output_path,
+        bool &$interrupted,
+    ): int {
         $output_stream = \STDOUT;
         if (is_string($output_path)) {
             $stream = fopen($output_path, 'w');
@@ -146,35 +216,82 @@ final class PhpSpyTraceCommand extends ReliCommand
         }
 
         $this->phpspy_process->start(
-            $process_specifier->pid,
+            $pid,
             $eg_address,
             $sg_address,
-            $get_trace_settings->depth,
+            $depth,
             $phpspy_settings,
             $output_stream,
         );
 
-        // Main loop: passthrough phpspy output until it exits or we get interrupted
-        $interrupted = false;
-        pcntl_signal(SIGINT, function () use (&$interrupted) {
-            $interrupted = true;
-        });
-        pcntl_signal(SIGTERM, function () use (&$interrupted) {
-            $interrupted = true;
-        });
-
         while ($this->phpspy_process->isRunning() && !$interrupted) {
             $this->phpspy_process->passthrough($output_stream);
             pcntl_signal_dispatch();
-            usleep(1000); // 1ms poll interval
+            usleep(1000);
         }
 
-        // Drain remaining output
         $this->phpspy_process->passthrough($output_stream);
         $this->phpspy_process->stop();
 
         if ($output_stream !== \STDOUT) {
             fclose($output_stream);
+        }
+
+        return 0;
+    }
+
+    /** @param-out bool $interrupted */
+    private function runRbt(
+        int $pid,
+        int $eg_address,
+        int $sg_address,
+        int $depth,
+        PhpSpySettings $phpspy_settings,
+        ?string $output_path,
+        bool $compress,
+        bool &$interrupted,
+    ): int {
+        $sink = new PhpSpyRbtSink(
+            $output_path,
+            $compress,
+            PhpSpyRbtSink::derivePeriodUs($phpspy_settings),
+        );
+        $writer = $sink->getWriter();
+        $parser = new StreamingPhpSpyParser();
+
+        $this->phpspy_process->start(
+            $pid,
+            $eg_address,
+            $sg_address,
+            $depth,
+            $phpspy_settings,
+        );
+
+        try {
+            while ($this->phpspy_process->isRunning() && !$interrupted) {
+                $chunk = $this->phpspy_process->readAvailable();
+                if ($chunk !== '') {
+                    foreach ($parser->feed($chunk) as $trace) {
+                        $writer->writeTrace($trace);
+                    }
+                }
+                pcntl_signal_dispatch();
+                usleep(1000);
+            }
+
+            // Drain anything remaining on the pipe.
+            $chunk = $this->phpspy_process->readAvailable();
+            if ($chunk !== '') {
+                foreach ($parser->feed($chunk) as $trace) {
+                    $writer->writeTrace($trace);
+                }
+            }
+            foreach ($parser->flush() as $trace) {
+                $writer->writeTrace($trace);
+            }
+        } finally {
+            $this->phpspy_process->stop();
+            $sink->close();
         }
 
         return 0;

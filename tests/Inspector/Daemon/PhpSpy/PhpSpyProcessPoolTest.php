@@ -58,4 +58,31 @@ class PhpSpyProcessPoolTest extends BaseTestCase
 
         $this->assertSame(0, $pool->count());
     }
+
+    public function testConsumeAllOnEmptyPool(): void
+    {
+        $finder = new PhpSpyFinder();
+        $pool = new PhpSpyProcessPool($finder);
+
+        $called = false;
+        $pool->consumeAll(function () use (&$called): void {
+            $called = true;
+        });
+
+        $this->assertFalse($called);
+        $this->assertSame(0, $pool->count());
+    }
+
+    public function testFlushParsersOnEmptyPool(): void
+    {
+        $finder = new PhpSpyFinder();
+        $pool = new PhpSpyProcessPool($finder);
+
+        $called = false;
+        $pool->flushParsers(function () use (&$called): void {
+            $called = true;
+        });
+
+        $this->assertFalse($called);
+    }
 }
