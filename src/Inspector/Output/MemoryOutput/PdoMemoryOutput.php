@@ -143,6 +143,31 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * streamed the collection into a temp .rmem and now wants the same
      * data materialised into a SQL database.
      *
+     * Picks the parallel-shard implementation when available
+     * (SQLite target + pcntl extension) and falls back to the
+     * single-process implementation otherwise.
+     *
+     * @param array<int, array<string, mixed>> $summary
+     */
+    public function ingestFromRmem(string $rmem_path, array $summary): void
+    {
+        if (
+            $this->driver instanceof SqliteDriver
+            && extension_loaded('pcntl')
+            && function_exists('pcntl_fork')
+            && function_exists('pcntl_waitpid')
+        ) {
+            $this->ingestFromRmemParallel($rmem_path, $summary);
+            return;
+        }
+        $this->ingestFromRmemSerial($rmem_path, $summary);
+    }
+
+    /**
+     * Single-process rmem -> DB bulk-load. Used as a fallback when the
+     * parallel-shard implementation isn't applicable (non-SQLite
+     * target, or pcntl unavailable).
+     *
      * @param array<int, array<string, mixed>> $summary
      * @psalm-suppress InaccessibleMethod
      * @psalm-suppress PossiblyNullPropertyFetch
@@ -151,7 +176,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * @psalm-suppress MixedAssignment
      * @psalm-suppress PossiblyInvalidArrayAccess
      */
-    public function ingestFromRmem(string $rmem_path, array $summary): void
+    public function ingestFromRmemSerial(string $rmem_path, array $summary): void
     {
         $reader = BinaryReader::open($rmem_path);
         $dict = $reader->getStringDict();
@@ -170,6 +195,293 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $this->ingestLocations($db, $reader, $run_id);
             $this->ingestAttributes($db, $reader, $run_id);
 
+            $this->insertLocationTypesSummaryFromDb($db, $run_id);
+            $this->insertClassObjectsSummaryFromDb($db, $run_id);
+            $this->computeCanonicalNodeIds($db, $run_id);
+
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+
+        $this->driver->afterBulkInsert($db);
+        $this->createIndexes($db);
+        $this->createViews($db);
+    }
+
+    /**
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidPropertyFetch
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    /**
+     * Parallel-shard rmem -> SQLite bulk-load.
+     *
+     * Forks one worker per heavy table (nodes / edges / locations /
+     * attributes). Each worker reads its assigned section from rmem and
+     * bulk-inserts into a temp shard SQLite — no indexes, run_id stored
+     * as 0 placeholder. The main process then ATTACHes each shard and
+     * copies via INSERT INTO main.t SELECT real_run_id, ... FROM s.t,
+     * which lets SQLite use its sequential-rowid fast path. CREATE
+     * INDEX runs once at the end on the merged main DB.
+     *
+     * Workers run concurrently because each writes to a different
+     * file — SQLite's per-file writer lock is the reason this scales.
+     *
+     * @param array<int, array<string, mixed>> $summary
+     * @psalm-suppress UnusedFunctionCall
+     */
+    public function ingestFromRmemParallel(string $rmem_path, array $summary): void
+    {
+        $tables = [
+            'nodes' => Format::SECTION_NODES,
+            'edges' => Format::SECTION_EDGES,
+            'locations' => Format::SECTION_LOCATIONS,
+            'attributes' => Format::SECTION_ATTRIBUTES,
+        ];
+
+        $shard_paths = [];
+        foreach (array_keys($tables) as $name) {
+            $base = tempnam(sys_get_temp_dir(), "reli_shard_{$name}_");
+            if ($base === false) {
+                $this->cleanupShards($shard_paths);
+                throw new \RuntimeException('Failed to create temporary file for shard');
+            }
+            $shard_paths[$name] = $base . '.sqlite3';
+            @unlink($base);
+        }
+
+        try {
+            $pids = [];
+            foreach ($tables as $name => $section) {
+                $pid = pcntl_fork();
+                if ($pid === -1) {
+                    foreach ($pids as $running_pid) {
+                        posix_kill($running_pid, SIGTERM);
+                        pcntl_waitpid($running_pid, $_status);
+                    }
+                    throw new \RuntimeException('pcntl_fork failed');
+                }
+                if ($pid === 0) {
+                    try {
+                        $this->writeShard($rmem_path, $name, $shard_paths[$name]);
+                        exit(0);
+                    } catch (\Throwable $e) {
+                        fwrite(STDERR, "shard {$name} worker failed: " . $e->getMessage() . "\n");
+                        exit(1);
+                    }
+                }
+                $pids[$name] = $pid;
+            }
+
+            $failed = [];
+            foreach ($pids as $name => $pid) {
+                pcntl_waitpid($pid, $status);
+                if (!pcntl_wifexited($status) || pcntl_wexitstatus($status) !== 0) {
+                    $failed[] = $name;
+                }
+            }
+            if ($failed !== []) {
+                throw new \RuntimeException(
+                    'Parallel shard workers failed: ' . implode(', ', $failed)
+                );
+            }
+
+            $this->mergeShards($shard_paths, $summary);
+        } finally {
+            $this->cleanupShards($shard_paths);
+        }
+    }
+
+    /**
+     * @param array<string, string> $shard_paths name => filesystem path
+     */
+    private function cleanupShards(array $shard_paths): void
+    {
+        foreach ($shard_paths as $path) {
+            if (file_exists($path)) {
+                @unlink($path);
+            }
+        }
+    }
+
+    /**
+     * Worker entry point: open the shard file, set up the per-table
+     * schema, and stream the matching rmem section into it. Runs in a
+     * forked child process; throws are caught by the caller and
+     * surfaced as a non-zero exit status.
+     */
+    private function writeShard(string $rmem_path, string $table, string $shard_path): void
+    {
+        $reader = BinaryReader::open($rmem_path);
+        $shard = new \PDO("sqlite:{$shard_path}");
+        $shard->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $shard->exec('PRAGMA synchronous = OFF');
+        $shard->exec('PRAGMA journal_mode = MEMORY');
+        $shard->exec('PRAGMA temp_store = MEMORY');
+
+        $this->createShardTable($shard, $table);
+
+        $shard->beginTransaction();
+        try {
+            $placeholder_run_id = 0;
+            switch ($table) {
+                case 'nodes':
+                    $this->ingestNodes($shard, $reader, $placeholder_run_id);
+                    break;
+                case 'edges':
+                    $this->ingestEdges($shard, $reader, $placeholder_run_id);
+                    break;
+                case 'locations':
+                    $this->ingestLocations($shard, $reader, $placeholder_run_id);
+                    break;
+                case 'attributes':
+                    $this->ingestAttributes($shard, $reader, $placeholder_run_id);
+                    break;
+                default:
+                    throw new \RuntimeException("unknown shard table: {$table}");
+            }
+            $shard->commit();
+        } catch (\Throwable $e) {
+            $shard->rollBack();
+            throw $e;
+        }
+        // Explicitly close the PDO connection so SQLite's checkpoint/
+        // journal cleanup runs before the worker exit()s — exit()
+        // alone leaves SQLite-internal state in a way that can leave
+        // the shard file in a locked state when the parent ATTACHes.
+        unset($shard);
+    }
+
+    /**
+     * Create only the table the worker is responsible for. Schema
+     * matches the main DB's column list (so INSERT INTO main SELECT *
+     * mostly works) but omits indexes, primary keys, and id surrogates
+     * — those would slow the worker's inserts and we drop them on the
+     * way out anyway.
+     */
+    private function createShardTable(\PDO $shard, string $table): void
+    {
+        switch ($table) {
+            case 'nodes':
+                $shard->exec(
+                    'CREATE TABLE context_nodes ('
+                    . ' run_id INTEGER NOT NULL,'
+                    . ' node_id INTEGER NOT NULL,'
+                    . ' type TEXT NOT NULL,'
+                    . ' canonical_node_id INTEGER'
+                    . ')'
+                );
+                return;
+            case 'edges':
+                $shard->exec(
+                    'CREATE TABLE context_edges ('
+                    . ' run_id INTEGER NOT NULL,'
+                    . ' parent_node_id INTEGER,'
+                    . ' child_node_id INTEGER NOT NULL,'
+                    . ' link_name TEXT NOT NULL,'
+                    . ' is_tree INTEGER NOT NULL,'
+                    . " strength TEXT NOT NULL DEFAULT 'strong'"
+                    . ')'
+                );
+                return;
+            case 'locations':
+                $shard->exec(
+                    'CREATE TABLE context_node_locations ('
+                    . ' run_id INTEGER NOT NULL,'
+                    . ' node_id INTEGER NOT NULL,'
+                    . ' address BIGINT,'
+                    . ' size BIGINT,'
+                    . ' location_type TEXT NOT NULL,'
+                    . ' class_name TEXT,'
+                    . ' string_value TEXT,'
+                    . ' refcount BIGINT,'
+                    . ' type_info BIGINT,'
+                    . ' region TEXT,'
+                    . ' bin_overhead BIGINT DEFAULT 0'
+                    . ')'
+                );
+                return;
+            case 'attributes':
+                $shard->exec(
+                    'CREATE TABLE context_node_attributes ('
+                    . ' run_id INTEGER NOT NULL,'
+                    . ' node_id INTEGER NOT NULL,'
+                    . ' "key" TEXT NOT NULL,'
+                    . ' "value" TEXT'
+                    . ')'
+                );
+                return;
+            default:
+                throw new \RuntimeException("unknown shard table: {$table}");
+        }
+    }
+
+    /**
+     * Open the target DB, create the full schema, ATTACH each shard,
+     * and copy its rows over while rewriting the run_id placeholder to
+     * the freshly-allocated run_id. After the copy, build the derived
+     * summaries, canonical-id map, indexes, and views as in the
+     * single-process path.
+     *
+     * @param array<string, string> $shard_paths
+     * @param array<int, array<string, mixed>> $summary
+     */
+    private function mergeShards(array $shard_paths, array $summary): void
+    {
+        $db = $this->driver->createConnection();
+        // Skip tuneForBulkInsert — its `locking_mode = EXCLUSIVE`
+        // on the main DB makes ATTACHed shards appear locked at
+        // SELECT time. Use the safe subset of pragmas instead;
+        // bulk-load durability tuning happens later anyway via
+        // afterBulkInsert / createIndexes.
+        $db->exec('PRAGMA synchronous = OFF');
+        $db->exec('PRAGMA temp_store = MEMORY');
+        $this->createTables($db);
+
+        // ATTACH outside any active write transaction.
+        foreach ($shard_paths as $alias => $path) {
+            $db->exec("ATTACH DATABASE '{$path}' AS s_{$alias}");
+        }
+
+        $db->beginTransaction();
+        try {
+            $run_id = $this->insertRun($db);
+            $this->insertSummary($db, $run_id, $summary);
+
+            // Per-table copy. The SELECT rewrites run_id from the 0
+            // placeholder to the real run_id allocated above. We let
+            // SQLite use sequential-rowid append on the main tables;
+            // CREATE INDEX runs after the transaction commits.
+            $db->exec(
+                "INSERT INTO context_nodes (run_id, node_id, type, canonical_node_id)"
+                . " SELECT {$run_id}, node_id, type, canonical_node_id FROM s_nodes.context_nodes"
+            );
+            $db->exec(
+                "INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree, strength)"
+                . " SELECT {$run_id}, parent_node_id, child_node_id, link_name, is_tree, strength"
+                . " FROM s_edges.context_edges"
+            );
+            $db->exec(
+                "INSERT INTO context_node_locations"
+                . " (run_id, node_id, address, size, location_type, class_name, string_value,"
+                . "  refcount, type_info, region, bin_overhead)"
+                . " SELECT {$run_id}, node_id, address, size, location_type, class_name, string_value,"
+                . "  refcount, type_info, region, bin_overhead"
+                . " FROM s_locations.context_node_locations"
+            );
+            $db->exec(
+                "INSERT INTO context_node_attributes (run_id, node_id, \"key\", \"value\")"
+                . " SELECT {$run_id}, node_id, \"key\", \"value\" FROM s_attributes.context_node_attributes"
+            );
+
+            // DETACH cannot run inside a transaction in SQLite. Skip
+            // it here — the attached aliases drop automatically when
+            // $db is closed at the end of this method.
             $this->insertLocationTypesSummaryFromDb($db, $run_id);
             $this->insertClassObjectsSummaryFromDb($db, $run_id);
             $this->computeCanonicalNodeIds($db, $run_id);
