@@ -20,6 +20,15 @@ final class SqliteDriver implements PdoDriverInterface
     ) {
     }
 
+    /**
+     * Filesystem path of the SQLite database. Used by the format-direct
+     * shard merger to open the file for raw page-level I/O.
+     */
+    public function path(): string
+    {
+        return $this->path;
+    }
+
     #[\Override]
     public function createConnection(): \PDO
     {
