@@ -1912,11 +1912,21 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     /** @psalm-suppress UnsupportedReferenceUsage */
     private function computeSubtreeSizesFfi(): void
     {
+        // Mark nodes visited at first push, not at processed-pop, so any
+        // cycle (or duplicate child edge) in strongTree short-circuits
+        // here instead of growing the stack until OOM. The strong tree
+        // is supposed to be acyclic, but a corrupted CSR — e.g. one
+        // whose slot space disagrees between writer and reader — can
+        // synthesize back edges, and we shouldn't burn 4 GB of PHP heap
+        // discovering that.
         $visited = [];
-
         $stack = [];
         foreach ($this->roots as $root) {
-            $stack[] = [$this->nodeIdToIndex($root), false];
+            $idx = $this->nodeIdToIndex($root);
+            if ($idx >= 0 && !isset($visited[$idx])) {
+                $stack[] = [$idx, false];
+                $visited[$idx] = true;
+            }
         }
 
         while ($stack) {
@@ -1929,7 +1939,6 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $size += $this->ffiSubtreeSizes[$this->strongTreeEdges[$i]];
                 }
                 $this->ffiSubtreeSizes[$idx] = $size;
-                $visited[$idx] = true;
             } else {
                 $stack[] = [$idx, true];
                 $start = $this->strongTreeOffsets[$idx];
@@ -1938,6 +1947,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $childIdx = $this->strongTreeEdges[$i];
                     if (!isset($visited[$childIdx])) {
                         $stack[] = [$childIdx, false];
+                        $visited[$childIdx] = true;
                     }
                 }
             }
