@@ -221,43 +221,63 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     /**
      * Parallel-shard rmem -> SQLite bulk-load.
      *
-     * Forks one worker per heavy table (nodes / edges / locations /
-     * attributes). Each worker reads its assigned section from rmem and
-     * bulk-inserts into a temp shard SQLite — no indexes, run_id stored
-     * as 0 placeholder. The main process then ATTACHes each shard and
-     * copies via INSERT INTO main.t SELECT real_run_id, ... FROM s.t,
-     * which lets SQLite use its sequential-rowid fast path. CREATE
-     * INDEX runs once at the end on the merged main DB.
+     * Forks N worker processes; each owns one shard SQLite file
+     * containing all four data tables (context_nodes, context_edges,
+     * context_node_locations, context_node_attributes), with each
+     * worker responsible for a contiguous rowid range
+     * `[i * count / N, (i + 1) * count / N)` of every rmem section.
+     * Workers run concurrently because their shard files are
+     * disjoint, sidestepping SQLite's per-file writer lock.
      *
-     * Workers run concurrently because each writes to a different
-     * file — SQLite's per-file writer lock is the reason this scales.
+     * Per-section row ranges are preserved exactly into the shard
+     * tables (run_id stored as 0 placeholder) so a future merge step
+     * can stitch the rowid B-tree pages directly without re-sorting.
+     * The current merge still uses `INSERT INTO main.t SELECT ?, ...
+     * FROM s_i.t`, which serializes the b-tree append; that's the
+     * bottleneck the format-direct merge step is meant to remove.
      *
      * @param array<int, array<string, mixed>> $summary
+     * @param int|null $worker_count number of shards; defaults to a
+     *                               cap of 4 to match the table-grain
+     *                               sharding's wall-clock floor
      * @psalm-suppress UnusedFunctionCall
      */
-    public function ingestFromRmemParallel(string $rmem_path, array $summary): void
-    {
-        $tables = [
-            'nodes' => Format::SECTION_NODES,
-            'edges' => Format::SECTION_EDGES,
-            'locations' => Format::SECTION_LOCATIONS,
-            'attributes' => Format::SECTION_ATTRIBUTES,
-        ];
+    public function ingestFromRmemParallel(
+        string $rmem_path,
+        array $summary,
+        ?int $worker_count = null,
+    ): void {
+        $worker_count = $worker_count ?? $this->defaultWorkerCount();
 
         $shard_paths = [];
-        foreach (array_keys($tables) as $name) {
-            $base = tempnam(sys_get_temp_dir(), "reli_shard_{$name}_");
+        for ($i = 0; $i < $worker_count; $i++) {
+            $base = tempnam(sys_get_temp_dir(), "reli_shard_{$i}_");
             if ($base === false) {
                 $this->cleanupShards($shard_paths);
                 throw new \RuntimeException('Failed to create temporary file for shard');
             }
-            $shard_paths[$name] = $base . '.sqlite3';
+            $shard_paths[$i] = $base . '.sqlite3';
             @unlink($base);
         }
 
         try {
+            // Snapshot each section's element count once so all
+            // workers and the merge phase agree on the slicing.
+            $reader = BinaryReader::open($rmem_path);
+            $section_counts = [
+                Format::SECTION_NODES => $reader->hasSection(Format::SECTION_NODES)
+                    ? $reader->getSectionElementCount(Format::SECTION_NODES) : 0,
+                Format::SECTION_EDGES => $reader->hasSection(Format::SECTION_EDGES)
+                    ? $reader->getSectionElementCount(Format::SECTION_EDGES) : 0,
+                Format::SECTION_LOCATIONS => $reader->hasSection(Format::SECTION_LOCATIONS)
+                    ? $reader->getSectionElementCount(Format::SECTION_LOCATIONS) : 0,
+                Format::SECTION_ATTRIBUTES => $reader->hasSection(Format::SECTION_ATTRIBUTES)
+                    ? $reader->getSectionElementCount(Format::SECTION_ATTRIBUTES) : 0,
+            ];
+            unset($reader);
+
             $pids = [];
-            foreach ($tables as $name => $section) {
+            for ($i = 0; $i < $worker_count; $i++) {
                 $pid = pcntl_fork();
                 if ($pid === -1) {
                     foreach ($pids as $running_pid) {
@@ -268,26 +288,32 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 }
                 if ($pid === 0) {
                     try {
-                        $this->writeShard($rmem_path, $name, $shard_paths[$name]);
+                        $this->writeShard(
+                            $rmem_path,
+                            $shard_paths[$i],
+                            $i,
+                            $worker_count,
+                            $section_counts,
+                        );
                         exit(0);
                     } catch (\Throwable $e) {
-                        fwrite(STDERR, "shard {$name} worker failed: " . $e->getMessage() . "\n");
+                        fwrite(STDERR, "shard {$i} worker failed: " . $e->getMessage() . "\n");
                         exit(1);
                     }
                 }
-                $pids[$name] = $pid;
+                $pids[$i] = $pid;
             }
 
             $failed = [];
-            foreach ($pids as $name => $pid) {
+            foreach ($pids as $i => $pid) {
                 pcntl_waitpid($pid, $status);
                 if (!pcntl_wifexited($status) || pcntl_wexitstatus($status) !== 0) {
-                    $failed[] = $name;
+                    $failed[] = $i;
                 }
             }
             if ($failed !== []) {
                 throw new \RuntimeException(
-                    'Parallel shard workers failed: ' . implode(', ', $failed)
+                    'Parallel shard workers failed: shards ' . implode(', ', $failed)
                 );
             }
 
@@ -298,7 +324,45 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     }
 
     /**
-     * @param array<string, string> $shard_paths name => filesystem path
+     * Pick a default worker count. Capped at 4 for now to match the
+     * old table-grain implementation's parallelism floor — the merge
+     * phase is still serial, so spinning up more workers just inflates
+     * the merge cost without gaining anything until the format-direct
+     * merge lands.
+     */
+    private function defaultWorkerCount(): int
+    {
+        $cores = 4;
+        if (is_readable('/proc/cpuinfo')) {
+            $cpuinfo = @file_get_contents('/proc/cpuinfo');
+            if (is_string($cpuinfo) && $cpuinfo !== '') {
+                $cores = max(1, substr_count($cpuinfo, "\nprocessor\t") + 1);
+            }
+        }
+        return min(4, max(1, $cores));
+    }
+
+    /**
+     * Compute this worker's row range for a section: rows
+     * `[i * count / n, (i + 1) * count / n)`. Last worker absorbs
+     * the remainder.
+     *
+     * @return array{int, int} [row_start, row_count]
+     */
+    private function computeRowSlice(int $worker_index, int $worker_count, int $count): array
+    {
+        if ($count === 0) {
+            return [0, 0];
+        }
+        $start = intdiv($count * $worker_index, $worker_count);
+        $end = $worker_index === $worker_count - 1
+            ? $count
+            : intdiv($count * ($worker_index + 1), $worker_count);
+        return [$start, $end - $start];
+    }
+
+    /**
+     * @param array<array-key, string> $shard_paths name|index => filesystem path
      */
     private function cleanupShards(array $shard_paths): void
     {
@@ -310,13 +374,22 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     }
 
     /**
-     * Worker entry point: open the shard file, set up the per-table
-     * schema, and stream the matching rmem section into it. Runs in a
-     * forked child process; throws are caught by the caller and
-     * surfaced as a non-zero exit status.
+     * Worker entry point: open the shard file, set up all four data
+     * tables, and stream this worker's row slice from each rmem
+     * section. Runs in a forked child process; throws are caught by
+     * the caller and surfaced as a non-zero exit status.
+     *
+     * @param array<string, int> $section_counts pre-computed element
+     *                                           counts for every section,
+     *                                           shared by all workers
      */
-    private function writeShard(string $rmem_path, string $table, string $shard_path): void
-    {
+    private function writeShard(
+        string $rmem_path,
+        string $shard_path,
+        int $worker_index,
+        int $worker_count,
+        array $section_counts,
+    ): void {
         $reader = BinaryReader::open($rmem_path);
         $shard = new \PDO("sqlite:{$shard_path}");
         $shard->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
@@ -324,27 +397,48 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $shard->exec('PRAGMA journal_mode = MEMORY');
         $shard->exec('PRAGMA temp_store = MEMORY');
 
-        $this->createShardTable($shard, $table);
+        $this->createShardSchema($shard);
+
+        [$nodes_start, $nodes_count] = $this->computeRowSlice(
+            $worker_index,
+            $worker_count,
+            $section_counts[Format::SECTION_NODES] ?? 0,
+        );
+        [$edges_start, $edges_count] = $this->computeRowSlice(
+            $worker_index,
+            $worker_count,
+            $section_counts[Format::SECTION_EDGES] ?? 0,
+        );
+        [$locations_start, $locations_count] = $this->computeRowSlice(
+            $worker_index,
+            $worker_count,
+            $section_counts[Format::SECTION_LOCATIONS] ?? 0,
+        );
+        [$attrs_start, $attrs_count] = $this->computeRowSlice(
+            $worker_index,
+            $worker_count,
+            $section_counts[Format::SECTION_ATTRIBUTES] ?? 0,
+        );
 
         $shard->beginTransaction();
         try {
             $placeholder_run_id = 0;
-            switch ($table) {
-                case 'nodes':
-                    $this->ingestNodes($shard, $reader, $placeholder_run_id);
-                    break;
-                case 'edges':
-                    $this->ingestEdges($shard, $reader, $placeholder_run_id);
-                    break;
-                case 'locations':
-                    $this->ingestLocations($shard, $reader, $placeholder_run_id);
-                    break;
-                case 'attributes':
-                    $this->ingestAttributes($shard, $reader, $placeholder_run_id);
-                    break;
-                default:
-                    throw new \RuntimeException("unknown shard table: {$table}");
-            }
+            $this->ingestNodes($shard, $reader, $placeholder_run_id, $nodes_start, $nodes_count);
+            $this->ingestEdges($shard, $reader, $placeholder_run_id, $edges_start, $edges_count);
+            $this->ingestLocations(
+                $shard,
+                $reader,
+                $placeholder_run_id,
+                $locations_start,
+                $locations_count,
+            );
+            $this->ingestAttributes(
+                $shard,
+                $reader,
+                $placeholder_run_id,
+                $attrs_start,
+                $attrs_count,
+            );
             $shard->commit();
         } catch (\Throwable $e) {
             $shard->rollBack();
@@ -358,67 +452,55 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     }
 
     /**
-     * Create only the table the worker is responsible for. Schema
-     * matches the main DB's column list (so INSERT INTO main SELECT *
-     * mostly works) but omits indexes, primary keys, and id surrogates
-     * — those would slow the worker's inserts and we drop them on the
-     * way out anyway.
+     * Create all four data tables in a shard. Schema matches the main
+     * DB's column list (so INSERT INTO main SELECT * is a 1:1 copy)
+     * but omits indexes, primary keys, and id surrogates — those
+     * would slow the worker's inserts and the main table rebuilds
+     * them anyway.
      */
-    private function createShardTable(\PDO $shard, string $table): void
+    private function createShardSchema(\PDO $shard): void
     {
-        switch ($table) {
-            case 'nodes':
-                $shard->exec(
-                    'CREATE TABLE context_nodes ('
-                    . ' run_id INTEGER NOT NULL,'
-                    . ' node_id INTEGER NOT NULL,'
-                    . ' type TEXT NOT NULL,'
-                    . ' canonical_node_id INTEGER'
-                    . ')'
-                );
-                return;
-            case 'edges':
-                $shard->exec(
-                    'CREATE TABLE context_edges ('
-                    . ' run_id INTEGER NOT NULL,'
-                    . ' parent_node_id INTEGER,'
-                    . ' child_node_id INTEGER NOT NULL,'
-                    . ' link_name TEXT NOT NULL,'
-                    . ' is_tree INTEGER NOT NULL,'
-                    . " strength TEXT NOT NULL DEFAULT 'strong'"
-                    . ')'
-                );
-                return;
-            case 'locations':
-                $shard->exec(
-                    'CREATE TABLE context_node_locations ('
-                    . ' run_id INTEGER NOT NULL,'
-                    . ' node_id INTEGER NOT NULL,'
-                    . ' address BIGINT,'
-                    . ' size BIGINT,'
-                    . ' location_type TEXT NOT NULL,'
-                    . ' class_name TEXT,'
-                    . ' string_value TEXT,'
-                    . ' refcount BIGINT,'
-                    . ' type_info BIGINT,'
-                    . ' region TEXT,'
-                    . ' bin_overhead BIGINT DEFAULT 0'
-                    . ')'
-                );
-                return;
-            case 'attributes':
-                $shard->exec(
-                    'CREATE TABLE context_node_attributes ('
-                    . ' run_id INTEGER NOT NULL,'
-                    . ' node_id INTEGER NOT NULL,'
-                    . ' "key" TEXT NOT NULL,'
-                    . ' "value" TEXT'
-                    . ')'
-                );
-                return;
-            default:
-                throw new \RuntimeException("unknown shard table: {$table}");
-        }
+        $shard->exec(
+            'CREATE TABLE context_nodes ('
+            . ' run_id INTEGER NOT NULL,'
+            . ' node_id INTEGER NOT NULL,'
+            . ' type TEXT NOT NULL,'
+            . ' canonical_node_id INTEGER'
+            . ')'
+        );
+        $shard->exec(
+            'CREATE TABLE context_edges ('
+            . ' run_id INTEGER NOT NULL,'
+            . ' parent_node_id INTEGER,'
+            . ' child_node_id INTEGER NOT NULL,'
+            . ' link_name TEXT NOT NULL,'
+            . ' is_tree INTEGER NOT NULL,'
+            . " strength TEXT NOT NULL DEFAULT 'strong'"
+            . ')'
+        );
+        $shard->exec(
+            'CREATE TABLE context_node_locations ('
+            . ' run_id INTEGER NOT NULL,'
+            . ' node_id INTEGER NOT NULL,'
+            . ' address BIGINT,'
+            . ' size BIGINT,'
+            . ' location_type TEXT NOT NULL,'
+            . ' class_name TEXT,'
+            . ' string_value TEXT,'
+            . ' refcount BIGINT,'
+            . ' type_info BIGINT,'
+            . ' region TEXT,'
+            . ' bin_overhead BIGINT DEFAULT 0'
+            . ')'
+        );
+        $shard->exec(
+            'CREATE TABLE context_node_attributes ('
+            . ' run_id INTEGER NOT NULL,'
+            . ' node_id INTEGER NOT NULL,'
+            . ' "key" TEXT NOT NULL,'
+            . ' "value" TEXT'
+            . ')'
+        );
     }
 
     /**
@@ -428,7 +510,14 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * summaries, canonical-id map, indexes, and views as in the
      * single-process path.
      *
-     * @param array<string, string> $shard_paths
+     * Each shard now contains all four data tables, holding this
+     * worker's slice of the corresponding rmem section. The merge
+     * walks shards in order so the rowid append on the main tables
+     * preserves the section's emission order across the whole
+     * dataset — important for the format-direct merge that's meant
+     * to replace this loop.
+     *
+     * @param array<int, string> $shard_paths shard index => filesystem path
      * @param array<int, array<string, mixed>> $summary
      */
     private function mergeShards(array $shard_paths, array $summary): void
@@ -444,8 +533,8 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $this->createTables($db);
 
         // ATTACH outside any active write transaction.
-        foreach ($shard_paths as $alias => $path) {
-            $db->exec("ATTACH DATABASE '{$path}' AS s_{$alias}");
+        foreach ($shard_paths as $idx => $path) {
+            $db->exec("ATTACH DATABASE '{$path}' AS s_{$idx}");
         }
 
         $db->beginTransaction();
@@ -453,31 +542,34 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $run_id = $this->insertRun($db);
             $this->insertSummary($db, $run_id, $summary);
 
-            // Per-table copy. The SELECT rewrites run_id from the 0
-            // placeholder to the real run_id allocated above. We let
-            // SQLite use sequential-rowid append on the main tables;
+            // Walk shards in order, copying each table from each
+            // shard. The SELECT rewrites run_id from the 0
+            // placeholder to the real run_id allocated above. SQLite
+            // uses sequential-rowid append on the main tables;
             // CREATE INDEX runs after the transaction commits.
-            $db->exec(
-                "INSERT INTO context_nodes (run_id, node_id, type, canonical_node_id)"
-                . " SELECT {$run_id}, node_id, type, canonical_node_id FROM s_nodes.context_nodes"
-            );
-            $db->exec(
-                "INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree, strength)"
-                . " SELECT {$run_id}, parent_node_id, child_node_id, link_name, is_tree, strength"
-                . " FROM s_edges.context_edges"
-            );
-            $db->exec(
-                "INSERT INTO context_node_locations"
-                . " (run_id, node_id, address, size, location_type, class_name, string_value,"
-                . "  refcount, type_info, region, bin_overhead)"
-                . " SELECT {$run_id}, node_id, address, size, location_type, class_name, string_value,"
-                . "  refcount, type_info, region, bin_overhead"
-                . " FROM s_locations.context_node_locations"
-            );
-            $db->exec(
-                "INSERT INTO context_node_attributes (run_id, node_id, \"key\", \"value\")"
-                . " SELECT {$run_id}, node_id, \"key\", \"value\" FROM s_attributes.context_node_attributes"
-            );
+            foreach (array_keys($shard_paths) as $idx) {
+                $db->exec(
+                    "INSERT INTO context_nodes (run_id, node_id, type, canonical_node_id)"
+                    . " SELECT {$run_id}, node_id, type, canonical_node_id FROM s_{$idx}.context_nodes"
+                );
+                $db->exec(
+                    "INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree, strength)"
+                    . " SELECT {$run_id}, parent_node_id, child_node_id, link_name, is_tree, strength"
+                    . " FROM s_{$idx}.context_edges"
+                );
+                $db->exec(
+                    "INSERT INTO context_node_locations"
+                    . " (run_id, node_id, address, size, location_type, class_name, string_value,"
+                    . "  refcount, type_info, region, bin_overhead)"
+                    . " SELECT {$run_id}, node_id, address, size, location_type, class_name, string_value,"
+                    . "  refcount, type_info, region, bin_overhead"
+                    . " FROM s_{$idx}.context_node_locations"
+                );
+                $db->exec(
+                    "INSERT INTO context_node_attributes (run_id, node_id, \"key\", \"value\")"
+                    . " SELECT {$run_id}, node_id, \"key\", \"value\" FROM s_{$idx}.context_node_attributes"
+                );
+            }
 
             // DETACH cannot run inside a transaction in SQLite. Skip
             // it here — the attached aliases drop automatically when
@@ -505,14 +597,20 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * @psalm-suppress MixedAssignment
      * @psalm-suppress PossiblyInvalidArrayAccess
      */
-    private function ingestNodes(\PDO $db, BinaryReader $reader, int $run_id): void
-    {
+    private function ingestNodes(
+        \PDO $db,
+        BinaryReader $reader,
+        int $run_id,
+        int $row_start = 0,
+        ?int $row_count = null,
+    ): void {
         if (!$reader->hasSection(Format::SECTION_NODES)) {
             return;
         }
         $dict = $reader->getStringDict();
-        $count = $reader->getSectionElementCount(Format::SECTION_NODES);
-        if ($count === 0) {
+        $total = $reader->getSectionElementCount(Format::SECTION_NODES);
+        $end = $row_count === null ? $total : min($total, $row_start + $row_count);
+        if ($row_start >= $end) {
             return;
         }
         $insert = $db->prepare(
@@ -520,14 +618,14 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         );
         $rows = $reader->castSection(Format::SECTION_NODES, 'NodeRow');
         if ($rows !== null) {
-            for ($i = 0; $i < $count; $i++) {
+            for ($i = $row_start; $i < $end; $i++) {
                 $type = $dict->lookup($rows[$i]->type_id) ?? '';
                 $insert->execute([$run_id, $rows[$i]->node_id, $type]);
             }
             return;
         }
         $data = $reader->getSectionData(Format::SECTION_NODES);
-        for ($i = 0; $i < $count; $i++) {
+        for ($i = $row_start; $i < $end; $i++) {
             $off = $i * Format::NODE_ROW_SIZE;
             $row = unpack('Vnode_id/Vcanonical_id/Vtype_id', $data, $off);
             $type = $dict->lookup((int)$row['type_id']) ?? '';
@@ -543,14 +641,20 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * @psalm-suppress MixedAssignment
      * @psalm-suppress PossiblyInvalidArrayAccess
      */
-    private function ingestEdges(\PDO $db, BinaryReader $reader, int $run_id): void
-    {
+    private function ingestEdges(
+        \PDO $db,
+        BinaryReader $reader,
+        int $run_id,
+        int $row_start = 0,
+        ?int $row_count = null,
+    ): void {
         if (!$reader->hasSection(Format::SECTION_EDGES)) {
             return;
         }
         $dict = $reader->getStringDict();
-        $count = $reader->getSectionElementCount(Format::SECTION_EDGES);
-        if ($count === 0) {
+        $total = $reader->getSectionElementCount(Format::SECTION_EDGES);
+        $end = $row_count === null ? $total : min($total, $row_start + $row_count);
+        if ($row_start >= $end) {
             return;
         }
         $insert = $db->prepare(
@@ -560,7 +664,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $strengths = ['strong', 'weak', 'structural'];
         $rows = $reader->castSection(Format::SECTION_EDGES, 'EdgeRow');
         if ($rows !== null) {
-            for ($i = 0; $i < $count; $i++) {
+            for ($i = $row_start; $i < $end; $i++) {
                 $parent = $rows[$i]->parent_node_id;
                 $insert->execute([
                     $run_id,
@@ -574,7 +678,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             return;
         }
         $data = $reader->getSectionData(Format::SECTION_EDGES);
-        for ($i = 0; $i < $count; $i++) {
+        for ($i = $row_start; $i < $end; $i++) {
             $off = $i * Format::EDGE_ROW_SIZE;
             $row = unpack('Vparent/Vchild/Vlid/Cis_tree/Cstrength', $data, $off);
             $parent = (int)$row['parent'];
@@ -597,14 +701,20 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * @psalm-suppress MixedAssignment
      * @psalm-suppress PossiblyInvalidArrayAccess
      */
-    private function ingestLocations(\PDO $db, BinaryReader $reader, int $run_id): void
-    {
+    private function ingestLocations(
+        \PDO $db,
+        BinaryReader $reader,
+        int $run_id,
+        int $row_start = 0,
+        ?int $row_count = null,
+    ): void {
         if (!$reader->hasSection(Format::SECTION_LOCATIONS)) {
             return;
         }
         $dict = $reader->getStringDict();
-        $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
-        if ($count === 0) {
+        $total = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+        $end = $row_count === null ? $total : min($total, $row_start + $row_count);
+        if ($row_start >= $end) {
             return;
         }
         $insert = $db->prepare(
@@ -615,7 +725,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         );
         $rows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
         if ($rows !== null) {
-            for ($i = 0; $i < $count; $i++) {
+            for ($i = $row_start; $i < $end; $i++) {
                 $class_id = $rows[$i]->class_id;
                 $sv_id = $rows[$i]->string_value_id;
                 $region_id = $rows[$i]->region_id;
@@ -636,7 +746,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             return;
         }
         $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
-        for ($i = 0; $i < $count; $i++) {
+        for ($i = $row_start; $i < $end; $i++) {
             $off = $i * Format::LOCATION_ROW_SIZE;
             $row = unpack(
                 'Vnode_id/Vlocation_type_id/Vclass_id/Paddress/Psize'
@@ -667,13 +777,19 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * @psalm-suppress MixedAssignment
      * @psalm-suppress PossiblyInvalidArrayAccess
      */
-    private function ingestAttributes(\PDO $db, BinaryReader $reader, int $run_id): void
-    {
+    private function ingestAttributes(
+        \PDO $db,
+        BinaryReader $reader,
+        int $run_id,
+        int $row_start = 0,
+        ?int $row_count = null,
+    ): void {
         if (!$reader->hasSection(Format::SECTION_ATTRIBUTES)) {
             return;
         }
-        $count = $reader->getSectionElementCount(Format::SECTION_ATTRIBUTES);
-        if ($count === 0) {
+        $total = $reader->getSectionElementCount(Format::SECTION_ATTRIBUTES);
+        $end = $row_count === null ? $total : min($total, $row_start + $row_count);
+        if ($row_start >= $end) {
             return;
         }
         $dict = $reader->getStringDict();
@@ -683,8 +799,8 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             . ' VALUES (?, ?, ?, ?)'
         );
         $data = $reader->getSectionData(Format::SECTION_ATTRIBUTES);
-        $offset = 0;
-        for ($i = 0; $i < $count; $i++) {
+        $offset = $row_start * 12;
+        for ($i = $row_start; $i < $end; $i++) {
             $row = unpack('Vnode_id/Vkey_id/Vvalue_id', $data, $offset);
             $offset += 12;
             $key = $dict->lookup((int)$row['key_id']);
