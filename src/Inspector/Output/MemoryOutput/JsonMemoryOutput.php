@@ -13,7 +13,9 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput;
 
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
+use Reli\Inspector\Output\MemoryOutput\Report\BinaryReportDataProvider;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 
 final class JsonMemoryOutput implements MemoryOutputInterface
@@ -28,6 +30,12 @@ final class JsonMemoryOutput implements MemoryOutputInterface
     #[\Override]
     public function output(MemoryAnalysisResult $result): void
     {
+        if ($result->pre_populated_rmem_path !== null) {
+            // Tree was already streamed to .rmem during collection
+            $this->streamJsonFromRmem($result->pre_populated_rmem_path, $result);
+            return;
+        }
+
         if ($result->pre_populated_db !== null && $result->pre_populated_run_id !== null) {
             // Tree was already streamed to DB during collection
             $this->streamJsonFromDb($result->pre_populated_db, $result->pre_populated_run_id);
@@ -94,13 +102,49 @@ final class JsonMemoryOutput implements MemoryOutputInterface
         $class_objects_summary = $this->loadClassObjectsSummary($db, $run_id);
         $exporter = new StreamingJsonFromDbExporter($db, $run_id, $this->pretty_print);
 
+        $this->exportToTarget(
+            fn ($fp) => $exporter->export(
+                $summary,
+                $location_types_summary,
+                $class_objects_summary,
+                $fp,
+            ),
+        );
+    }
+
+    private function streamJsonFromRmem(string $rmem_path, MemoryAnalysisResult $result): void
+    {
+        $reader = BinaryReader::open($rmem_path);
+        $summary = $result->summary;
+        $location_types_summary = $result->location_types_summary
+            ?? BinaryReportDataProvider::computeLocationTypesSummary($reader);
+        $class_objects_summary = $result->class_objects_summary
+            ?? BinaryReportDataProvider::computeClassObjectsSummary($reader);
+
+        $exporter = new StreamingJsonFromRmemExporter($reader, $this->pretty_print);
+
+        $this->exportToTarget(
+            fn ($fp) => $exporter->export(
+                $summary,
+                $location_types_summary,
+                $class_objects_summary,
+                $fp,
+            ),
+        );
+    }
+
+    /**
+     * @param callable(resource): void $writer
+     */
+    private function exportToTarget(callable $writer): void
+    {
         if ($this->output_path !== null) {
             $fp = fopen($this->output_path, 'w');
             if ($fp === false) {
                 throw new \RuntimeException("Cannot open output file: {$this->output_path}");
             }
             try {
-                $exporter->export($summary, $location_types_summary, $class_objects_summary, $fp);
+                $writer($fp);
             } finally {
                 fclose($fp);
             }
@@ -109,7 +153,7 @@ final class JsonMemoryOutput implements MemoryOutputInterface
             if ($fp === false) {
                 throw new \RuntimeException('Cannot open stdout');
             }
-            $exporter->export($summary, $location_types_summary, $class_objects_summary, $fp);
+            $writer($fp);
         }
     }
 

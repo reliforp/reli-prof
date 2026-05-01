@@ -323,8 +323,8 @@ final class ReportGenerator
         $heap_usage = (int)($flat_summary['zend_mm_heap_usage'] ?? 0);
 
         // Derive location_types and class_objects from the locations section
-        $location_types = $this->computeLocationTypesFromBinary($reader);
-        $class_objects = $this->computeClassObjectsFromBinary($reader);
+        $location_types = BinaryReportDataProvider::computeLocationTypesSummary($reader);
+        $class_objects = BinaryReportDataProvider::computeClassObjectsSummary($reader);
 
         // Load runs metadata
         $captured_at = BinaryReportDataProvider::loadCapturedAt($reader);
@@ -491,108 +491,6 @@ final class ReportGenerator
         $this->sortFindings($findings);
 
         return new ReportResult($meta, $findings);
-    }
-
-    /**
-     * Compute location_types summary from the binary locations section.
-     *
-     * @return array<string, array{count: int, memory_usage: int}>
-     * @psalm-suppress MixedAssignment
-     * @psalm-suppress PossiblyInvalidArrayAccess
-     */
-    private function computeLocationTypesFromBinary(BinaryReader $reader): array
-    {
-        if (!$reader->hasSection(Format::SECTION_LOCATIONS)) {
-            return [];
-        }
-        $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
-        $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
-        $dict = $reader->getStringDict();
-
-        // Filter to relevant regions (same as insertLocationTypesSummaryFromDb)
-        $relevant_regions = ['zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena'];
-
-        /** @var array<string, array{count: int, memory_usage: int}> $result */
-        $result = [];
-        $offset = 0;
-        for ($i = 0; $i < $count; $i++) {
-            // Fields: node_id(4), location_type_id(4), class_id(4), address(8), size(8),
-            //         string_value_id(4), refcount(4), type_info(4), region_id(4), bin_overhead(4)
-            $location_type_id = unpack('V', $data, $offset + 4)[1];
-            $size = unpack('P', $data, $offset + 20)[1];
-            $region_id = unpack('V', $data, $offset + 40)[1];
-            $offset += Format::LOCATION_ROW_SIZE;
-
-            // Filter by region (null region also included)
-            $region = $dict->lookup($region_id);
-            if ($region !== null && !in_array($region, $relevant_regions, true)) {
-                continue;
-            }
-
-            $type = $dict->lookup($location_type_id);
-            if ($type === null) {
-                continue;
-            }
-            if (!isset($result[$type])) {
-                $result[$type] = ['count' => 0, 'memory_usage' => 0];
-            }
-            $result[$type]['count']++;
-            $result[$type]['memory_usage'] += $size;
-        }
-
-        // Sort by memory_usage descending
-        uasort($result, fn (array $a, array $b): int => $b['memory_usage'] <=> $a['memory_usage']);
-        return $result;
-    }
-
-    /**
-     * Compute class_objects summary from the binary locations section.
-     *
-     * @return array<string, array{count: int, memory_usage: int}>
-     * @psalm-suppress MixedAssignment
-     * @psalm-suppress PossiblyInvalidArrayAccess
-     */
-    private function computeClassObjectsFromBinary(BinaryReader $reader): array
-    {
-        if (!$reader->hasSection(Format::SECTION_LOCATIONS)) {
-            return [];
-        }
-        $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
-        $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
-        $dict = $reader->getStringDict();
-
-        $relevant_regions = ['zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena'];
-
-        /** @var array<string, array{count: int, memory_usage: int}> $result */
-        $result = [];
-        $offset = 0;
-        for ($i = 0; $i < $count; $i++) {
-            $class_id = unpack('V', $data, $offset + 8)[1];
-            $size = unpack('P', $data, $offset + 20)[1];
-            $region_id = unpack('V', $data, $offset + 40)[1];
-            $offset += Format::LOCATION_ROW_SIZE;
-
-            if ($class_id === Format::NULL_STRING_ID) {
-                continue;
-            }
-            $region = $dict->lookup($region_id);
-            if ($region !== null && !in_array($region, $relevant_regions, true)) {
-                continue;
-            }
-
-            $class_name = $dict->lookup($class_id);
-            if ($class_name === null) {
-                continue;
-            }
-            if (!isset($result[$class_name])) {
-                $result[$class_name] = ['count' => 0, 'memory_usage' => 0];
-            }
-            $result[$class_name]['count']++;
-            $result[$class_name]['memory_usage'] += $size;
-        }
-
-        uasort($result, fn (array $a, array $b): int => $b['memory_usage'] <=> $a['memory_usage']);
-        return $result;
     }
 
     /**
