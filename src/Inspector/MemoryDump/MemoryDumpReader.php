@@ -48,8 +48,10 @@ final class MemoryDumpReader
     ): void {
         if (MemoryOutputFactory::isRmemFormat($memory_profiler_settings)) {
             $this->readBinary($memory_profiler_settings);
-        } else {
+        } elseif (MemoryOutputFactory::isDbFormat($memory_profiler_settings)) {
             $this->readPdo($memory_profiler_settings);
+        } else {
+            $this->readBinaryThenConvert($memory_profiler_settings);
         }
     }
 
@@ -149,15 +151,69 @@ final class MemoryDumpReader
      */
     private function readBinary(MemoryProfilerSettings $memory_profiler_settings): void
     {
+        $output_path = $memory_profiler_settings->output_path
+            ?? throw new \RuntimeException('--output is required when using rmem format');
+
+        $output_factory = new MemoryOutputFactory();
+        [$binary_output, $sink] = $output_factory->createBinaryStreamingSinkAtPath($output_path);
+        $this->collectBinary($memory_profiler_settings, $binary_output, $sink);
+    }
+
+    /**
+     * Non-DB, non-rmem path (json / report / report-json).
+     *
+     * Streams the context tree into a temp .rmem file, then hands the
+     * path to the output backend, which converts it to the final
+     * format. Replaces the previous "temp SQLite intermediate"
+     * behaviour; the rmem intermediate is faster for JSON output
+     * (no N+1 SQL queries) and avoids the CREATE INDEX cost the SQLite
+     * intermediate paid only to throw away.
+     */
+    private function readBinaryThenConvert(MemoryProfilerSettings $memory_profiler_settings): void
+    {
+        $tmp_base = tempnam(sys_get_temp_dir(), 'reli_dump_rmem_');
+        if ($tmp_base === false) {
+            throw new \RuntimeException('Failed to create temporary file for rmem intermediate');
+        }
+        $temp_path = $tmp_base . '.rmem';
+        @unlink($tmp_base);
+
+        try {
+            $output_factory = new MemoryOutputFactory();
+            [$binary_output, $sink] = $output_factory->createBinaryStreamingSinkAtPath($temp_path);
+            $summary = $this->collectBinary($memory_profiler_settings, $binary_output, $sink);
+
+            $result = new MemoryAnalysisResult(
+                summary: $summary,
+                context: null,
+                pre_populated_rmem_path: $temp_path,
+            );
+
+            $memory_output = $output_factory->create($memory_profiler_settings);
+            $memory_output->output($result);
+        } finally {
+            if (file_exists($temp_path)) {
+                @unlink($temp_path);
+            }
+        }
+    }
+
+    /**
+     * Drive the binary streaming sink to completion. Returns the summary
+     * passed to finalizeStreaming so callers can re-use it (e.g. when
+     * constructing a MemoryAnalysisResult for a follow-up converter).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function collectBinary(
+        MemoryProfilerSettings $memory_profiler_settings,
+        \Reli\Inspector\Output\MemoryOutput\BinaryMemoryOutput $binary_output,
+        \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink $sink,
+    ): array {
         $process_specifier = new ProcessSpecifier($this->pid);
 
         /** @var TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
         $target_php_settings = new TargetPhpSettings(php_version: $this->php_version);
-
-        $output_factory = new MemoryOutputFactory();
-        [$binary_output, $sink] = $output_factory->createBinaryStreamingSink(
-            $memory_profiler_settings,
-        );
 
         $collected_memories = $this->memory_locations_collector->collectAll(
             $process_specifier,
@@ -187,9 +243,6 @@ final class MemoryDumpReader
             $collected_memories->memory_locations,
         );
 
-        // Use corrected summary if region sums are available from the
-        // backfilled locations. Compute region sums directly from the
-        // location temp file since we don't have a SQL DB.
         $region_sums = $sink->computeRegionSumsAndOverhead()['sums'];
         $summary_base = $region_sums !== []
             ? $analyzed_regions->summary->correctedToArray($region_sums)
@@ -204,6 +257,7 @@ final class MemoryDumpReader
         unset($collected_memories, $analyzed_regions, $region_analyzer);
 
         $binary_output->finalizeStreaming($sink, $summary);
+        return $summary;
     }
 
     /**
