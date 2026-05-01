@@ -367,12 +367,17 @@ final class IntegerIndexMerger
         $header = chr(Format::BTREE_LEAF_INDEX) . pack('n', 0) . pack('n', $count)
             . pack('n', $cc_field) . "\x00";
 
+        // Build the cell pointer array as one batched pack('n*')
+        // call instead of a per-cell pack('n') loop — at ~370 cells
+        // per leaf and 42 leaves per ingest the per-call dispatch
+        // adds up.
+        $offsets = [];
         $offset = $cell_content_start;
-        $ptr_array = '';
         foreach ($cells as $cell) {
-            $ptr_array .= pack('n', $offset);
+            $offsets[] = $offset;
             $offset += strlen($cell);
         }
+        $ptr_array = pack('n*', ...$offsets);
 
         $padding_bytes = $cell_content_start - (8 + 2 * $count);
         $padding = $padding_bytes > 0 ? str_repeat("\x00", $padding_bytes) : '';
@@ -427,17 +432,19 @@ final class IntegerIndexMerger
 
         // Same single-implode shape as buildLeafPage: 12-byte
         // header + cell-pointer array + padding + concatenated
-        // cells.
+        // cells. The cell pointer array is one pack('n*') call so
+        // we don't pay 370 × pack('n') dispatches per page.
         $cc_field = $cell_content_start === 65536 ? 0 : $cell_content_start;
         $header = chr(Format::BTREE_INTERIOR_INDEX) . pack('n', 0) . pack('n', $interior_count)
             . pack('n', $cc_field) . "\x00" . pack('N', $rightmost_pgno);
 
+        $offsets = [];
         $offset = $cell_content_start;
-        $ptr_array = '';
         foreach ($cell_blobs as $cell) {
-            $ptr_array .= pack('n', $offset);
+            $offsets[] = $offset;
             $offset += strlen($cell);
         }
+        $ptr_array = pack('n*', ...$offsets);
 
         $padding_bytes = $cell_content_start - (12 + 2 * $interior_count);
         $padding = $padding_bytes > 0 ? str_repeat("\x00", $padding_bytes) : '';
