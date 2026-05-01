@@ -18,8 +18,11 @@ use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
+use Reli\Inspector\Output\MemoryOutput\SqliteRaw\IntegerIndexMerger;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\OverflowNotSupportedException;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\Reader as SqliteRawReader;
+use Reli\Inspector\Output\MemoryOutput\SqliteRaw\SortRunReader;
+use Reli\Inspector\Output\MemoryOutput\SqliteRaw\SortRunWriter;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\TableMerger;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\Writer as SqliteRawWriter;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
@@ -280,6 +283,16 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             ];
             unset($reader);
 
+            // Allocate the run_id up-front so workers can stamp it
+            // into every row they emit. This eliminates the
+            // placeholder/UPDATE dance the earlier draft used:
+            // shards used to write run_id = 0 and the merge phase
+            // had to REINDEX + UPDATE everything to run_id = 1
+            // before the integer indexes were correct. Doing the
+            // allocation now means cells are already canonical the
+            // first time they hit disk.
+            $run_id = $this->allocateRun($summary);
+
             $pids = [];
             for ($i = 0; $i < $worker_count; $i++) {
                 $pid = pcntl_fork();
@@ -298,6 +311,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                             $i,
                             $worker_count,
                             $section_counts,
+                            $run_id,
                         );
                         exit(0);
                     } catch (\Throwable $e) {
@@ -321,10 +335,37 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 );
             }
 
-            $this->mergeShards($shard_paths, $summary);
+            $this->mergeShards($shard_paths, $run_id);
         } finally {
+            $this->cleanupSortRuns($shard_paths);
             $this->cleanupShards($shard_paths);
         }
+    }
+
+    /**
+     * Allocate the run_id (and seed the runs / summary tables) up-
+     * front so workers can write canonical run_id values into shard
+     * rows without needing a placeholder / UPDATE round-trip.
+     *
+     * Pre-creates the integer indexes too, so the format-direct
+     * merger has empty rootpages to overwrite.
+     *
+     * @param array<int, array<string, mixed>> $summary
+     */
+    private function allocateRun(array $summary): int
+    {
+        $db = $this->driver->createConnection();
+        $db->exec('PRAGMA synchronous = OFF');
+        $db->exec('PRAGMA temp_store = MEMORY');
+        $this->createTables($db);
+        foreach (self::integerIndexSpecs() as [$index_name, $table, $key]) {
+            $db->exec("CREATE INDEX IF NOT EXISTS {$index_name} ON {$table}(run_id, {$key})");
+        }
+        $db->beginTransaction();
+        $run_id = $this->insertRun($db);
+        $this->insertSummary($db, $run_id, $summary);
+        $db->commit();
+        return $run_id;
     }
 
     /**
@@ -393,6 +434,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         int $worker_index,
         int $worker_count,
         array $section_counts,
+        int $run_id,
     ): void {
         $reader = BinaryReader::open($rmem_path);
         $shard = new \PDO("sqlite:{$shard_path}");
@@ -426,19 +468,20 @@ final class PdoMemoryOutput implements MemoryOutputInterface
 
         $shard->beginTransaction();
         try {
-            $placeholder_run_id = 0;
             // Use explicit globally-disjoint rowids so the merger can
             // stitch shard table b-trees by appending leaves without
             // re-encoding cells. Worker i's row at section index k
             // gets rowid (k + 1), which combined with non-overlapping
             // (row_start, row_count) windows gives globally
-            // contiguous rowids 1..total.
-            $this->ingestNodes($shard, $reader, $placeholder_run_id, $nodes_start, $nodes_count, true);
-            $this->ingestEdges($shard, $reader, $placeholder_run_id, $edges_start, $edges_count, true);
+            // contiguous rowids 1..total. The real run_id was
+            // allocated by the parent process and passed in, so
+            // shard rows are canonical the first time they hit disk.
+            $this->ingestNodes($shard, $reader, $run_id, $nodes_start, $nodes_count, true);
+            $this->ingestEdges($shard, $reader, $run_id, $edges_start, $edges_count, true);
             $this->ingestLocations(
                 $shard,
                 $reader,
-                $placeholder_run_id,
+                $run_id,
                 $locations_start,
                 $locations_count,
                 true,
@@ -446,12 +489,17 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $this->ingestAttributes(
                 $shard,
                 $reader,
-                $placeholder_run_id,
+                $run_id,
                 $attrs_start,
                 $attrs_count,
                 true,
             );
             $shard->commit();
+            // After the table data is in the shard, dump sort-run
+            // files for each integer index. These get k-way merged
+            // by the main process to skip the SQL CREATE INDEX
+            // sort phase entirely.
+            $this->dumpIntegerIndexSortRuns($shard, $shard_path);
         } catch (\Throwable $e) {
             $shard->rollBack();
             throw $e;
@@ -545,26 +593,8 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * @param array<int, string> $shard_paths shard index => filesystem path
      * @param array<int, array<string, mixed>> $summary
      */
-    private function mergeShards(array $shard_paths, array $summary): void
+    private function mergeShards(array $shard_paths, int $run_id): void
     {
-        // Phase 1: bring main into existence with schema, runs row,
-        // summary populated, and run_id allocated. We also need to
-        // write the run_id into every row's run_id column on the way
-        // in — which the workers already did with placeholder 0,
-        // but the merger has to rewrite. Since rewriting cell bytes
-        // is more complex than just dropping in INSERT INTO ... SELECT,
-        // we go format-direct only when shards' run_id placeholder
-        // matches main's allocated run_id.
-        $db = $this->driver->createConnection();
-        $db->exec('PRAGMA synchronous = OFF');
-        $db->exec('PRAGMA temp_store = MEMORY');
-        $this->createTables($db);
-
-        $db->beginTransaction();
-        $run_id = $this->insertRun($db);
-        $this->insertSummary($db, $run_id, $summary);
-        $db->commit();
-
         if (!$this->driver instanceof SqliteDriver) {
             throw new \RuntimeException('format-direct merge only supports SqliteDriver');
         }
@@ -572,67 +602,42 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $tables = ['context_nodes', 'context_edges', 'context_node_locations', 'context_node_attributes'];
 
         $needs_sql_fallback = false;
-        // For run_id != 1 we fall back to SQL — the format-direct
-        // copy preserves the workers' placeholder run_id (0) which
-        // doesn't match the freshly-allocated run_id 1.
-        // First-merge case (single run in this DB) is the common one
-        // and gives us run_id == 1, which is what we need.
-        if ($run_id !== 1) {
+        try {
+            $writer = SqliteRawWriter::open($main_path);
+            $shard_readers = array_map(
+                static fn (string $p): SqliteRawReader => SqliteRawReader::open($p),
+                array_values($shard_paths),
+            );
+            $merger = new TableMerger($writer, $shard_readers);
+            foreach ($tables as $table) {
+                $rootpage = SqliteRawReader::open($main_path)->tableRootpage($table);
+                $merger->merge($table, $rootpage);
+            }
+            $writer->close($main_path);
+        } catch (OverflowNotSupportedException $_e) {
+            // Some leaf cell exceeded the inline payload threshold
+            // (typically a long string_value). Fall back to the SQL
+            // merge path. The pages the format-direct merger touched
+            // are harmless because the SQL fallback opens main fresh
+            // and re-INSERTs every row.
             $needs_sql_fallback = true;
         }
 
+        $db = $this->driver->createConnection();
+        $db->exec('PRAGMA synchronous = OFF');
+        $db->exec('PRAGMA temp_store = MEMORY');
+
         if (!$needs_sql_fallback) {
-            // Need to close the PDO connection so the file isn't
-            // locked by SQLite's exclusive transaction state.
-            unset($db);
-
-            try {
-                $writer = SqliteRawWriter::open($main_path);
-                $shard_readers = array_map(
-                    static fn (string $p): SqliteRawReader => SqliteRawReader::open($p),
-                    array_values($shard_paths),
-                );
-                // We need each shard's worker-stored run_id to match
-                // main's run_id. Workers wrote 0; main picked 1 —
-                // they don't match, so the format-direct copy would
-                // leave context_nodes.run_id = 0 etc. Fix by
-                // rewriting run_id via UPDATE after the merge.
-                // (Cheaper than the format-direct cell rewrite.)
-                $merger = new TableMerger($writer, $shard_readers);
-                foreach ($tables as $table) {
-                    $rootpage = SqliteRawReader::open($main_path)->tableRootpage($table);
-                    $merger->merge($table, $rootpage);
-                }
-                $writer->close($main_path);
-            } catch (OverflowNotSupportedException $_e) {
-                // Some leaf cell exceeded the inline payload
-                // threshold (typically a long string_value in
-                // context_node_locations). Fall back to the SQL
-                // merge path. The format-direct work done so far on
-                // the file is harmless because we re-open and
-                // overwrite via SQL.
-                $needs_sql_fallback = true;
-            }
-
-            // Reopen for the run_id rewrite + post-merge work.
-            $db = $this->driver->createConnection();
-            $db->exec('PRAGMA synchronous = OFF');
-            $db->exec('PRAGMA temp_store = MEMORY');
-            if (!$needs_sql_fallback) {
-                // Tables whose PRIMARY KEY is *not* an INTEGER PRIMARY
-                // KEY get their own auto-index (sqlite_autoindex_*).
-                // Format-direct copy bypasses the b-tree machinery, so
-                // these auto-indexes are still the empty leaves they
-                // were at CREATE TABLE time. REINDEX rebuilds them
-                // from the freshly-merged table data — and the UPDATE
-                // we issue right after needs the index in order to
-                // find rows by `run_id = 0`.
-                $db->exec('REINDEX context_nodes');
-                $db->exec('REINDEX summary');
-                $db->exec('REINDEX location_types_summary');
-                $db->exec('REINDEX class_objects_summary');
-                $this->rewriteWorkerRunId($db, $run_id);
-            }
+            // Format-direct table copy bypasses the b-tree machinery,
+            // so the auto-indexes that the PRIMARY KEYs maintain are
+            // still the empty leaves they were at CREATE TABLE time.
+            // REINDEX rebuilds them from the freshly-merged table
+            // data. Workers already wrote canonical run_id values,
+            // so no UPDATE round-trip is needed.
+            $db->exec('REINDEX context_nodes');
+            $db->exec('REINDEX summary');
+            $db->exec('REINDEX location_types_summary');
+            $db->exec('REINDEX class_objects_summary');
         }
 
         if ($needs_sql_fallback) {
@@ -669,6 +674,21 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $db->commit();
         }
 
+        // Format-direct integer index merge. Has to run BEFORE the
+        // summary inserts: the integer indexes' rootpages were
+        // pre-allocated but currently hold an empty leaf, and
+        // SQLite's planner happily uses them for queries like
+        // `SELECT ... WHERE run_id = ?`, which then returns zero
+        // rows. Populating the indexes first means subsequent
+        // SELECTs that route through them see the real data.
+        if (!$needs_sql_fallback) {
+            unset($db);
+            $this->mergeIntegerIndexes($shard_paths, $main_path);
+            $db = $this->driver->createConnection();
+            $db->exec('PRAGMA synchronous = OFF');
+            $db->exec('PRAGMA temp_store = MEMORY');
+        }
+
         $db->beginTransaction();
         $this->insertLocationTypesSummaryFromDb($db, $run_id);
         $this->insertClassObjectsSummaryFromDb($db, $run_id);
@@ -676,8 +696,137 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $db->commit();
 
         $this->driver->afterBulkInsert($db);
+
+        // The remaining indexes (text-keyed, partial, post-merge-
+        // derived like idx_context_nodes_canonical) get built the
+        // normal way. CREATE INDEX IF NOT EXISTS on the integer
+        // indexes is a no-op since they already exist.
         $this->createIndexes($db);
         $this->createViews($db);
+    }
+
+    /**
+     * The integer-only indexes whose b-tree we build via
+     * IntegerIndexMerger instead of letting SQLite's CREATE INDEX
+     * machinery sort + write them. Each entry is
+     *   [index_name, table_name, key_column].
+     * `run_id` is implicit (always the merged DB's run_id) and
+     * `rowid` is the index's tiebreaker. The remaining indexes
+     * (text-keyed, partial, post-merge-derived like
+     * idx_context_nodes_canonical) still go through createIndexes.
+     *
+     * @return list<array{string, string, string}>
+     */
+    private static function integerIndexSpecs(): array
+    {
+        return [
+            ['idx_context_node_locations_run_node', 'context_node_locations', 'node_id'],
+            ['idx_context_node_attributes_run_node', 'context_node_attributes', 'node_id'],
+            ['idx_context_edges_run_child', 'context_edges', 'child_node_id'],
+        ];
+    }
+
+    /**
+     * Sort-run filename convention. Each shard gets one sort-run file
+     * per integer index, sitting alongside the shard SQLite file so
+     * cleanup is one big rm at the end of the merge.
+     */
+    private static function sortRunPath(string $shard_path, string $index_name): string
+    {
+        return $shard_path . '.' . $index_name . '.run';
+    }
+
+    /**
+     * Worker side: stream each integer index's sort run out of the
+     * shard SQLite into a binary file the main process will k-way
+     * merge. We let SQLite do the per-shard sort because (a) the
+     * shard is already open and (b) the sort cost scales with shard
+     * size, not total size, so it parallelises across workers.
+     *
+     * @psalm-suppress MixedAssignment
+     */
+    private function dumpIntegerIndexSortRuns(\PDO $shard, string $shard_path): void
+    {
+        foreach (self::integerIndexSpecs() as [$index_name, $table, $key_column]) {
+            $writer = new SortRunWriter(self::sortRunPath($shard_path, $index_name));
+            $stmt = $shard->prepare(
+                "SELECT {$key_column}, rowid FROM {$table} ORDER BY {$key_column}, rowid"
+            );
+            $stmt->execute();
+            while ($row = $stmt->fetch(\PDO::FETCH_NUM)) {
+                /** @psalm-suppress MixedArrayAccess */
+                $writer->append((int)$row[0], (int)$row[1]);
+            }
+            $writer->close();
+        }
+    }
+
+    /**
+     * Main side: for each integer index, k-way merge the per-shard
+     * sort runs and write the resulting b-tree into the index's
+     * already-allocated rootpage.
+     *
+     * Pre-conditions:
+     *   - main has CREATE INDEX'd these indexes already so the
+     *     rootpages exist (each pointing at an empty leaf)
+     *   - main is closed (PDO connection unset) so the writer can
+     *     do raw page I/O
+     *
+     * @param array<int, string> $shard_paths shard index => path
+     */
+    private function mergeIntegerIndexes(array $shard_paths, string $main_path): void
+    {
+        foreach (self::integerIndexSpecs() as [$index_name, $_table, $_key]) {
+            $reader = SqliteRawReader::open($main_path);
+            $rootpage = $reader->findSchemaEntry($index_name);
+            if ($rootpage === null) {
+                // Index wasn't created — caller bug. Skip rather than
+                // throw, so an unexpected schema doesn't prevent the
+                // rest of the merge from completing.
+                continue;
+            }
+            $sort_runs = [];
+            foreach ($shard_paths as $shard_path) {
+                $run_path = self::sortRunPath($shard_path, $index_name);
+                if (file_exists($run_path)) {
+                    $sort_runs[] = new SortRunReader($run_path);
+                }
+            }
+            if ($sort_runs === []) {
+                continue;
+            }
+            $writer = SqliteRawWriter::open($main_path);
+            $merger = new IntegerIndexMerger($writer, $sort_runs, 1); // run_id = 1 (we're always the only run)
+            try {
+                $merger->merge($rootpage['rootpage']);
+            } catch (OverflowNotSupportedException $_e) {
+                // Should not happen for our 3-int payloads; if it
+                // does, leave SQLite's CREATE INDEX (run by
+                // createIndexes after this) build the index in the
+                // normal way.
+                continue;
+            }
+            $writer->close($main_path);
+        }
+    }
+
+    /**
+     * Cleanup all sort-run files alongside the given shards. Called
+     * unconditionally at the end of the merge so failures don't leak
+     * gigabytes of temp data.
+     *
+     * @param array<int, string> $shard_paths
+     */
+    private function cleanupSortRuns(array $shard_paths): void
+    {
+        foreach ($shard_paths as $shard_path) {
+            foreach (self::integerIndexSpecs() as [$index_name, $_table, $_key]) {
+                $run_path = self::sortRunPath($shard_path, $index_name);
+                if (file_exists($run_path)) {
+                    @unlink($run_path);
+                }
+            }
+        }
     }
 
     /**

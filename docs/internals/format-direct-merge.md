@@ -2,9 +2,80 @@
 
 ## Status
 
-**Not yet implemented.** Foundational pieces (`SqliteRaw\Format` constants
-+ varint codec, with round-trip tests) are in place. The remaining
-work is the page-level reader/writer and the merger itself.
+  - **Stage K (table b-tree merge): landed**, with `PdoMemoryOutputRmemIngestTest`
+    passing on the 5-node fixture and the merged DB returning
+    `PRAGMA integrity_check = ok`.
+  - **Stage L (integer index k-way merge): plumbed in but has a
+    correctness bug at ≥ 5K rows.** All foundation pieces work
+    standalone: RecordEncoder is byte-for-byte verified against
+    SQLite's own on-disk encoding for every type-code transition;
+    SortRunWriter / SortRunReader round-trip; IntegerIndexMerger
+    builds correct b-trees for the small (5-row) parity fixture.
+    What fails at 5K is the *integration*: the format-direct table
+    merge ends up with 5000 rows in `context_edges` while the
+    integer index `idx_context_edges_run_child` has 5013, so
+    `PRAGMA integrity_check` reports `wrong # of entries in
+    index idx_context_edges_run_child`. The mismatch is
+    `BinaryContextTreeSink`'s edge section element count (5013 for
+    a 5000-node tree because of the synthetic root sentinel and
+    a couple of internal extras) vs the merged table's row count
+    (5000). One of these is right; the other is wrong. The
+    investigation handoff is in the next subsection.
+
+### Next-session handoff for the L correctness bug
+
+Reproducer (synthetic, no I/O outside reli's existing classes):
+
+```php
+$rmem = tempnam(sys_get_temp_dir(), 'x_') . '.rmem';
+$dbp  = tempnam(sys_get_temp_dir(), 'x_') . '.db';
+
+$sink = new BinaryContextTreeSink(batch_size: 1024);
+for ($i = 1; $i <= 5000; $i++) {
+    $sink->emitNode(
+        node_id: $i,
+        parent_node_id: $i === 1 ? null : intdiv($i, 2),
+        link_name: "c$i",
+        type: 'ObjectContext',
+        locations: [new ZendObjectMemoryLocation(0x1000 * $i, 64, 1, 7, 'Cls' . ($i % 50))],
+        attributes: [],
+    );
+}
+(new BinaryMemoryOutput($rmem))->finalizeStreaming($sink, [['k' => 'v']]);
+
+(new PdoMemoryOutput(new SqliteDriver($dbp)))->ingestFromRmem($rmem, [['k' => 'v']]);
+
+$db = new PDO("sqlite:$dbp");
+$db->query('PRAGMA integrity_check'); // returns "wrong # of entries in index idx_context_edges_run_child"
+$db->query('SELECT COUNT(*) FROM context_edges');                          // 5013 (uses index)
+$db->query('SELECT COUNT(*) FROM context_edges NOT INDEXED WHERE run_id=1'); // 5000 (full scan)
+```
+
+Investigation suggestions:
+
+  1. Print `$reader->getSectionElementCount(Format::SECTION_EDGES)`
+     immediately after `BinaryMemoryOutput::finalizeStreaming` for
+     the same fixture. If it's 5013, then workers correctly slice
+     5013 rows; the integer index population is fine; the table
+     merge is dropping 13 rows. If it's 5000, then the integer
+     index is over-counting somewhere — probably a duplicate cell
+     emitted from the k-way merge heap.
+  2. If the table merge is dropping rows, instrument
+     `TableMerger::verifyLeafAndGetMaxRowid` to count cells per
+     leaf and sum across all leaves it copies. Compare to
+     `cell_count` field of the source leaf header.
+  3. Suspect: empty trailing leaves on shards (the
+     `if ((int)$cell_count === 0) continue` branch). For 5013 / 4
+     workers, three workers get 1253 rows each and one gets 1254,
+     so empty leaves are unlikely — but worth verifying.
+
+The integer index merger and the foundation classes (RecordEncoder,
+varint, SortRunReader/Writer, IndexLeafBuilder logic) are all unit-
+tested independently and known good. The bug is in *one of*: table
+merge cell-collection at scale, or the heap behaviour in
+`IntegerIndexMerger::mergeStream` when sort runs hit specific
+boundaries. Both are local to a single class and should be
+diagnosable in <1 session of focused work.
 
 ## Why we want this
 
