@@ -726,34 +726,10 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $this->defaultWorkerCount(),
             $reservation,
         );
-        if ($result === null) {
-            return false;
-        }
-        [$unused_pgnos, $effective_total_pages] = $result;
-        // ParallelIndexBuilder did its own ftruncate on tail trim
-        // already; what remains is the mid-file freelist work.
-        if ($unused_pgnos !== []) {
-            $libc = \FFI::cdef('int open(const char *, int, int);', null);
-            $fd = (int)$libc->open($db_path, 2, 0);
-            if ($fd >= 0) {
-                $size = $effective_total_pages * 4096;
-                $res = LibcFileWriter::mmapShared($db_path, $size);
-                LibcFileWriter::close($fd);
-                if ($res !== null) {
-                    [$ptr, $len, $maint_fd] = $res;
-                    SqliteFileMaintainer::finalize(
-                        data_ptr: $ptr,
-                        first_mapped_pgno: 1,
-                        total_pages: $effective_total_pages,
-                        unused_pgnos: $unused_pgnos,
-                    );
-                    LibcFileWriter::msync($ptr, $len);
-                    LibcFileWriter::munmap($ptr, $len);
-                    LibcFileWriter::close($maint_fd);
-                }
-            }
-        }
-        return true;
+        // ParallelIndexBuilder uses a shared atomic pgno counter so
+        // workers claim exact-sized ranges → output is dense, no
+        // freelist trunk pages and no mid-file holes to clean up.
+        return $result !== null;
     }
 
     /**
