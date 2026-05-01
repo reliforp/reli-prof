@@ -169,6 +169,7 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
             $sink->getEdgeTmpPath(),
             $sink->getEdgeCount(),
             $sink->getNodeCount(),
+            $sink->getNodeTmpPath(),
         );
 
         $writer->finish();
@@ -189,19 +190,60 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
      * - SECTION_TREE_CSR_ROWPTR / COLIDX / LINKNAMES / STRENGTH
      * - SECTION_TREE_PARENTS
      * - SECTION_NONTREE_CSR_ROWPTR / COLIDX
+     *
+     * Slot space matches the reader's: each emitted node_id is assigned a
+     * slot equal to its position in the nodes section (first occurrence
+     * wins on duplicates), and the synthetic root parent (-1) sits at
+     * the trailing sentinel slot. Storing CSR rowptr/colidx/tree_parents
+     * keyed by slot — not by raw node_id — keeps the on-disk CSR usable
+     * for any node_id range, not just the dense `0..nodeCount-1` shape
+     * that ContextAnalyzer happens to produce.
      */
     private function buildCsrSections(
         Writer $writer,
         string $edgeTmpPath,
         int $edgeCount,
         int $nodeCount,
+        string $nodeTmpPath,
     ): void {
         if ($edgeCount === 0 || $nodeCount === 0) {
             return;
         }
 
-        // node_id range: 0..nodeCount-1 plus -1 sentinel (mapped to nodeCount)
-        $nc = $nodeCount + 1; // +1 for sentinel -1 → index $nodeCount
+        // Build node_id → slot map by streaming the node temp file in
+        // emission order. The reader assigns the same slot ordering when
+        // it iterates the nodes section, so writer and reader agree on
+        // which slot each node lives in.
+        $nodeIdToSlot = [];
+        $nodeFp = fopen($nodeTmpPath, 'rb');
+        if ($nodeFp === false) {
+            return;
+        }
+        $slot = 0;
+        $remainingNodes = $nodeCount;
+        while ($remainingNodes > 0) {
+            $batch = min($remainingNodes, 10000);
+            $data = fread($nodeFp, $batch * 16);
+            if ($data === false || strlen($data) < $batch * 16) {
+                break;
+            }
+            for ($i = 0; $i < $batch; $i++) {
+                /** @var array{1: int} */
+                $idRaw = unpack('V', $data, $i * 16);
+                $nid = $idRaw[1];
+                if (!isset($nodeIdToSlot[$nid])) {
+                    $nodeIdToSlot[$nid] = $slot;
+                }
+                $slot++;
+            }
+            $remainingNodes -= $batch;
+        }
+        fclose($nodeFp);
+
+        // Reader: nc = (distinct node_ids) + 1 (for the -1 sentinel).
+        $uniqueNodeCount = count($nodeIdToSlot);
+        $nc = $uniqueNodeCount + 1;
+        $sentinelSlot = $uniqueNodeCount;
 
         // Allocate degree arrays
         $treeDeg = FFIHelper::newInt32Array($nc);
@@ -223,7 +265,6 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
             return;
         }
 
-        $chunk_size = 16 * 10000; // read 10K edges at a time
         $remaining = $edgeCount;
         while ($remaining > 0) {
             $batch = min($remaining, 10000);
@@ -237,29 +278,30 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
                 $parent_raw = unpack('V', $data, $off);
                 $parent = $parent_raw[1];
                 if ($parent === 0xFFFFFFFF) {
-                    $parent_idx = $nodeCount; // sentinel -1
+                    $parent_slot = $sentinelSlot;
                 } else {
-                    $parent_idx = $parent;
+                    $parent_slot = $nodeIdToSlot[$parent] ?? -1;
                 }
+                /** @var array{1: int} */
+                $child_raw = unpack('V', $data, $off + 4);
+                $child_slot = $nodeIdToSlot[$child_raw[1]] ?? -1;
+
+                if ($parent_slot < 0 || $child_slot < 0) {
+                    continue;
+                }
+
                 $is_tree = ord($data[$off + 12]);
 
-                if ($parent_idx < $nc) {
-                    $allDeg[$parent_idx] = $allDeg[$parent_idx] + 1;
-                    if ($is_tree === 1) {
-                        $treeDeg[$parent_idx] = $treeDeg[$parent_idx] + 1;
-                        $treeEdgeCount++;
+                $allDeg[$parent_slot] = $allDeg[$parent_slot] + 1;
+                if ($is_tree === 1) {
+                    $treeDeg[$parent_slot] = $treeDeg[$parent_slot] + 1;
+                    $treeEdgeCount++;
 
-                        // Track tree parent for child
-                        /** @var array{1: int} */
-                        $child_raw = unpack('V', $data, $off + 4);
-                        $child_idx = $child_raw[1];
-                        if ($child_idx < $nc) {
-                            $treeParents[$child_idx] = $parent_idx;
-                        }
-                    } else {
-                        $nontreeDeg[$parent_idx] = $nontreeDeg[$parent_idx] + 1;
-                        $nontreeEdgeCount++;
-                    }
+                    // Track tree parent for child
+                    $treeParents[$child_slot] = $parent_slot;
+                } else {
+                    $nontreeDeg[$parent_slot] = $nontreeDeg[$parent_slot] + 1;
+                    $nontreeEdgeCount++;
                 }
             }
             $remaining -= $batch;
@@ -319,11 +361,17 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
                 /** @var array{1: int} */
                 $parent_raw = unpack('V', $data, $off);
                 $parent = $parent_raw[1];
-                $parent_idx = ($parent === 0xFFFFFFFF) ? $nodeCount : $parent;
+                $parent_slot = ($parent === 0xFFFFFFFF)
+                    ? $sentinelSlot
+                    : ($nodeIdToSlot[$parent] ?? -1);
 
                 /** @var array{1: int} */
                 $child_raw = unpack('V', $data, $off + 4);
-                $child_idx = $child_raw[1];
+                $child_slot = $nodeIdToSlot[$child_raw[1]] ?? -1;
+
+                if ($parent_slot < 0 || $child_slot < 0) {
+                    continue;
+                }
 
                 /** @var array{1: int} */
                 $link_raw = unpack('V', $data, $off + 8);
@@ -332,22 +380,20 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
                 $is_tree = ord($data[$off + 12]);
                 $strength = ord($data[$off + 13]);
 
-                if ($parent_idx < $nc) {
-                    $pos = $allPos[$parent_idx];
-                    $allColIdx[$pos] = $child_idx;
-                    $allPos[$parent_idx] = $pos + 1;
+                $pos = $allPos[$parent_slot];
+                $allColIdx[$pos] = $child_slot;
+                $allPos[$parent_slot] = $pos + 1;
 
-                    if ($is_tree === 1) {
-                        $pos = $treePos[$parent_idx];
-                        $treeColIdx[$pos] = $child_idx;
-                        $treeLinkNames[$pos] = $link_name_id;
-                        $treeStrength[$pos] = $strength;
-                        $treePos[$parent_idx] = $pos + 1;
-                    } else {
-                        $pos = $nontreePos[$parent_idx];
-                        $nontreeColIdx[$pos] = $child_idx;
-                        $nontreePos[$parent_idx] = $pos + 1;
-                    }
+                if ($is_tree === 1) {
+                    $pos = $treePos[$parent_slot];
+                    $treeColIdx[$pos] = $child_slot;
+                    $treeLinkNames[$pos] = $link_name_id;
+                    $treeStrength[$pos] = $strength;
+                    $treePos[$parent_slot] = $pos + 1;
+                } else {
+                    $pos = $nontreePos[$parent_slot];
+                    $nontreeColIdx[$pos] = $child_slot;
+                    $nontreePos[$parent_slot] = $pos + 1;
                 }
             }
             $remaining -= $batch;
