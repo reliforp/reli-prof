@@ -457,7 +457,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         if ($stmt !== false) {
             /** @var array{name: string, rootpage: int} $row */
             foreach ($stmt as $row) {
-                $rootpages[(string)$row['name']] = (int)$row['rootpage'];
+                $rootpages[$row['name']] = $row['rootpage'];
             }
         }
         $current_pages = (int)$db->query('PRAGMA page_count')->fetchColumn();
@@ -482,7 +482,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 return false;
             }
             $rows_per_worker = (int)ceil($count / $worker_count);
-            $bytes_per_row = (int)ceil(($est_avg_cell_bytes[$name] ?? 100) * 1.15);
+            $bytes_per_row = (int)ceil((float)($est_avg_cell_bytes[$name] ?? 100) * 1.15);
             $est_leaves = (int)ceil(($rows_per_worker * $bytes_per_row) / 3500);
             $tables[$name] = [$count, max(1, $est_leaves)];
         }
@@ -694,14 +694,37 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             return false;
         }
         $specs = self::userIndexSpecs();
-        // Close PDO so the file is consistent before workers cp it.
         $db_path = $this->driver->path();
-        // We can't unset the caller's $db, but we can rely on the
-        // file being in a consistent state after the prior commits.
+
+        // Reservation budget per index, tuned to the largest source
+        // table's row count. The shard subset table is rowid-aligned
+        // with main, so the per-shard index has roughly the same
+        // page count as the equivalent index built directly on
+        // main. Worst-case entry size in our schema is ~70 bytes
+        // (TEXT key + rowid varint), giving ~55 entries per leaf
+        // page → ceil(rows/50) pages of leaves plus a constant for
+        // interior + slack.
+        $max_rows = 0;
+        foreach (['context_nodes', 'context_edges', 'context_node_locations', 'context_node_attributes'] as $tbl) {
+            try {
+                $count = (int)$db->query("SELECT COUNT(*) FROM {$tbl}")->fetchColumn();
+                if ($count > $max_rows) {
+                    $max_rows = $count;
+                }
+            } catch (\Throwable) {
+                // table may not exist; skip
+            }
+        }
+        $reservation = max(
+            ParallelIndexBuilder::PAGES_PER_INDEX_RESERVATION_FLOOR,
+            (int)ceil($max_rows / 50) + 256,
+        );
+
         $result = ParallelIndexBuilder::build(
             $db_path,
             $specs,
             $this->defaultWorkerCount(),
+            $reservation,
         );
         if ($result === null) {
             return false;
@@ -711,7 +734,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         // already; what remains is the mid-file freelist work.
         if ($unused_pgnos !== []) {
             $libc = \FFI::cdef('int open(const char *, int, int);', null);
-            $fd = $libc->open($db_path, 2, 0);
+            $fd = (int)$libc->open($db_path, 2, 0);
             if ($fd >= 0) {
                 $size = $effective_total_pages * 4096;
                 $res = LibcFileWriter::mmapShared($db_path, $size);
@@ -738,71 +761,106 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * parallel CREATE INDEX path uses. Mirrors the statements in
      * {@see createIndexes} so both paths produce the same indexes.
      *
-     * @return list<array{string, string, string}> [name, table, sql]
+     * Each spec also lists the column subset the worker needs to
+     * pull from main into its shard. The shard creates a tiny
+     * `subset` table with `(rowid INTEGER PRIMARY KEY, ...cols)`
+     * preserving main's rowid (so the resulting index's rowid
+     * pointers stay valid when relocated back), runs CREATE INDEX
+     * on `subset`, and the orchestrator inserts a sqlite_master
+     * row with the original SQL — the index storage doesn't
+     * reference the table by name, only by rowid, so a query like
+     * `SELECT ... FROM context_edges WHERE run_id = ? AND child_node_id = ?`
+     * still hits the relocated index correctly.
+     *
+     * `partial_where` is appended after the column copy so the
+     * shard table doesn't have to carry the columns the WHERE
+     * clause references but the key doesn't.
+     *
+     * @return list<array{
+     *     name: string,
+     *     table: string,
+     *     sql: string,
+     *     columns: list<string>,
+     * }>
      */
     private static function userIndexSpecs(): array
     {
         return [
             [
-                'idx_context_edges_run_child',
-                'context_edges',
-                'CREATE INDEX idx_context_edges_run_child'
+                'name' => 'idx_context_edges_run_child',
+                'table' => 'context_edges',
+                'sql' => 'CREATE INDEX idx_context_edges_run_child'
                     . ' ON context_edges(run_id, child_node_id)',
+                'columns' => ['run_id', 'child_node_id'],
             ],
             [
-                'idx_context_node_locations_run_node',
-                'context_node_locations',
-                'CREATE INDEX idx_context_node_locations_run_node'
+                'name' => 'idx_context_node_locations_run_node',
+                'table' => 'context_node_locations',
+                'sql' => 'CREATE INDEX idx_context_node_locations_run_node'
                     . ' ON context_node_locations(run_id, node_id)',
+                'columns' => ['run_id', 'node_id'],
             ],
             [
-                'idx_context_node_locations_run_class',
-                'context_node_locations',
-                'CREATE INDEX idx_context_node_locations_run_class'
+                'name' => 'idx_context_node_locations_run_class',
+                'table' => 'context_node_locations',
+                'sql' => 'CREATE INDEX idx_context_node_locations_run_class'
                     . ' ON context_node_locations(run_id, class_name)',
+                'columns' => ['run_id', 'class_name'],
             ],
             [
-                'idx_context_node_attributes_run_node',
-                'context_node_attributes',
-                'CREATE INDEX idx_context_node_attributes_run_node'
+                'name' => 'idx_context_node_attributes_run_node',
+                'table' => 'context_node_attributes',
+                'sql' => 'CREATE INDEX idx_context_node_attributes_run_node'
                     . ' ON context_node_attributes(run_id, node_id)',
+                'columns' => ['run_id', 'node_id'],
             ],
             [
-                'idx_context_node_locations_run_type',
-                'context_node_locations',
-                'CREATE INDEX idx_context_node_locations_run_type'
+                'name' => 'idx_context_node_locations_run_type',
+                'table' => 'context_node_locations',
+                'sql' => 'CREATE INDEX idx_context_node_locations_run_type'
                     . ' ON context_node_locations(run_id, location_type)',
+                'columns' => ['run_id', 'location_type'],
             ],
             [
-                'idx_context_node_locations_run_type_size',
-                'context_node_locations',
-                'CREATE INDEX idx_context_node_locations_run_type_size'
+                'name' => 'idx_context_node_locations_run_type_size',
+                'table' => 'context_node_locations',
+                'sql' => 'CREATE INDEX idx_context_node_locations_run_type_size'
                     . ' ON context_node_locations(run_id, location_type, size)',
+                'columns' => ['run_id', 'location_type', 'size'],
             ],
             [
-                'idx_context_edges_run_link_parent',
-                'context_edges',
-                'CREATE INDEX idx_context_edges_run_link_parent'
+                'name' => 'idx_context_edges_run_link_parent',
+                'table' => 'context_edges',
+                'sql' => 'CREATE INDEX idx_context_edges_run_link_parent'
                     . ' ON context_edges(run_id, link_name, parent_node_id)',
+                'columns' => ['run_id', 'link_name', 'parent_node_id'],
             ],
             [
-                'idx_context_edges_strong_nontree_links',
-                'context_edges',
-                'CREATE INDEX idx_context_edges_strong_nontree_links'
+                'name' => 'idx_context_edges_strong_nontree_links',
+                'table' => 'context_edges',
+                'sql' => 'CREATE INDEX idx_context_edges_strong_nontree_links'
                     . ' ON context_edges(run_id, link_name, child_node_id, parent_node_id)'
                     . " WHERE is_tree = 0 AND strength = 'strong'",
+                // Partial WHERE references is_tree + strength, so the
+                // shard subset has to carry them too.
+                'columns' => [
+                    'run_id', 'link_name', 'child_node_id',
+                    'parent_node_id', 'is_tree', 'strength',
+                ],
             ],
             [
-                'idx_context_nodes_canonical',
-                'context_nodes',
-                'CREATE INDEX idx_context_nodes_canonical'
+                'name' => 'idx_context_nodes_canonical',
+                'table' => 'context_nodes',
+                'sql' => 'CREATE INDEX idx_context_nodes_canonical'
                     . ' ON context_nodes(run_id, canonical_node_id)',
+                'columns' => ['run_id', 'canonical_node_id'],
             ],
             [
-                'idx_context_node_locations_region_addr_size',
-                'context_node_locations',
-                'CREATE INDEX idx_context_node_locations_region_addr_size'
+                'name' => 'idx_context_node_locations_region_addr_size',
+                'table' => 'context_node_locations',
+                'sql' => 'CREATE INDEX idx_context_node_locations_region_addr_size'
                     . ' ON context_node_locations(run_id, region, address, size)',
+                'columns' => ['run_id', 'region', 'address', 'size'],
             ],
         ];
     }

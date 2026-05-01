@@ -61,12 +61,14 @@ final class ParallelIndexBuilder
     public const int PAGE_SIZE = 4096;
 
     /**
-     * Per-(worker, index) page reservation. Sparse file so the
-     * upper bound only matters for offset arithmetic — unused
-     * tails are recovered. 16384 pgnos = 64 MiB is comfortable
-     * for any single index built from a reasonable-sized table.
+     * Floor for the per-index page reservation. Sparse file so the
+     * upper bound mostly affects offset arithmetic, but mid-file
+     * unused pages can't be reclaimed without VACUUM so we want
+     * the reservation to track real index size. The orchestrator
+     * passes a `pages_per_index_reservation` value derived from
+     * row count and column shape; this is the minimum.
      */
-    public const int PAGES_PER_INDEX_RESERVATION = 16384;
+    public const int PAGES_PER_INDEX_RESERVATION_FLOOR = 1024;
 
     /** Bytes the worker meta region uses per (worker, index) slot. */
     private const int META_BYTES_PER_SLOT = 16;
@@ -77,19 +79,27 @@ final class ParallelIndexBuilder
      * final effective page count of the file. Returns null when
      * fork or FFI is unavailable or any worker fails.
      *
-     * `$index_specs` is a list of `[index_name, table_name, sql]`
-     * tuples. The orchestrator runs `$sql` in each shard, looks up
-     * the index's rootpage by `index_name` afterwards, and inserts
-     * the `(name, table_name, sql, rootpage)` tuple into the main's
-     * sqlite_master.
+     * `$index_specs` is a list of associative arrays:
+     *   `name`      — index name
+     *   `table`     — source table name in main
+     *   `sql`       — original CREATE INDEX statement (verbatim, used
+     *                 for the sqlite_master row inserted at the end)
+     *   `columns`   — list of source-table columns the index plus its
+     *                 partial WHERE need; the worker creates a tiny
+     *                 `subset` table in its shard with these columns
+     *                 (rowid preserved from main) and runs the index
+     *                 build against that, instead of cp-ing the whole
+     *                 main DB. ~10-30x less I/O than full cp on real
+     *                 schemas.
      *
-     * @param list<array{string, string, string}> $index_specs
+     * @param list<array{name: string, table: string, sql: string, columns: list<string>}> $index_specs
      * @return array{list<int>, int}|null [unused_pgnos, effective_total_pages]
      */
     public static function build(
         string $main_db_path,
         array $index_specs,
         int $worker_count,
+        int $pages_per_index_reservation = self::PAGES_PER_INDEX_RESERVATION_FLOOR,
     ): ?array {
         if (
             !extension_loaded('ffi')
@@ -115,7 +125,10 @@ final class ParallelIndexBuilder
         if ($current_pages === null) {
             return null;
         }
-        $reservation_per_idx = self::PAGES_PER_INDEX_RESERVATION;
+        $reservation_per_idx = max(
+            self::PAGES_PER_INDEX_RESERVATION_FLOOR,
+            $pages_per_index_reservation,
+        );
         $first_pgno = $current_pages + 1;
         // Per (worker, idx) reservations laid out contiguously in
         // worker-then-index order so a worker's reservations are
@@ -225,8 +238,8 @@ final class ParallelIndexBuilder
                 $bytes = self::readMetaSlot($meta_ptr, $offset);
                 /** @var array{root: int, count: int} $u */
                 $u = unpack('Nroot/Ncount', $bytes);
-                $root = (int)$u['root'];
-                $page_count = (int)$u['count'];
+                $root = $u['root'];
+                $page_count = $u['count'];
                 if ($root === 0 || $page_count === 0) {
                     return null;
                 }
@@ -239,9 +252,9 @@ final class ParallelIndexBuilder
                 if ($actual_end > $highest_used_pgno) {
                     $highest_used_pgno = $actual_end;
                 }
-                $index_results[$spec[0]] = [
-                    'table' => $spec[1],
-                    'sql' => $spec[2],
+                $index_results[$spec['name']] = [
+                    'table' => $spec['table'],
+                    'sql' => $spec['sql'],
                     'root' => $root,
                 ];
             }
@@ -279,6 +292,10 @@ final class ParallelIndexBuilder
             @unlink($meta_path);
         }
 
+        // The early `return null` on worker failure already happens
+        // before we get here via the wait loop, but keeping the
+        // guard makes the contract explicit.
+        /** @psalm-suppress TypeDoesNotContainType */
         if ($any_failure) {
             return null;
         }
@@ -303,7 +320,7 @@ final class ParallelIndexBuilder
     }
 
     /**
-     * @param list<array{int, array{string, string, string}}> $bucket
+     * @param list<array{int, array{name: string, table: string, sql: string, columns: list<string>}}> $bucket
      * @param array<int, int> $worker_reservations
      */
     private static function runWorker(
@@ -315,9 +332,10 @@ final class ParallelIndexBuilder
         \FFI\CData $data_ptr,
         \FFI\CData $meta_ptr,
     ): void {
-        if (!copy($main_db_path, $shard_path)) {
-            throw new \RuntimeException("failed to cp main → {$shard_path}");
-        }
+        // Empty shard. ATTACH main read-only and INSERT just the
+        // column subset each assigned index needs, preserving main's
+        // rowid so the index's rowid pointers stay valid when its
+        // pages get relocated back.
         $db = new \PDO("sqlite:{$shard_path}");
         $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
         $db->exec('PRAGMA synchronous = OFF');
@@ -325,19 +343,66 @@ final class ParallelIndexBuilder
         $db->exec('PRAGMA temp_store = MEMORY');
         $db->exec('PRAGMA cache_size = -262144');
         $db->exec('PRAGMA threads = 2');
+        $db->exec("ATTACH DATABASE " . $db->quote($main_db_path) . " AS m");
 
-        // Phase 1: native CREATE INDEX for each assigned spec; record
-        // each new index's rootpage in the shard.
+        // Group assigned specs by source table so a worker that
+        // owns multiple indexes on the same table only carries one
+        // shard subset table (with the union of needed columns).
+        /** @var array<string, array{cols: array<string, true>, specs: list<array{int, array{name: string, table: string, sql: string, columns: list<string>}}>}> $by_table */
+        $by_table = [];
+        foreach ($bucket as $entry) {
+            [$_global_idx, $spec] = $entry;
+            $tbl = $spec['table'];
+            if (!isset($by_table[$tbl])) {
+                $by_table[$tbl] = ['cols' => [], 'specs' => []];
+            }
+            foreach ($spec['columns'] as $c) {
+                $by_table[$tbl]['cols'][$c] = true;
+            }
+            $by_table[$tbl]['specs'][] = $entry;
+        }
+
+        $qi = static fn (string $id): string => '"' . str_replace('"', '""', $id) . '"';
+
+        // For each table group: CREATE TABLE shard_<tbl> with rowid
+        // preserved from main, INSERT the column subset, then loop
+        // over its assigned indexes building each on the subset.
         $shard_roots = [];
-        foreach ($bucket as [$global_idx, $spec]) {
-            [$index_name, $_table, $sql] = $spec;
-            $db->exec($sql);
-            $shard_roots[$global_idx] = (int)$db->query(
-                'SELECT rootpage FROM sqlite_master WHERE name = '
-                . $db->quote($index_name)
-            )->fetchColumn();
-            if ($shard_roots[$global_idx] <= 0) {
-                throw new \RuntimeException("CREATE INDEX produced no rootpage for {$index_name}");
+        foreach ($by_table as $tbl => $group) {
+            $cols = array_keys($group['cols']);
+            $col_list = implode(', ', array_map($qi, $cols));
+            $col_decls = implode(', ', array_map(
+                static fn (string $c): string => $qi($c),
+                $cols,
+            ));
+            $shard_table = $tbl;
+            // Create the shard table with the SAME name as main's
+            // so the original CREATE INDEX SQL applies verbatim.
+            // rowid is the SQLite default; main's INTEGER PRIMARY
+            // KEY tables expose `id` as the rowid alias, the others
+            // (context_nodes) use the implicit rowid.
+            $id_select = self::sourceRowIdExpression($tbl);
+            $db->exec(
+                "CREATE TABLE {$qi($shard_table)} ("
+                . "rowid INTEGER PRIMARY KEY, {$col_decls}"
+                . ")"
+            );
+            $db->exec(
+                "INSERT INTO {$qi($shard_table)} (rowid, {$col_list})"
+                . " SELECT {$id_select}, {$col_list} FROM m.{$qi($tbl)}"
+            );
+
+            foreach ($group['specs'] as [$global_idx, $spec]) {
+                $db->exec($spec['sql']);
+                $shard_roots[$global_idx] = (int)$db->query(
+                    'SELECT rootpage FROM sqlite_master WHERE name = '
+                    . $db->quote($spec['name'])
+                )->fetchColumn();
+                if ($shard_roots[$global_idx] <= 0) {
+                    throw new \RuntimeException(
+                        "CREATE INDEX produced no rootpage for {$spec['name']}"
+                    );
+                }
             }
         }
         // Close PDO so the shard file is consistent before we read
@@ -381,6 +446,19 @@ final class ParallelIndexBuilder
         } finally {
             fclose($fp);
         }
+    }
+
+    /**
+     * Returns the SELECT expression that yields main's rowid for a
+     * given source table — the INTEGER PRIMARY KEY column alias for
+     * tables that have one, or `rowid` for those that don't.
+     * Mirrors {@see PdoMemoryOutput::createTables}'s schema choices
+     * and stays in sync with it: context_nodes uses a compound PK
+     * (no rowid alias), the other three tables use `id`.
+     */
+    private static function sourceRowIdExpression(string $table): string
+    {
+        return $table === 'context_nodes' ? 'rowid' : 'id';
     }
 
     private static function pageCount(string $db_path): ?int
