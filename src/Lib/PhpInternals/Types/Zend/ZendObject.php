@@ -89,6 +89,15 @@ final class ZendObject implements CDataDereferencable
         );
     }
 
+    /**
+     * The runtime object id PHP exposes as `#N` in `var_dump` /
+     * `spl_object_id()`. Stable for the lifetime of the object.
+     */
+    public function getHandle(): int
+    {
+        return $this->casted_cdata->casted->handle;
+    }
+
     public function getMemorySize(
         Dereferencer $dereferencer,
     ): int {

@@ -267,6 +267,212 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
         );
     }
 
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testPeekVarDumpFormat(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        $target_script = <<<'CODE'
+            <?php
+            class Foo {
+                public int $pub = 1;
+                private string $priv = "secret";
+            }
+            $GLOBALS['arr'] = ['a' => 1, 'b' => [10, 20]];
+            $GLOBALS['obj'] = new Foo();
+            $GLOBALS['s'] = "hi";
+            fputs(STDOUT, "ready\n");
+            fgets(STDIN);
+            CODE;
+
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes,
+        );
+        $this->assertSame("ready\n", fgets($pipes[1]));
+
+        $command = $this->createCommand();
+        (new Application())->addCommand($command);
+
+        $tester = new CommandTester($command);
+        $tester->execute([
+            '-p' => (string)$pid,
+            '--var' => ['global::$arr', 'global::$obj', 'global::$s'],
+            '--format' => 'var-dump',
+            '--php-version' => $php_version,
+        ]);
+
+        $this->assertSame(0, $tester->getStatusCode());
+        $display = $tester->getDisplay();
+        // Native: array(2) { ["a"]=> int(1) ["b"]=> array(2) { [0]=> int(10) [1]=> int(20) } }
+        $this->assertStringContainsString('array(2) {', $display);
+        $this->assertStringContainsString('["a"]=>', $display);
+        $this->assertStringContainsString('int(1)', $display);
+        $this->assertStringContainsString('int(10)', $display);
+        $this->assertStringContainsString('int(20)', $display);
+        $this->assertStringContainsString('object(Foo)', $display);
+        $this->assertStringContainsString('["pub"]=>', $display);
+        $this->assertStringContainsString('["priv":"Foo":private]=>', $display);
+        $this->assertStringContainsString('string(6) "secret"', $display);
+        $this->assertStringContainsString('string(2) "hi"', $display);
+    }
+
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testPeekVarExportFormat(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        $target_script = <<<'CODE'
+            <?php
+            $GLOBALS['arr'] = ['a' => 1, 'b' => [10, 20]];
+            fputs(STDOUT, "ready\n");
+            fgets(STDIN);
+            CODE;
+
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes,
+        );
+        $this->assertSame("ready\n", fgets($pipes[1]));
+
+        $command = $this->createCommand();
+        (new Application())->addCommand($command);
+
+        $tester = new CommandTester($command);
+        $tester->execute([
+            '-p' => (string)$pid,
+            '--var' => ['global::$arr'],
+            '--format' => 'var-export',
+            '--php-version' => $php_version,
+        ]);
+
+        $this->assertSame(0, $tester->getStatusCode());
+        $display = $tester->getDisplay();
+        $expected = var_export(['a' => 1, 'b' => [10, 20]], true);
+        $this->assertStringContainsString($expected, $display);
+    }
+
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testPeekPhpSerializeFormat(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        $target_script = <<<'CODE'
+            <?php
+            $GLOBALS['arr'] = ['a' => 1, 'b' => [10, 20]];
+            fputs(STDOUT, "ready\n");
+            fgets(STDIN);
+            CODE;
+
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes,
+        );
+        $this->assertSame("ready\n", fgets($pipes[1]));
+
+        $command = $this->createCommand();
+        (new Application())->addCommand($command);
+
+        $tester = new CommandTester($command);
+        $tester->execute([
+            '-p' => (string)$pid,
+            '--var' => ['global::$arr'],
+            '--format' => 'php-serialize',
+            '--php-version' => $php_version,
+        ]);
+
+        $this->assertSame(0, $tester->getStatusCode());
+        $display = $tester->getDisplay();
+        $expected = serialize(['a' => 1, 'b' => [10, 20]]);
+        $this->assertStringContainsString($expected, $display);
+    }
+
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testPeekVarDumpRespectsMaxDepth(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        $target_script = <<<'CODE'
+            <?php
+            $GLOBALS['nested'] = ['outer' => ['inner' => ['deep' => 1]]];
+            fputs(STDOUT, "ready\n");
+            fgets(STDIN);
+            CODE;
+
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes,
+        );
+        $this->assertSame("ready\n", fgets($pipes[1]));
+
+        $command = $this->createCommand();
+        (new Application())->addCommand($command);
+
+        $tester = new CommandTester($command);
+        $tester->execute([
+            '-p' => (string)$pid,
+            '--var' => ['global::$nested'],
+            '--format' => 'var-dump',
+            '--max-depth' => '1',
+            '--php-version' => $php_version,
+        ]);
+
+        $this->assertSame(0, $tester->getStatusCode());
+        $display = $tester->getDisplay();
+        // Outer expanded, inner shown as `...` placeholder.
+        $this->assertStringContainsString('["outer"]=>', $display);
+        $this->assertStringContainsString('array(1) {', $display);
+        $this->assertStringNotContainsString('["deep"]=>', $display);
+        $this->assertStringContainsString('...', $display);
+    }
+
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testPeekVarDumpDetectsRecursion(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        $target_script = <<<'CODE'
+            <?php
+            class Node { public ?Node $next = null; }
+            $GLOBALS['n'] = new Node();
+            $GLOBALS['n']->next = $GLOBALS['n'];
+            fputs(STDOUT, "ready\n");
+            fgets(STDIN);
+            CODE;
+
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes,
+        );
+        $this->assertSame("ready\n", fgets($pipes[1]));
+
+        $command = $this->createCommand();
+        (new Application())->addCommand($command);
+
+        $tester = new CommandTester($command);
+        $tester->execute([
+            '-p' => (string)$pid,
+            '--var' => ['global::$n'],
+            '--format' => 'var-dump',
+            '--php-version' => $php_version,
+        ]);
+
+        $this->assertSame(0, $tester->getStatusCode());
+        $display = $tester->getDisplay();
+        $this->assertStringContainsString('object(Node)', $display);
+        $this->assertStringContainsString('*RECURSION*', $display);
+    }
+
     public function testNoVarReturnsError(): void
     {
         $command = $this->createCommand();

@@ -73,7 +73,40 @@ class VariableValueTest extends TestCase
         $this->assertSame('string', VariableValue::TYPE_STRING);
         $this->assertSame('bool', VariableValue::TYPE_BOOL);
         $this->assertSame('array', VariableValue::TYPE_ARRAY);
+        $this->assertSame('object', VariableValue::TYPE_OBJECT);
         $this->assertSame('null', VariableValue::TYPE_NULL);
+        $this->assertSame('recursion', VariableValue::TYPE_RECURSION);
         $this->assertSame('unknown', VariableValue::TYPE_UNKNOWN);
+    }
+
+    public function testRecursiveStructure(): void
+    {
+        $child = new VariableValue(VariableValue::TYPE_LONG, 1, null);
+        $arr = new VariableValue(
+            VariableValue::TYPE_ARRAY,
+            null,
+            1,
+            [['k', $child]],
+        );
+        $this->assertSame('array', $arr->type);
+        $this->assertSame(1, $arr->array_count);
+        $this->assertNotNull($arr->children);
+        $this->assertCount(1, $arr->children);
+        $this->assertSame('k', $arr->children[0][0]);
+        $this->assertSame($child, $arr->children[0][1]);
+    }
+
+    public function testObjectMetadata(): void
+    {
+        $obj = new VariableValue(
+            VariableValue::TYPE_OBJECT,
+            null,
+            0,
+            [],
+            'Foo\\Bar',
+            42,
+        );
+        $this->assertSame('Foo\\Bar', $obj->class_name);
+        $this->assertSame(42, $obj->object_id);
     }
 }

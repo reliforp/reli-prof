@@ -34,6 +34,9 @@ final class ZendPropertyInfo implements CDataDereferencable
     /** @var Pointer<ZendString> */
     public ?Pointer $doc_comment;
 
+    /** @var Pointer<ZendClassEntry>|null */
+    public ?Pointer $ce;
+
     /**
      * @param CastedCData<\FFI\PhpInternals\zend_property_info> $casted_cdata
      * @param Pointer<self> $pointer
@@ -46,6 +49,7 @@ final class ZendPropertyInfo implements CDataDereferencable
         unset($this->flags);
         unset($this->name);
         unset($this->doc_comment);
+        unset($this->ce);
     }
 
     public function __get(string $field_name): mixed
@@ -67,7 +71,34 @@ final class ZendPropertyInfo implements CDataDereferencable
                 )
                 : null
             ,
+            'ce' => $this->ce = $this->casted_cdata->casted->ce !== null
+                ? Pointer::fromCData(
+                    ZendClassEntry::class,
+                    $this->casted_cdata->casted->ce,
+                )
+                : null
+            ,
         };
+    }
+
+    /**
+     * Visibility helpers. ZEND_ACC_* low bits in zend_compile.h:
+     * public=0x01, protected=0x02, private=0x04. Stable from PHP 7.x
+     * onward.
+     */
+    public function isPublic(): bool
+    {
+        return (bool)($this->flags & 0x01);
+    }
+
+    public function isProtected(): bool
+    {
+        return (bool)($this->flags & 0x02);
+    }
+
+    public function isPrivate(): bool
+    {
+        return (bool)($this->flags & 0x04);
     }
 
     /**

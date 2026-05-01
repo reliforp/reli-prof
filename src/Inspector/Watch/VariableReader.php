@@ -63,6 +63,7 @@ final class VariableReader implements VariableReaderInterface
         TargetPhpSettings $target_php_settings,
         int $eg_address,
         int $cg_address = 0,
+        ?VariableReadOptions $options = null,
     ): array {
         if (count($specs) === 0) {
             return [];
@@ -130,12 +131,14 @@ final class VariableReader implements VariableReaderInterface
                         $dereferencer,
                         $zend_type_reader,
                         $name,
+                        $options,
                     ) : null,
                     'local' => $eg !== null ? $this->readLocalVariable(
                         $eg,
                         $dereferencer,
                         $zend_type_reader,
                         $name,
+                        $options,
                     ) : null,
                     'static' => $eg !== null ? $this->readStaticProperty(
                         $eg,
@@ -143,6 +146,7 @@ final class VariableReader implements VariableReaderInterface
                         $zend_type_reader,
                         $name,
                         $cg_address,
+                        $options,
                     ) : null,
                     'func_static' => $eg !== null ? $this->readFuncStaticVariable(
                         $eg,
@@ -150,6 +154,7 @@ final class VariableReader implements VariableReaderInterface
                         $zend_type_reader,
                         $name,
                         $cg_address,
+                        $options,
                     ) : null,
                     default => null,
                 };
@@ -202,6 +207,7 @@ final class VariableReader implements VariableReaderInterface
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
         string $name,
+        ?VariableReadOptions $options,
     ): ?VariableValue {
         // Strip leading $ if present
         $name = str_starts_with($name, '$') ? substr($name, 1) : $name;
@@ -223,7 +229,14 @@ final class VariableReader implements VariableReaderInterface
         if ($zval === null) {
             return null;
         }
-        return $this->zvalToVariableValue($zval, $dereferencer);
+        return $this->buildValue(
+            $zval,
+            $dereferencer,
+            $zend_type_reader,
+            $options,
+            0,
+            [],
+        );
     }
 
     /**
@@ -240,6 +253,7 @@ final class VariableReader implements VariableReaderInterface
         Dereferencer $dereferencer,
         ZendTypeReader $zend_type_reader,
         string $name,
+        ?VariableReadOptions $options,
     ): ?VariableValue {
         [$func_filter, $var_part] = self::parseLocalExpression($name);
         if ($func_filter === null) {
@@ -278,9 +292,13 @@ final class VariableReader implements VariableReaderInterface
                     if ($resolved === null) {
                         return null;
                     }
-                    return $this->zvalToVariableValue(
+                    return $this->buildValue(
                         $resolved,
                         $dereferencer,
+                        $zend_type_reader,
+                        $options,
+                        0,
+                        [],
                     );
                 }
             }
@@ -358,6 +376,7 @@ final class VariableReader implements VariableReaderInterface
         ZendTypeReader $zend_type_reader,
         string $name,
         int $cg_address,
+        ?VariableReadOptions $options,
     ): ?VariableValue {
         // Parse "ClassName::$propName"
         $parts = explode('::$', $name, 2);
@@ -422,9 +441,13 @@ final class VariableReader implements VariableReaderInterface
                 if ($resolved === null) {
                     return null;
                 }
-                return $this->zvalToVariableValue(
+                return $this->buildValue(
                     $resolved,
                     $dereferencer,
+                    $zend_type_reader,
+                    $options,
+                    0,
+                    [],
                 );
             }
         }
@@ -441,6 +464,7 @@ final class VariableReader implements VariableReaderInterface
         ZendTypeReader $zend_type_reader,
         string $name,
         int $cg_address,
+        ?VariableReadOptions $options,
     ): ?VariableValue {
         // Parse "funcName()$varName" using same ()$ pattern as local
         [$func_name, $var_part] = self::parseLocalExpression($name);
@@ -510,17 +534,78 @@ final class VariableReader implements VariableReaderInterface
         if ($resolved === null) {
             return null;
         }
-        return $this->zvalToVariableValue($resolved, $dereferencer);
+        return $this->buildValue(
+            $resolved,
+            $dereferencer,
+            $zend_type_reader,
+            $options,
+            0,
+            [],
+        );
     }
 
-    private function zvalToVariableValue(
+    /**
+     * Reconstruct the NUL-mangled property name PHP uses internally for
+     * private (`\0Class\0name`) and protected (`\0*\0name`) properties.
+     *
+     * We can't read property_info->name directly because the project's
+     * RawString reader truncates at the first NUL — the value would come
+     * back empty. The unmangled simple name is available as the hash key
+     * in `properties_info`, so we mangle it back on this side using the
+     * declaring class entry for private and a fixed `*` token for
+     * protected.
+     */
+    private static function buildMangledPropertyName(
+        string $simple_name,
+        \Reli\Lib\PhpInternals\Types\Zend\ZendPropertyInfo $property_info,
+        Dereferencer $dereferencer,
+    ): string {
+        if ($property_info->isPrivate()) {
+            $owner_name = '*';
+            if ($property_info->ce !== null) {
+                try {
+                    $owner_ce = $dereferencer->deref($property_info->ce);
+                    $owner_name = $owner_ce->getClassName($dereferencer);
+                } catch (\Throwable) {
+                    // fall through with placeholder
+                }
+            }
+            return "\0" . $owner_name . "\0" . $simple_name;
+        }
+        if ($property_info->isProtected()) {
+            return "\0*\0" . $simple_name;
+        }
+        return $simple_name;
+    }
+
+    /**
+     * Convert a zval to a VariableValue tree.
+     *
+     * Recursion is bounded by $options:
+     *   - max_depth   null → unlimited; 0 → no children expansion
+     *   - max_elements null → unlimited; otherwise children list is capped
+     *   - max_string  null → unlimited; otherwise the raw string is clipped
+     *
+     * Cycle detection uses a stack of pointer addresses for arrays and
+     * objects on the current recursion path, so a shared sub-graph reached
+     * through two siblings is *not* falsely flagged — only true back-edges
+     * yield TYPE_RECURSION.
+     *
+     * @param array<int, true> $seen  pointer addresses currently on the
+     *     recursion stack (passed by value so siblings get a fresh view).
+     */
+    private function buildValue(
         Zval $zval,
         Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        ?VariableReadOptions $options,
+        int $depth,
+        array $seen,
     ): VariableValue {
-        // Follow IS_INDIRECT and IS_REFERENCE
         $resolved = $this->resolveIndirectAndRef(
             $zval,
             $dereferencer,
+            $zend_type_reader,
         );
         if ($resolved === null) {
             return new VariableValue(
@@ -546,35 +631,26 @@ final class VariableReader implements VariableReaderInterface
             );
         }
         if ($zval->isString()) {
-            $str_pointer = $zval->value->str;
-            if ($str_pointer !== null) {
-                $zend_string = $dereferencer->deref($str_pointer);
-                return new VariableValue(
-                    VariableValue::TYPE_STRING,
-                    $zend_string->toString($dereferencer),
-                    null,
-                );
-            }
-            return new VariableValue(
-                VariableValue::TYPE_STRING,
-                '',
-                null,
-            );
+            return $this->buildStringValue($zval, $dereferencer, $options);
         }
         if ($zval->isArray()) {
-            $arr_pointer = $zval->value->arr;
-            if ($arr_pointer !== null) {
-                $arr = $dereferencer->deref($arr_pointer);
-                return new VariableValue(
-                    VariableValue::TYPE_ARRAY,
-                    null,
-                    $arr->nNumOfElements,
-                );
-            }
-            return new VariableValue(
-                VariableValue::TYPE_ARRAY,
-                null,
-                0,
+            return $this->buildArrayValue(
+                $zval,
+                $dereferencer,
+                $zend_type_reader,
+                $options,
+                $depth,
+                $seen,
+            );
+        }
+        if ($zval->isObject()) {
+            return $this->buildObjectValue(
+                $zval,
+                $dereferencer,
+                $zend_type_reader,
+                $options,
+                $depth,
+                $seen,
             );
         }
         if ($zval->isBool()) {
@@ -595,6 +671,295 @@ final class VariableReader implements VariableReaderInterface
             VariableValue::TYPE_UNKNOWN,
             null,
             null,
+        );
+    }
+
+    private function buildStringValue(
+        Zval $zval,
+        Dereferencer $dereferencer,
+        ?VariableReadOptions $options,
+    ): VariableValue {
+        $str_pointer = $zval->value->str;
+        if ($str_pointer === null) {
+            return new VariableValue(
+                VariableValue::TYPE_STRING,
+                '',
+                null,
+            );
+        }
+        $zend_string = $dereferencer->deref($str_pointer);
+        $raw = $zend_string->toString($dereferencer);
+        $original_length = strlen($raw);
+        $max = $options?->max_string;
+        $truncated = false;
+        if ($max !== null && $max >= 0 && $original_length > $max) {
+            $raw = substr($raw, 0, $max);
+            $truncated = true;
+        }
+        return new VariableValue(
+            VariableValue::TYPE_STRING,
+            $raw,
+            null,
+            null,
+            null,
+            null,
+            false,
+            $truncated,
+            $original_length,
+        );
+    }
+
+    /**
+     * @param array<int, true> $seen
+     */
+    private function buildArrayValue(
+        Zval $zval,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        ?VariableReadOptions $options,
+        int $depth,
+        array $seen,
+    ): VariableValue {
+        $arr_pointer = $zval->value->arr;
+        if ($arr_pointer === null) {
+            return new VariableValue(
+                VariableValue::TYPE_ARRAY,
+                null,
+                0,
+            );
+        }
+        $address = $arr_pointer->address;
+        if (isset($seen[$address])) {
+            return new VariableValue(
+                VariableValue::TYPE_RECURSION,
+                null,
+                null,
+            );
+        }
+        $arr = $dereferencer->deref($arr_pointer);
+        $count = $arr->nNumOfElements;
+        $max_depth = $options?->max_depth;
+        if ($max_depth !== null && $depth >= $max_depth) {
+            return new VariableValue(
+                VariableValue::TYPE_ARRAY,
+                null,
+                $count,
+            );
+        }
+        $seen[$address] = true;
+        $children = [];
+        $max_elements = $options?->max_elements;
+        $truncated = false;
+        $i = 0;
+        foreach ($arr->getItemIterator($dereferencer) as $key => $item_zval) {
+            if ($max_elements !== null && $i >= $max_elements) {
+                $truncated = true;
+                break;
+            }
+            // Re-deref for independent CData
+            $child_zval = $dereferencer->deref($item_zval->getPointer());
+            $children[] = [
+                $key,
+                $this->buildValue(
+                    $child_zval,
+                    $dereferencer,
+                    $zend_type_reader,
+                    $options,
+                    $depth + 1,
+                    $seen,
+                ),
+            ];
+            $i++;
+        }
+        return new VariableValue(
+            VariableValue::TYPE_ARRAY,
+            null,
+            $count,
+            $children,
+            null,
+            null,
+            $truncated,
+        );
+    }
+
+    /**
+     * @param array<int, true> $seen
+     */
+    private function buildObjectValue(
+        Zval $zval,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        ?VariableReadOptions $options,
+        int $depth,
+        array $seen,
+    ): VariableValue {
+        $obj_pointer = $zval->value->obj;
+        if ($obj_pointer === null) {
+            return new VariableValue(
+                VariableValue::TYPE_OBJECT,
+                null,
+                0,
+            );
+        }
+        $address = $obj_pointer->address;
+        $obj = $dereferencer->deref($obj_pointer);
+        $handle = $obj->getHandle();
+        if (isset($seen[$address])) {
+            return new VariableValue(
+                VariableValue::TYPE_RECURSION,
+                null,
+                null,
+                null,
+                null,
+                $handle,
+            );
+        }
+        $class_name = null;
+        if ($obj->ce !== null) {
+            try {
+                $ce = $dereferencer->deref($obj->ce);
+                $class_name = $ce->getClassName($dereferencer);
+            } catch (\Throwable) {
+                $class_name = null;
+            }
+        }
+        $max_depth = $options?->max_depth;
+        if ($max_depth !== null && $depth >= $max_depth) {
+            return new VariableValue(
+                VariableValue::TYPE_OBJECT,
+                null,
+                null,
+                null,
+                $class_name,
+                $handle,
+            );
+        }
+
+        $seen[$address] = true;
+        $children = [];
+        $max_elements = $options?->max_elements;
+        $truncated = false;
+        $total = 0;
+        try {
+            $is_74_plus = !$zend_type_reader->isPhpVersionLowerThan(
+                ZendTypeReader::V74,
+            );
+            [$table_offset,] = $zend_type_reader->getOffsetAndSizeOfMember(
+                ZendObject::getCTypeName(),
+                'properties_table',
+            );
+            $ce = $obj->ce !== null ? $dereferencer->deref($obj->ce) : null;
+            if ($ce === null) {
+                return new VariableValue(
+                    VariableValue::TYPE_OBJECT,
+                    null,
+                    0,
+                    [],
+                    $class_name,
+                    $handle,
+                );
+            }
+            $property_count = $ce->default_properties_count;
+            $table_size = $property_count
+                * $zend_type_reader->sizeOf(Zval::getCTypeName());
+            $properties_table_pointer = new Pointer(
+                \Reli\Lib\PhpInternals\Types\Zend\ZvalArray::class,
+                $obj->getPointer()->address + $table_offset,
+                $table_size,
+            );
+            $properties_table = $property_count > 0
+                ? $dereferencer->deref($properties_table_pointer)
+                : null;
+
+            $visited_slots = [];
+            foreach (
+                $ce->properties_info->getItemIterator($dereferencer)
+                as $simple_name => $info_zval
+            ) {
+                $info_pointer = $info_zval->value->getAsPointer(
+                    \Reli\Lib\PhpInternals\Types\Zend\ZendPropertyInfo::class,
+                    $zend_type_reader->sizeOf(
+                        \Reli\Lib\PhpInternals\Types\Zend\ZendPropertyInfo::getCTypeName()
+                    ),
+                );
+                $property_info = $dereferencer->deref($info_pointer);
+                if ($property_info->isStatic($is_74_plus)) {
+                    continue;
+                }
+                $real_offset = $property_info->offset - $table_offset;
+                $slot = (int)($real_offset / 16);
+                $visited_slots[$slot] = true;
+                if ($properties_table === null) {
+                    continue;
+                }
+                $name = self::buildMangledPropertyName(
+                    (string)$simple_name,
+                    $property_info,
+                    $dereferencer,
+                );
+                $prop_zval = $properties_table[$slot];
+                if ($prop_zval->isUndef()) {
+                    continue;
+                }
+                $total++;
+                if ($max_elements !== null && count($children) >= $max_elements) {
+                    $truncated = true;
+                    continue;
+                }
+                $child_zval = $dereferencer->deref($prop_zval->getPointer());
+                $children[] = [
+                    $name,
+                    $this->buildValue(
+                        $child_zval,
+                        $dereferencer,
+                        $zend_type_reader,
+                        $options,
+                        $depth + 1,
+                        $seen,
+                    ),
+                ];
+            }
+
+            // Trait-defined / dynamic slots not covered above
+            if ($properties_table !== null) {
+                for ($i = 0; $i < $property_count; $i++) {
+                    if (isset($visited_slots[$i])) {
+                        continue;
+                    }
+                    $prop_zval = $properties_table[$i];
+                    if ($prop_zval->isUndef()) {
+                        continue;
+                    }
+                    $total++;
+                    if ($max_elements !== null && count($children) >= $max_elements) {
+                        $truncated = true;
+                        continue;
+                    }
+                    $child_zval = $dereferencer->deref($prop_zval->getPointer());
+                    $children[] = [
+                        "property_{$i}",
+                        $this->buildValue(
+                            $child_zval,
+                            $dereferencer,
+                            $zend_type_reader,
+                            $options,
+                            $depth + 1,
+                            $seen,
+                        ),
+                    ];
+                }
+            }
+        } catch (\Throwable) {
+            // best-effort: stop iterating on read error
+        }
+        return new VariableValue(
+            VariableValue::TYPE_OBJECT,
+            null,
+            $total,
+            $children,
+            $class_name,
+            $handle,
+            $truncated,
         );
     }
 

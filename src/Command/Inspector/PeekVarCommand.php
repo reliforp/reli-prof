@@ -17,7 +17,11 @@ use Reli\Inspector\RetryingLoopProvider;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
 use Reli\Inspector\Settings\TargetProcessSettings\TargetProcessSettingsFromConsoleInput;
 use Reli\Inspector\TargetProcess\TargetProcessResolver;
+use Reli\Inspector\Watch\Dump\PhpSerializeFormatter;
+use Reli\Inspector\Watch\Dump\VarDumpFormatter;
+use Reli\Inspector\Watch\Dump\VarExportFormatter;
 use Reli\Inspector\Watch\VariableReader;
+use Reli\Inspector\Watch\VariableReadOptions;
 use Reli\Inspector\Watch\VariableSpec;
 use Reli\Inspector\Watch\VariableValue;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
@@ -80,8 +84,33 @@ final class PeekVarCommand extends ReliCommand
             'format',
             null,
             InputOption::VALUE_REQUIRED,
-            'output format: text or json (default: text)',
+            'output format: text, json, var-dump, var-export,'
+                . ' or php-serialize (default: text)',
             'text',
+        );
+        $this->addOption(
+            'max-depth',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'maximum recursion depth for var-dump / var-export /'
+                . ' php-serialize formats; -1 for unlimited (default: 10)',
+            '10',
+        );
+        $this->addOption(
+            'max-elements',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'maximum number of array elements / object properties to'
+                . ' expand at each level; -1 for unlimited (default: 100)',
+            '100',
+        );
+        $this->addOption(
+            'max-string',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'maximum string length (in bytes) before truncation;'
+                . ' -1 for unlimited (default: 200)',
+            '200',
         );
         $this->addOption(
             'no-cache',
@@ -169,6 +198,8 @@ final class PeekVarCommand extends ReliCommand
             ? (int)$repeat_ms * 1000
             : null;
 
+        $read_options = $this->buildReadOptions($input, $format);
+
         $results = [];
         do {
             try {
@@ -178,6 +209,7 @@ final class PeekVarCommand extends ReliCommand
                     $target_php_settings,
                     $eg_address,
                     $cg_address,
+                    $read_options,
                 );
             } catch (\Throwable $e) {
                 $output->writeln(
@@ -211,11 +243,99 @@ final class PeekVarCommand extends ReliCommand
         array $results,
         string $format,
     ): void {
-        if ($format === 'json') {
-            $this->outputJson($output, $specs, $results);
-            return;
+        switch ($format) {
+            case 'json':
+                $this->outputJson($output, $specs, $results);
+                return;
+            case 'var-dump':
+                $this->outputDump(
+                    $output,
+                    $specs,
+                    $results,
+                    fn (VariableValue $v) => VarDumpFormatter::format($v),
+                );
+                return;
+            case 'var-export':
+                $this->outputDump(
+                    $output,
+                    $specs,
+                    $results,
+                    fn (VariableValue $v) => VarExportFormatter::format($v),
+                );
+                return;
+            case 'php-serialize':
+                $this->outputDump(
+                    $output,
+                    $specs,
+                    $results,
+                    fn (VariableValue $v) => PhpSerializeFormatter::format($v),
+                );
+                return;
+            default:
+                $this->outputText($output, $specs, $results);
+                return;
         }
-        $this->outputText($output, $specs, $results);
+    }
+
+    /**
+     * @param list<VariableSpec> $specs
+     * @param array<string, VariableValue> $results
+     * @param \Closure(VariableValue): string $render
+     */
+    private function outputDump(
+        OutputInterface $output,
+        array $specs,
+        array $results,
+        \Closure $render,
+    ): void {
+        foreach ($specs as $spec) {
+            $var = $results[$spec->lookup_key] ?? null;
+            if ($var === null) {
+                $output->writeln($spec->lookup_key . ' = <not found>');
+                continue;
+            }
+            $output->writeln($spec->lookup_key . ' = ' . $render($var));
+        }
+    }
+
+    private function buildReadOptions(
+        InputInterface $input,
+        string $format,
+    ): VariableReadOptions {
+        $needs_recursion = in_array(
+            $format,
+            ['var-dump', 'var-export', 'php-serialize'],
+            true,
+        );
+        $depth_raw = $input->getOption('max-depth');
+        $elements_raw = $input->getOption('max-elements');
+        $string_raw = $input->getOption('max-string');
+        assert(is_string($depth_raw));
+        assert(is_string($elements_raw));
+        assert(is_string($string_raw));
+        $depth = $needs_recursion
+            ? self::parseLimit($depth_raw, 10)
+            : 0;
+        $elements = self::parseLimit($elements_raw, 100);
+        $string = self::parseLimit($string_raw, 200);
+        return new VariableReadOptions($depth, $elements, $string);
+    }
+
+    /**
+     * Parse a CLI limit option. `-1` (or `unlimited`) maps to null
+     * (no limit); anything else parses as an integer with the supplied
+     * fallback for unparseable input.
+     */
+    private static function parseLimit(string $raw, int $fallback): ?int
+    {
+        $raw = trim($raw);
+        if ($raw === 'unlimited' || $raw === '-1') {
+            return null;
+        }
+        if (!ctype_digit($raw)) {
+            return $fallback;
+        }
+        return (int)$raw;
     }
 
     /**
@@ -252,14 +372,46 @@ final class PeekVarCommand extends ReliCommand
         foreach ($specs as $spec) {
             $var = $results[$spec->lookup_key] ?? null;
             $data[$spec->lookup_key] = $var !== null
-                ? [
-                    'type' => $var->type,
-                    'value' => $var->scalar_value,
-                    'array_count' => $var->array_count,
-                ]
+                ? $this->variableValueToJson($var)
                 : null;
         }
         $output->writeln((string)json_encode($data, JSON_UNESCAPED_UNICODE));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function variableValueToJson(VariableValue $var): array
+    {
+        $out = [
+            'type' => $var->type,
+            'value' => $var->scalar_value,
+            'array_count' => $var->array_count,
+        ];
+        if ($var->class_name !== null) {
+            $out['class_name'] = $var->class_name;
+        }
+        if ($var->object_id !== null) {
+            $out['object_id'] = $var->object_id;
+        }
+        if ($var->children !== null) {
+            $children = [];
+            foreach ($var->children as [$key, $child]) {
+                $children[] = [
+                    'key' => $key,
+                    'value' => $this->variableValueToJson($child),
+                ];
+            }
+            $out['children'] = $children;
+        }
+        if ($var->children_truncated) {
+            $out['children_truncated'] = true;
+        }
+        if ($var->string_truncated) {
+            $out['string_truncated'] = true;
+            $out['original_string_length'] = $var->original_string_length;
+        }
+        return $out;
     }
 
     private function formatValue(VariableValue $var): string
