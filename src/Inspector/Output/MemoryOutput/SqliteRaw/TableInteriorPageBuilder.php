@@ -73,8 +73,10 @@ final class TableInteriorPageBuilder
             return [[], $leaf_index[0][1]];
         }
 
+        /** @var list<array{int, string}> $pages */
         $pages = [];
         $next_pgno = $first_pgno;
+        /** @var list<array{int, int}> $current_level */
         $current_level = $leaf_index;
 
         while (count($current_level) > 1) {
@@ -86,6 +88,7 @@ final class TableInteriorPageBuilder
             [$first_group, $first_consumed] = self::greedyGroup($current_level, 0);
             $is_final_level = ($first_consumed === $level_n);
 
+            /** @var list<array{int, int}> $next_level */
             $next_level = [];
             $i = 0;
             while ($i < $level_n) {
@@ -101,10 +104,16 @@ final class TableInteriorPageBuilder
                     ? $root_pgno_hint
                     : $next_pgno++;
                 $pages[] = [$pgno, $page_bytes];
-                $last = $group[count($group) - 1];
+                if ($group === []) {
+                    throw new \LogicException('greedyGroup returned an empty group');
+                }
+                $last = $group[array_key_last($group)];
                 $next_level[] = [$last[0], $pgno];
             }
             $current_level = $next_level;
+        }
+        if (!isset($current_level[0])) {
+            throw new \LogicException('current_level became empty before producing a root');
         }
         return [$pages, $current_level[0][1]];
     }
@@ -194,10 +203,14 @@ final class TableInteriorPageBuilder
             $offsets[] = $cursor;
         }
 
+        // PAGE_SIZE = 4096 → content_start fits in u16 verbatim.
+        // SQLite's "0 means 65536" encoding for the cell-content-start
+        // field only matters when page_size = 65536, which we don't
+        // support.
         $header = chr(self::TABLE_INTERIOR_TYPE)
             . "\x00\x00"
             . pack('n', $n_cells)
-            . pack('n', $content_start === 65536 ? 0 : $content_start)
+            . pack('n', $content_start)
             . "\x00"
             . pack('N', $rightmost[1]);
         $pointer_array = pack('n*', ...$offsets);

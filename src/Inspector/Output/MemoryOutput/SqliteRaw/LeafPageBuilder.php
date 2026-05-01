@@ -155,10 +155,14 @@ final class LeafPageBuilder
             $offsets[] = $cursor;
         }
 
+        // PAGE_SIZE = 4096 → content_start fits in u16 verbatim.
+        // SQLite's "0 means 65536" encoding for the cell-content-start
+        // field only matters when page_size = 65536, which we don't
+        // support.
         $header = chr(self::TABLE_LEAF_TYPE)
             . "\x00\x00"
             . pack('n', $n)
-            . pack('n', $content_start === 65536 ? 0 : $content_start)
+            . pack('n', $content_start)
             . "\x00";
         $pointer_array = pack('n*', ...$offsets);
         $free_bytes = $content_start - $pointer_array_end;

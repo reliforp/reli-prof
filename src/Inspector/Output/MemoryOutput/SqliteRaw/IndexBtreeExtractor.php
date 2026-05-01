@@ -71,7 +71,6 @@ final class IndexBtreeExtractor
      * the destination layout has no gaps.
      *
      * @param resource $source_fp
-     * @psalm-param resource $source_fp
      */
     public static function countPages($source_fp, int $src_root_pgno): int
     {
@@ -109,6 +108,7 @@ final class IndexBtreeExtractor
         return count($visited);
     }
 
+    /** @param resource $source_fp */
     public static function extractAndRelocate(
         $source_fp,
         int $src_root_pgno,

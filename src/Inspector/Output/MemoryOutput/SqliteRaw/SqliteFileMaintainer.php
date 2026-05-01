@@ -83,6 +83,9 @@ final class SqliteFileMaintainer
         }
     }
 
+    /**
+     * @param list<int> $unused_pgnos
+     */
     public static function finalize(
         CData $data_ptr,
         int $first_mapped_pgno,
