@@ -753,11 +753,23 @@ The `objects_store` is an important table that holds references to all objects i
 The references in the objects_store don't add refcount to the objects.
 
 # Currently not yet supported
-- TMP/VARs in PHP 7.0 target
 - internal classes other than `\Closure`, `\Fiber`, `\Generator`, `\WeakReference`, `\WeakMap`, `\PDO`, `\PDOStatement`, `SimpleXMLElement`, `SimpleXMLIterator`, and `FFI\CData`
 - The contents of resources
 - Data that can only be reached from circular references that don't contain any objects
 - Support for the opcache SHM
+
+## PHP 7.0 caveat: best-effort TMP/VAR inspection
+
+PHP 7.0 has no `zend_op_array.live_range` table (introduced in 7.1), so reli
+cannot determine which TMP/VAR slots are live at the current opcode. On 7.0
+targets reli scans every TMP/VAR slot and skips those whose zval tag is
+`IS_UNDEF` or an internal/garbage tag (`IS_PTR`, `IS_CONSTANT_AST`, or any
+unknown byte value); only user-visible value tags
+(`IS_NULL`/`IS_FALSE`/`IS_TRUE`/`IS_LONG`/`IS_DOUBLE`/`IS_STRING`/`IS_ARRAY`/
+`IS_OBJECT`/`IS_RESOURCE`/`IS_REFERENCE`/`IS_INDIRECT`) pass the filter. As a
+result a stale value left in a TMP slot by a previous opcode may still surface
+as `$_T[N]` in the dump even though it is no longer logically live. On
+PHP 7.1+ liveness filtering remains exact.
 
 # Troubleshooting
 ## jq says "parse error: Exceeds depth limit for parsing at line 1"
