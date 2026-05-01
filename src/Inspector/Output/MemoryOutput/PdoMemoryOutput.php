@@ -401,6 +401,16 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             return false;
         }
         $worker_count = $worker_count ?? $this->defaultWorkerCount();
+        $log_phases = getenv('RELI_SHARED_MMAP_PHASES') === '1';
+        $phase_t = microtime(true);
+        $phase = static function (string $label) use (&$phase_t, $log_phases): void {
+            if (!$log_phases) {
+                return;
+            }
+            $now = microtime(true);
+            fwrite(STDERR, sprintf("[smtw phase] %-32s %6.3fs\n", $label, $now - $phase_t));
+            $phase_t = $now;
+        };
 
         $reader = BinaryReader::open($rmem_path);
         $section_counts = [
@@ -432,8 +442,10 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         if ($max_string_len > 1024) {
             return false;
         }
+        $phase('preflight + dict scan');
 
         $run_id = $this->allocateRun($summary);
+        $phase('allocateRun (schema+run+summary)');
 
         $db = $this->driver->createConnection();
         $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
@@ -455,6 +467,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         // so we don't pin the rmem mapping into the parent for the
         // rest of the run.
         $est_avg_cell_bytes = $this->estimateAvgCellBytes($rmem_path, $section_counts, $run_id);
+        $phase('estimateAvgCellBytes');
 
         // Plan layout. Pages can hold ~3500 bytes after header; we
         // size the reservation to fit the estimated row total plus
@@ -565,6 +578,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                     $other_failure = true;
                 }
             }
+            $phase('fork + workers (leaf page writes)');
             if ($had_overflow || $other_failure) {
                 return false;
             }
@@ -607,7 +621,9 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 total_pages: $effective_total_pages,
                 unused_pgnos: $all_unused,
             );
+            $phase('main interior assembly + finalize');
             LibcFileWriter::msync($data_ptr, $data_len);
+            $phase('msync');
         } finally {
             LibcFileWriter::munmap($data_ptr, $data_len);
             LibcFileWriter::munmap($meta_ptr, $meta_len);
@@ -634,12 +650,18 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         foreach ($plan->tableNames() as $table_name) {
             $db->exec("REINDEX {$table_name}");
         }
+        $phase('REINDEX (autoindexes)');
         $this->insertLocationTypesSummaryFromDb($db, $run_id);
+        $phase('insertLocationTypesSummaryFromDb');
         $this->insertClassObjectsSummaryFromDb($db, $run_id);
+        $phase('insertClassObjectsSummaryFromDb');
         $this->computeCanonicalNodeIds($db, $run_id);
+        $phase('computeCanonicalNodeIds');
         $this->driver->afterBulkInsert($db);
         $this->createIndexes($db);
+        $phase('createIndexes');
         $this->createViews($db);
+        $phase('createViews');
 
         return true;
     }
@@ -1873,6 +1895,13 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             // set in memory; on smaller machines SQLite will simply
             // honour what it can.
             $db->exec('PRAGMA cache_size = -1048576');
+            // Multi-threaded sort during CREATE INDEX. Modest win
+            // (~7% on createIndexes wall-clock at 500K rows on this
+            // box) — the bulk of CREATE INDEX is the sort phase, and
+            // SQLite splits it across worker threads when threads>0.
+            // The b-tree write phase is still single-threaded under
+            // the file's write lock.
+            $db->exec('PRAGMA threads = 4');
         }
 
         try {
