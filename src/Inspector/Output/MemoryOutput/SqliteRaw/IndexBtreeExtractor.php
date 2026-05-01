@@ -63,6 +63,52 @@ final class IndexBtreeExtractor
      * @return array{list<array{int, string}>, int, int}
      *     [(dest_pgno, page_bytes), ...], dest_root_pgno, page_count
      */
+    /**
+     * Count the pages in the index b-tree rooted at `$src_root_pgno`
+     * without materialising any of them. Useful when the caller
+     * needs to claim a destination pgno range before doing the
+     * actual extract — e.g. via a shared-counter atomic claim so
+     * the destination layout has no gaps.
+     *
+     * @param resource $source_fp
+     * @psalm-param resource $source_fp
+     */
+    public static function countPages($source_fp, int $src_root_pgno): int
+    {
+        $visited = [$src_root_pgno => true];
+        $queue = [$src_root_pgno];
+        while ($queue !== []) {
+            $src_pgno = array_shift($queue);
+            $page = self::readPage($source_fp, $src_pgno);
+            $type = ord($page[0]);
+            if ($type !== self::INDEX_INTERIOR_TYPE) {
+                continue;
+            }
+            /** @var array{1: int} $cc */
+            $cc = unpack('n', substr($page, 3, 2));
+            $cell_count = $cc[1];
+            /** @var array{1: int} $rm */
+            $rm = unpack('N', substr($page, 8, 4));
+            $rightmost = $rm[1];
+            if (!isset($visited[$rightmost])) {
+                $visited[$rightmost] = true;
+                $queue[] = $rightmost;
+            }
+            for ($i = 0; $i < $cell_count; $i++) {
+                /** @var array{1: int} $co */
+                $co = unpack('n', substr($page, self::INTERIOR_HEADER_SIZE + $i * 2, 2));
+                $cell_offset = $co[1];
+                /** @var array{1: int} $child */
+                $child = unpack('N', substr($page, $cell_offset, 4));
+                if (!isset($visited[$child[1]])) {
+                    $visited[$child[1]] = true;
+                    $queue[] = $child[1];
+                }
+            }
+        }
+        return count($visited);
+    }
+
     public static function extractAndRelocate(
         $source_fp,
         int $src_root_pgno,

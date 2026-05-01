@@ -93,7 +93,7 @@ final class ParallelIndexBuilder
      *                 schemas.
      *
      * @param list<array{name: string, table: string, sql: string, columns: list<string>}> $index_specs
-     * @return array{list<int>, int}|null [unused_pgnos, effective_total_pages]
+     * @return array{int}|null [effective_total_pages]
      */
     public static function build(
         string $main_db_path,
@@ -109,7 +109,7 @@ final class ParallelIndexBuilder
             return null;
         }
         if ($index_specs === []) {
-            return [[], 0];
+            return [0];
         }
         $worker_count = max(1, min($worker_count, count($index_specs)));
 
@@ -119,8 +119,6 @@ final class ParallelIndexBuilder
             $buckets[$i % $worker_count][] = [$i, $spec];
         }
 
-        // Determine current main DB size and ftruncate to the
-        // generous upper bound the workers can safely write into.
         $current_pages = self::pageCount($main_db_path);
         if ($current_pages === null) {
             return null;
@@ -129,19 +127,12 @@ final class ParallelIndexBuilder
             self::PAGES_PER_INDEX_RESERVATION_FLOOR,
             $pages_per_index_reservation,
         );
-        $first_pgno = $current_pages + 1;
-        // Per (worker, idx) reservations laid out contiguously in
-        // worker-then-index order so a worker's reservations are
-        // contiguous and its bucket index trivially picks them out.
-        $worker_reservations = [];
-        $next_pgno = $first_pgno;
-        foreach ($buckets as $w => $items) {
-            foreach ($items as $j => [$global_idx, $_spec]) {
-                $worker_reservations[$global_idx] = $next_pgno;
-                $next_pgno += $reservation_per_idx;
-            }
-        }
-        $total_pages = $next_pgno - 1;
+        // Generous upper bound for the initial ftruncate. Workers
+        // claim from a shared atomic counter, so they only ever
+        // touch dense pgno ranges; the hard upper bound here is
+        // for mmap-able address space and gets ftruncate'd back
+        // down to the actual highest claimed pgno at the end.
+        $upper_bound_pages = $current_pages + count($index_specs) * $reservation_per_idx;
 
         // Pre-grow main DB (sparse).
         $libc = \FFI::cdef('int open(const char *, int, int);', null);
@@ -150,20 +141,27 @@ final class ParallelIndexBuilder
         if ($fd < 0) {
             return null;
         }
-        if (!LibcFileWriter::ftruncate($fd, $total_pages * self::PAGE_SIZE)) {
+        if (!LibcFileWriter::ftruncate($fd, $upper_bound_pages * self::PAGE_SIZE)) {
             LibcFileWriter::close($fd);
             return null;
         }
         LibcFileWriter::close($fd);
 
-        // Meta region: per (worker, idx) slot of META_BYTES_PER_SLOT
+        // Meta region: per global-index slot of META_BYTES_PER_SLOT
         // bytes carrying [root_pgno (4 BE)][page_count (4 BE)]
-        // [reserved (8)]. One mmap'd file shared across the fork.
+        // [reserved (8)].
         $meta_path = $main_db_path . '.pib_meta';
         $meta_size = count($index_specs) * self::META_BYTES_PER_SLOT;
         file_put_contents($meta_path, str_repeat("\x00", $meta_size));
 
-        $data_res = LibcFileWriter::mmapShared($main_db_path, $total_pages * self::PAGE_SIZE);
+        // Shared atomic pgno counter — workers claim exact-sized
+        // ranges from this after CREATE INDEX runs and they know
+        // each index's actual page count. Initialised to the
+        // first pgno past the populated tables / autoindexes.
+        $counter_path = $main_db_path . '.pib_counter';
+        SharedPgnoCounter::init($counter_path, $current_pages + 1);
+
+        $data_res = LibcFileWriter::mmapShared($main_db_path, $upper_bound_pages * self::PAGE_SIZE);
         $meta_res = LibcFileWriter::mmapShared($meta_path, $meta_size);
         if ($data_res === null || $meta_res === null) {
             if ($data_res !== null) {
@@ -175,6 +173,7 @@ final class ParallelIndexBuilder
                 LibcFileWriter::close($meta_res[2]);
             }
             @unlink($meta_path);
+            @unlink($counter_path);
             return null;
         }
         [$data_ptr, $data_len, $data_fd] = $data_res;
@@ -201,8 +200,7 @@ final class ParallelIndexBuilder
                             $main_db_path,
                             $shard_paths[$w],
                             $buckets[$w],
-                            $worker_reservations,
-                            $reservation_per_idx,
+                            $counter_path,
                             $data_ptr,
                             $meta_ptr,
                         );
@@ -228,11 +226,12 @@ final class ParallelIndexBuilder
                 return null;
             }
 
-            // Read meta region back. For each index: actual root pgno
-            // and actual page count. Compute unused pgnos.
-            $unused_pgnos = [];
+            // Read meta region back: for each index, the actual
+            // root pgno workers claimed and the page count they
+            // wrote there. The shared atomic counter guarantees
+            // claims are dense, so the file ends exactly at the
+            // counter's final value with no mid-file holes.
             $index_results = [];
-            $highest_used_pgno = $current_pages;
             foreach ($index_specs as $i => $spec) {
                 $offset = $i * self::META_BYTES_PER_SLOT;
                 $bytes = self::readMetaSlot($meta_ptr, $offset);
@@ -243,15 +242,6 @@ final class ParallelIndexBuilder
                 if ($root === 0 || $page_count === 0) {
                     return null;
                 }
-                $reservation_start = $worker_reservations[$i];
-                $reservation_end = $reservation_start + $reservation_per_idx - 1;
-                $actual_end = $reservation_start + $page_count - 1;
-                for ($p = $actual_end + 1; $p <= $reservation_end; $p++) {
-                    $unused_pgnos[] = $p;
-                }
-                if ($actual_end > $highest_used_pgno) {
-                    $highest_used_pgno = $actual_end;
-                }
                 $index_results[$spec['name']] = [
                     'table' => $spec['table'],
                     'sql' => $spec['sql'],
@@ -259,37 +249,25 @@ final class ParallelIndexBuilder
                 ];
             }
 
-            // Trim unused pgnos that abut the file's end so we can
-            // ftruncate them away rather than freelisting.
-            $effective_total_pages = $total_pages;
-            if ($unused_pgnos !== []) {
-                sort($unused_pgnos);
-                $last_used = $effective_total_pages;
-                while (
-                    $unused_pgnos !== []
-                    && $unused_pgnos[count($unused_pgnos) - 1] === $last_used
-                ) {
-                    array_pop($unused_pgnos);
-                    $last_used--;
-                }
-                $effective_total_pages = $last_used;
-            }
+            $effective_total_pages = SharedPgnoCounter::peek($counter_path) - 1;
 
             LibcFileWriter::msync($data_ptr, $data_len);
         } finally {
             LibcFileWriter::munmap($data_ptr, $data_len);
             LibcFileWriter::munmap($meta_ptr, $meta_len);
             LibcFileWriter::close($meta_fd);
-            // Trim trailing unused pages from the data file before
-            // closing — must happen after munmap.
+            // Truncate the data file down to the counter's final
+            // value — must happen after munmap so the shrink doesn't
+            // race with the still-mapped region.
             if (
                 isset($effective_total_pages)
-                && $effective_total_pages < $total_pages
+                && $effective_total_pages < $upper_bound_pages
             ) {
                 LibcFileWriter::ftruncate($data_fd, $effective_total_pages * self::PAGE_SIZE);
             }
             LibcFileWriter::close($data_fd);
             @unlink($meta_path);
+            @unlink($counter_path);
         }
 
         // The early `return null` on worker failure already happens
@@ -299,6 +277,12 @@ final class ParallelIndexBuilder
         if ($any_failure) {
             return null;
         }
+
+        // Update the SQLite file header so a freshly-opened
+        // connection sees the extended page count. Without this
+        // the in-header page_count from the prior phase is stale
+        // and SQLite reports our index rootpages as invalid.
+        SqliteFileMaintainer::updateFileHeaderViaFp($main_db_path, $effective_total_pages);
 
         // Insert sqlite_master rows for each new index via
         // writable_schema. The rootpages already point at the
@@ -316,19 +300,17 @@ final class ParallelIndexBuilder
         $db->exec('PRAGMA writable_schema = OFF');
         unset($stmt, $db);
 
-        return [$unused_pgnos, $effective_total_pages];
+        return [$effective_total_pages];
     }
 
     /**
      * @param list<array{int, array{name: string, table: string, sql: string, columns: list<string>}}> $bucket
-     * @param array<int, int> $worker_reservations
      */
     private static function runWorker(
         string $main_db_path,
         string $shard_path,
         array $bucket,
-        array $worker_reservations,
-        int $reservation_per_idx,
+        string $counter_path,
         \FFI\CData $data_ptr,
         \FFI\CData $meta_ptr,
     ): void {
@@ -409,27 +391,36 @@ final class ParallelIndexBuilder
         // it back as raw bytes.
         unset($db);
 
-        // Phase 2: open shard as bytes, extract each index's b-tree
-        // pages, memcpy them into main's mmap at the reserved range.
+        // Phase 2: open shard as bytes; for each index measure its
+        // page count, atomically claim that many pgnos from the
+        // shared counter, extract+relocate at the claimed range,
+        // memcpy into main's mmap. Per-index claims are dense, so
+        // the destination has no mid-file gaps between indexes.
         $fp = fopen($shard_path, 'rb');
         if ($fp === false) {
             throw new \RuntimeException("failed to open shard {$shard_path}");
         }
         try {
             foreach ($bucket as [$global_idx, $_spec]) {
-                $first_dest_pgno = $worker_reservations[$global_idx];
-                [$pages, $dst_root, $page_count] = IndexBtreeExtractor::extractAndRelocate(
+                $page_count = IndexBtreeExtractor::countPages(
+                    $fp,
+                    $shard_roots[$global_idx],
+                );
+                $first_dest_pgno = SharedPgnoCounter::claim($counter_path, $page_count);
+                [$pages, $dst_root, $extracted_count] = IndexBtreeExtractor::extractAndRelocate(
                     $fp,
                     $shard_roots[$global_idx],
                     $first_dest_pgno,
                 );
-                if ($page_count > $reservation_per_idx) {
+                if ($extracted_count !== $page_count) {
                     throw new \RuntimeException(
-                        "index slot {$global_idx} needs {$page_count} pages, "
-                        . "reservation only {$reservation_per_idx}"
+                        "page count mismatch for slot {$global_idx}: "
+                        . "countPages {$page_count} vs extract {$extracted_count}"
                     );
                 }
-                foreach ($pages as [$pgno, $bytes]) {
+                foreach ($pages as $page_entry) {
+                    /** @var array{0: int, 1: string} $page_entry */
+                    [$pgno, $bytes] = $page_entry;
                     LibcFileWriter::memcpyFromString(
                         $data_ptr,
                         ($pgno - 1) * self::PAGE_SIZE,

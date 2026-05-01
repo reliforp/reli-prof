@@ -35,11 +35,11 @@ final class SqliteFileMaintainer
     private const int PAGE_SIZE = 4096;
     private const int MAX_LEAVES_PER_TRUNK = (self::PAGE_SIZE - 8) / 4;
 
-    private const int FILE_HEADER_CHANGE_COUNTER_OFF = 24;
-    private const int FILE_HEADER_PAGE_COUNT_OFF = 28;
-    private const int FILE_HEADER_FREELIST_TRUNK_OFF = 32;
-    private const int FILE_HEADER_FREELIST_COUNT_OFF = 36;
-    private const int FILE_HEADER_VERSION_VALID_FOR_OFF = 92;
+    public const int FILE_HEADER_CHANGE_COUNTER_OFF = 24;
+    public const int FILE_HEADER_PAGE_COUNT_OFF = 28;
+    public const int FILE_HEADER_FREELIST_TRUNK_OFF = 32;
+    public const int FILE_HEADER_FREELIST_COUNT_OFF = 36;
+    public const int FILE_HEADER_VERSION_VALID_FOR_OFF = 92;
 
     /**
      * Install `$unused_pgnos` onto the freelist and update the file
@@ -49,6 +49,40 @@ final class SqliteFileMaintainer
      *
      * @param list<int> $unused_pgnos
      */
+    /**
+     * Lightweight header update for callers that have already
+     * extended a SQLite file (e.g. {@see ParallelIndexBuilder}'s
+     * append phase) and just need to refresh the in-header page
+     * count + bump the change counter / version-valid-for so a
+     * freshly-opened PDO connection trusts the new size. Uses
+     * regular file I/O instead of mmap so the caller doesn't have
+     * to re-mmap just to twiddle 12 bytes.
+     */
+    public static function updateFileHeaderViaFp(string $path, int $total_pages): void
+    {
+        $fp = fopen($path, 'r+b');
+        if ($fp === false) {
+            throw new \RuntimeException("failed to open {$path} for header update");
+        }
+        try {
+            fseek($fp, self::FILE_HEADER_CHANGE_COUNTER_OFF);
+            $bytes = fread($fp, 4);
+            if ($bytes === false || strlen($bytes) !== 4) {
+                throw new \RuntimeException('failed to read change counter');
+            }
+            /** @var array{1: int} $cc */
+            $cc = unpack('N', $bytes);
+            $new_counter = $cc[1] + 1;
+
+            fseek($fp, self::FILE_HEADER_CHANGE_COUNTER_OFF);
+            fwrite($fp, pack('N', $new_counter) . pack('N', $total_pages));
+            fseek($fp, self::FILE_HEADER_VERSION_VALID_FOR_OFF);
+            fwrite($fp, pack('N', $new_counter));
+        } finally {
+            fclose($fp);
+        }
+    }
+
     public static function finalize(
         CData $data_ptr,
         int $first_mapped_pgno,
