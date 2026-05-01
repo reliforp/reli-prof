@@ -123,6 +123,38 @@ final class MemoryOutputFactory
     }
 
     /**
+     * Check if the given output format writes directly to a database
+     * (sqlite3 / mysql / postgresql). DB formats keep the legacy
+     * PDO-based streaming path; everything else (json / report /
+     * report-json) routes through an rmem intermediate.
+     */
+    public static function isDbFormat(MemoryProfilerSettings $settings): bool
+    {
+        return match ($settings->output_format) {
+            'sqlite3', 'mysql', 'postgresql' => true,
+            default => false,
+        };
+    }
+
+    /**
+     * Create a binary streaming sink that writes to a caller-provided
+     * temporary .rmem path. Used for non-DB, non-rmem output formats
+     * (json / report / report-json) where the rmem file is an
+     * intermediate that is converted to the final format and then
+     * deleted.
+     *
+     * @return array{BinaryMemoryOutput, BinaryContextTreeSink}
+     */
+    public function createBinaryStreamingSinkAtPath(
+        string $output_path,
+        ?RegionBoundaries $region_boundaries = null,
+    ): array {
+        $binary_output = new BinaryMemoryOutput($output_path, $region_boundaries);
+        $sink = $binary_output->createStreamingSink();
+        return [$binary_output, $sink];
+    }
+
+    /**
      * Create an rmem streaming sink.
      *
      * @return array{BinaryMemoryOutput, BinaryContextTreeSink}
