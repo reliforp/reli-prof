@@ -67,18 +67,24 @@ processes":
 The implementation is **one RPC server class** that accepts both
 patterns. CLI presents two subcommands as facades for clarity:
 
-- `reli inspector:sidecar` — RPC server, no target launch
-  (backwards-compatible)
-- `reli launcher -- cmd args...` — RPC server + target launch
+- `reli inspector:sidecar` — self-request RPC server, no target
+  launch (backwards-compatible, target opts in by connecting)
+- `reli launcher -- cmd args...` — supervisor-style RPC server,
+  launcher starts the target tree and exposes it to clients
 
-Internally the only difference is whether `fork+exec(target)` ran at
-startup. Same protocol, same wire format, same handlers.
+The user-facing framing is "**supervisor vs. self-request**":
+launcher mode looks like a supervisor (it starts and oversees a
+process tree), sidecar mode looks like a passive endpoint that
+PHP code calls into. Internally the only difference is whether
+`fork+exec(target)` ran at startup. Same protocol, same wire
+format, same handlers.
 
 ## Scope (what's in for v1)
 
 ### In scope
 
-- userns-only, optionally
+- Optional user namespace mode (`--userns`); no PID/mount/cgroup
+  namespace management in v1
 - target launched by reli (or omitted — sidecar shape)
 - `PR_SET_CHILD_SUBREAPER` so descendants reparent to launcher when
   intermediate ancestors die
@@ -210,16 +216,133 @@ v1 ships (1). (2) is the planned upgrade path once ffi-zts-parallel
 matures and we have a real workload that strains the single-process
 model.
 
+#### Concurrency policy under single-process v1
+
+With a single PHP runtime serving all RPC, "what happens when two
+heavy actions run at once" needs an explicit answer rather than
+"it'll feel laggy". The policy:
+
+- **Sampling actions** (`trace`, `top`, `rmem-live`) are
+  inherently periodic and yield to the event loop between samples.
+  Multiple are fine to run concurrently — they multiplex naturally.
+- **Bulk one-shot actions** (`memory-dump`, `coredump`) are
+  serialised: while one is running, a second `start_action` of the
+  same kind on any pid returns immediately with
+  `error.code = "BUSY"` and `result.in_progress_action_id`. Client
+  decides whether to retry.
+- **`watch`** is sampling-paced like trace; multiple watches can
+  run, but their sub-actions queue against the bulk serialisation
+  above.
+- A long bulk action **must not** stall the control plane. Either
+  the dump path yields periodically (preferred), or it runs in a
+  side fiber/coroutine that surfaces progress events without
+  blocking the socket reader.
+
+This way `stop_action` always responds promptly even mid-dump, and
+`BUSY` is the explicit signal rather than apparent hang.
+
+## Security assumptions
+
+These assumptions underpin the "no descendant tracking, kernel
+decides" simplification. They must hold; if any breaks, the
+descendant-tracking branch needs to be revisited.
+
+### No host `CAP_SYS_PTRACE` on the launcher process
+
+Launcher delegates non-descendant rejection to the kernel via
+Yama's ancestor check. **This only works if the launcher process
+itself does not have host-level `CAP_SYS_PTRACE`.** If launcher
+were started with that capability (file caps on the binary,
+ambient caps from a privileged container, etc.), the kernel would
+allow attaching to *any* same-UID process — including unrelated
+ones the user did not consent to inspect. A same-UID malicious
+client could then use launcher as a ptrace proxy.
+
+Launcher mode is designed for the unprivileged path. If the
+deployment grants `CAP_SYS_PTRACE` (e.g., to bypass Yama scope=2),
+launcher must either:
+
+1. Reject non-descendant `pid`s in userspace before each ptrace
+   call — i.e., re-introduce ancestry verification (the very
+   thing we removed).
+2. Be treated as a trusted ptrace proxy at the deployment level —
+   socket access ACLs become the security boundary.
+
+Implementation note: at startup, launcher checks whether it has
+`CAP_SYS_PTRACE` (via `prctl(PR_CAPBSET_READ)` / `/proc/self/status:
+CapEff`). If yes, log a warning and *enable* userspace ancestry
+verification on every attach as a safety net. This costs a
+`/proc/<pid>/status` read per attach and per-op start_time
+re-validation, which is cheap.
+
+### Same-UID client model
+
+Unix socket mode `0700` + `SO_PEERCRED` UID match limits clients
+to processes running as the same UID as launcher. This is the
+trust boundary: anyone running as you can already read your
+memory via `process_vm_readv` (subject to dumpable + Yama), so
+launcher giving them a controlled API doesn't widen exposure. It
+does, however, make socket-path discoverability matter — see the
+"Socket path" section.
+
+### `unprivileged_userns_clone` for `--userns`
+
+The opt-in `--userns` mode requires
+`kernel.unprivileged_userns_clone=1`. This is the modern default
+on most distros (recent Ubuntu, Fedora, Arch) but is disabled on
+some hardened configs (Debian-strict policies, RHEL/CentOS older
+than ~9, AppArmor-restricted Snap/Flatpak environments) and is
+blocked by Docker's default seccomp profile. Launcher detects
+this at startup and refuses `--userns` with a clear error rather
+than silently falling back.
+
 ## RPC protocol
 
 ### Transport
 
-- Unix domain socket, mode `0700`, owned by launcher's UID.
+- Unix domain socket, **`SOCK_SEQPACKET`** (not `SOCK_STREAM`).
 - Connection-time check: `getsockopt(SO_PEERCRED)` → reject if peer
   UID doesn't match launcher UID.
-- Line-delimited JSON for the control plane.
-- SCM_RIGHTS for bulk output fd-passing (out-of-band on the same
-  socket, attached to the request that needs it).
+- One JSON message per packet; SCM_RIGHTS ancillary fds attach
+  to the request packet that needs them.
+- Bulk output is *not* sent over the socket — the daemon writes
+  directly to the fd the client passed via SCM_RIGHTS.
+
+`SOCK_SEQPACKET` matters for SCM_RIGHTS framing. With `SOCK_STREAM`,
+the receiver has no boundary between successive `sendmsg()` calls;
+ancillary data can in principle arrive coalesced or split across
+JSON lines, and the implementation has to manually re-thread "which
+fd belongs to which JSON request". `SOCK_SEQPACKET` preserves
+message boundaries on Linux, so each `recvmsg()` returns exactly
+one request packet plus exactly its ancillary fds. Linux is reli's
+only target platform, so the portability cost of SEQPACKET is nil.
+
+If `SOCK_STREAM` is ever reintroduced (e.g., for cross-host RPC),
+the framing rule must be: each request requiring fds must be sent
+in a single `sendmsg()` containing exactly one complete JSON
+message + its ancillary fds, and the receiver must reject any
+frame where the parsed-JSON count and recovered-fd count don't
+match the request's schema. Simpler to keep SEQPACKET.
+
+### Socket path
+
+The default socket path lives under a **launcher-created `0700`
+directory**, not directly under `/tmp`:
+
+```
+$XDG_RUNTIME_DIR/reli/launcher-$PID.sock
+```
+
+When `XDG_RUNTIME_DIR` is unset, fall back to a `mkdtemp()`-created
+`0700` directory and place the socket inside. The launcher creates
+the parent directory with `0700` mode (matching the existing
+`SocketPathResolver::assertParentSafe()` pattern used by sidecar)
+and removes the socket on clean shutdown.
+
+Bare `/tmp/reli.sock` examples in this document are illustrative
+only — production usage should use the resolved default. Direct
+`/tmp` paths suffer from pre-create races, neighbour-readable
+parent directory, and discovery hazards.
 
 ### Message types
 
@@ -244,6 +367,7 @@ Core set (intentionally small):
 
 | method | params | returns |
 |---|---|---|
+| `hello` | `{client_protocol: <int>}` | `{protocol, capabilities: [...], actions: {kind: {fds, params_schema}}}` |
 | `attach` | `{pid}` | `{php_version, mode, ...cold-attach metadata}` |
 | `detach` | `{pid}` | `{}` |
 | `list_attached` | `{}` | `{attached: [{pid, start_time, php_version, ...}]}` |
@@ -257,6 +381,35 @@ Core set (intentionally small):
 `start_action` is the universal "do something" verb; the `kind`
 field selects per-kind params, fd count, output channel, and event
 schema.
+
+`hello` is the first call on a new connection. It exchanges
+protocol versions and lets clients discover server capabilities
+(`scm_rights`, `pidfd`, `subreaper`, `userns`, `seqpacket`, ...)
+and the action-kind catalogue with each kind's fd count. This
+matters for forward compatibility: a `0.13.x` client talking to a
+`0.14.x` launcher (or vice versa) needs to know which kinds are
+supported and what fds they expect *before* sending a malformed
+request. Servers reject `start_action` etc. before `hello` with
+`HANDSHAKE_REQUIRED`.
+
+```jsonc
+// client → daemon
+{"type":"request","id":1,"method":"hello",
+ "params":{"client_protocol":1}}
+
+// daemon → client
+{"type":"response","id":1,"ok":true,
+ "result":{
+   "protocol":1,
+   "capabilities":["scm_rights","pidfd","subreaper","seqpacket"],
+   "actions":{
+     "trace":{"fds":1},
+     "memory-dump":{"fds":1},
+     "peek-var":{"fds":0},
+     ...
+   }
+ }}
+```
 
 ### Action kinds
 
@@ -303,6 +456,23 @@ output goes to a launcher-startup-configured directory
 (`--auto-output-dir=PATH`). User opted into that path explicitly at
 launcher start, so cwd/permission ambiguity is bounded.
 
+**Guardrails on `--auto-output-dir`** are required, because watch
+can fire repeatedly on a sticky condition and a `memory-dump` per
+trigger fills disk fast:
+
+- `--max-auto-files=N` — refuse new sub-action writes after N
+  files have been produced in the directory by this launcher.
+- `--max-auto-bytes=N` — same, by total bytes.
+- watch's existing per-trigger cooldown / rate-limit settings
+  (`--cooldown`, `--max-triggers-per-hour` from
+  `design-watch-command.md`) apply to launcher-driven watch in
+  the same way they apply to attach-mode watch.
+- Filename collision avoidance: `<pid>-<action_id>-<timestamp>.<ext>`
+  pattern; never overwrite.
+- Failed write surfaces as
+  `event {kind: "subaction_failed", error: "AUTO_DIR_FULL"}` so
+  the watch's RPC client can react (back off, alert, etc.).
+
 Requires `ext-sockets` for SCM_RIGHTS (`socket_cmsg_*`); this is a
 launcher-mode-only dependency, attach mode is unaffected.
 
@@ -339,12 +509,13 @@ Stable string error codes for client-side branching:
 # Attach mode (existing, unchanged)
 reli inspector:trace -p 1234 -o /tmp/foo.rbt
 
-# Launcher mode
-reli launcher --rpc=/tmp/reli.sock -- php-fpm
+# Launcher mode (default socket: $XDG_RUNTIME_DIR/reli/launcher-$PID.sock)
+reli launcher -- php-fpm
 # in another terminal, same UID:
-reli inspector:trace --launcher=/tmp/reli.sock -p $WORKER_PID -o /tmp/foo.rbt
-reli inspector:memory:dump --launcher=/tmp/reli.sock -p $WORKER_PID -o /tmp/heap.bin
-reli inspector:watch --launcher=/tmp/reli.sock -p $WORKER_PID --condition='...'
+SOCK="$XDG_RUNTIME_DIR/reli/launcher-$LAUNCHER_PID.sock"
+reli inspector:trace       --launcher="$SOCK" -p $WORKER_PID -o /tmp/foo.rbt
+reli inspector:memory:dump --launcher="$SOCK" -p $WORKER_PID -o /tmp/heap.bin
+reli inspector:watch       --launcher="$SOCK" -p $WORKER_PID --condition='...'
 ```
 
 The `--launcher=<sock>` flag turns each existing reli subcommand
@@ -352,10 +523,31 @@ into an RPC client of the launcher. The user-visible CLI is
 identical to attach mode; the difference is who actually executes
 the heavy work.
 
-`pgrep -P $LAUNCHER_PID` (or `ps --ppid`, etc.) is the canonical
-way to discover available descendant PIDs. Launcher does not
-provide a `list_descendants` RPC; the kernel via /proc is the
-authoritative source.
+### Discovering descendant PIDs
+
+Launcher does not provide a `list_descendants` RPC; the kernel via
+`/proc` is the authoritative source.
+
+**`pgrep -P $LAUNCHER_PID` only finds direct children**, not
+recursive descendants. For multi-level trees (PHP-FPM master →
+workers; Roadrunner master → workers; queue dispatcher → forked
+job workers), this misses everything below the first level. Use
+recursive discovery instead:
+
+```bash
+# pstree-based, all descendants:
+pstree -p $LAUNCHER_PID | grep -oP '\(\K\d+'
+
+# or recursive pgrep:
+descendants() { local p=$1; pgrep -P $p; for c in $(pgrep -P $p); do descendants $c; done; }
+descendants $LAUNCHER_PID
+```
+
+For continuous monitoring of a fleet (e.g., "trace every PHP-FPM
+worker as it spawns"), wrap the discovery in a polling loop or
+implement a client-side `--follow` flag that polls + diffs and
+issues `start_action` per new PID. Launcher itself stays
+deliberately reactive.
 
 ## Rejected branches (with reasoning)
 
@@ -515,9 +707,24 @@ shutdown. If the client disconnects mid-trace, the daemon needs to:
 4. close the fd.
 
 Step 3 works because SCM_RIGHTS gave the daemon its own dup of the
-fd. The bulk fd outlives the control connection. Worth confirming
-this in implementation; if it doesn't hold, we need to buffer the
-finaliser bytes somewhere reliable.
+fd. The bulk fd outlives the control connection.
+
+**Best-effort caveat for pipes/stdout**: when the passed fd is a
+regular file, finalisation under disconnect is reliable — file
+write doesn't depend on a peer reader. When the fd is a pipe
+(typical for `reli inspector:trace --launcher=sock | flamegraph.pl`),
+the downstream reader may already be gone by the time the daemon
+tries to flush the marker, and the write fails with `EPIPE`. The
+daemon must handle `EPIPE` on bulk-fd write as a benign condition
+(stop trying to write, log once, proceed to clean up), not as a
+crashable error. This means **rbt finalisation is best-effort**
+in the pipe case; users who need guaranteed-finalised rbt should
+pass a regular file via `-o`.
+
+Worth confirming in implementation that the bulk fd actually
+outlives control connection close; if it doesn't (e.g., due to
+some reference-counting quirk), we need to buffer the finaliser
+bytes somewhere reliable.
 
 ### PID reuse race window
 
