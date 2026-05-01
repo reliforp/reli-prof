@@ -23,7 +23,6 @@ use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\Result\RegionsSummary;
 use Reli\Lib\Process\ProcessSpecifier;
 use Reli\ReliProfiler;
 
@@ -56,94 +55,6 @@ final class MemoryDumpReader
             // target pause time, since SQL INSERT and CREATE INDEX run
             // after the target is resumed.
             $this->readBinaryThenConvert($memory_profiler_settings);
-        }
-    }
-
-    /**
-     * Original PDO-based streaming path (SQLite / MySQL / PostgreSQL / JSON / report).
-     */
-    private function readPdo(MemoryProfilerSettings $memory_profiler_settings): void
-    {
-        $process_specifier = new ProcessSpecifier($this->pid);
-
-        /** @var TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings */
-        $target_php_settings = new TargetPhpSettings(php_version: $this->php_version);
-
-        $output_factory = new MemoryOutputFactory();
-        [$pdo_output, $sink, $run_id, $db, $temp_path] = $output_factory->createStreamingSink(
-            $memory_profiler_settings,
-        );
-
-        try {
-            $collected_memories = $this->memory_locations_collector->collectAll(
-                $process_specifier,
-                $target_php_settings,
-                $this->eg_address,
-                $this->cg_address,
-                $memory_profiler_settings->memory_exhaustion_error_details,
-                $this->bg_address,
-                $sink,
-                $this->fast_path,
-                $this->disable_bin_walk,
-            );
-
-            $region_boundaries = new RegionBoundaries(
-                $collected_memories->chunk_memory_locations,
-                $collected_memories->huge_memory_locations,
-                $collected_memories->vm_stack_memory_locations,
-                $collected_memories->compiler_arena_memory_locations,
-            );
-
-            $region_analyzer = new RegionAnalyzer(
-                $collected_memories->chunk_memory_locations,
-                $collected_memories->huge_memory_locations,
-                $collected_memories->vm_stack_memory_locations,
-                $collected_memories->compiler_arena_memory_locations,
-            );
-
-            $analyzed_regions = $region_analyzer->analyze(
-                $collected_memories->memory_locations,
-            );
-
-            $sink->flush();
-            $region_boundaries->backfillRegions($db, $run_id);
-            $_region_result = RegionsSummary::queryRegionSums($db, $run_id);
-            $region_sums = $_region_result['sums'];
-            $summary_base = $region_sums !== []
-                ? $analyzed_regions->summary->correctedToArray($region_sums)
-                : $analyzed_regions->summary->toArray();
-
-            $summary = $this->buildSummary(
-                $summary_base,
-                $collected_memories,
-                $this->rss_bytes,
-                $target_php_settings,
-            );
-
-            unset($collected_memories, $analyzed_regions, $region_analyzer);
-
-            $pdo_output->finalizeStreaming($db, $run_id, $sink, $summary);
-
-            if ($temp_path !== null) {
-                $result = new MemoryAnalysisResult(
-                    $summary,
-                    null,
-                    null,
-                    null,
-                    $db,
-                    $run_id,
-                );
-
-                $memory_output = $output_factory->create(
-                    $memory_profiler_settings,
-                    $region_boundaries,
-                );
-                $memory_output->output($result);
-            }
-        } finally {
-            if ($temp_path !== null && file_exists($temp_path)) {
-                @unlink($temp_path);
-            }
         }
     }
 
