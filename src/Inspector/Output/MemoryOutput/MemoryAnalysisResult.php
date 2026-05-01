@@ -25,6 +25,12 @@ final class MemoryAnalysisResult
      *                                    to a database during collection, pass the
      *                                    connection here. Output handlers can then
      *                                    skip the in-memory tree walk.
+     * @param string|null $pre_populated_rmem_path When the context tree was already
+     *                                             streamed to an .rmem file during
+     *                                             collection, pass its path here.
+     *                                             Output handlers can then read from
+     *                                             the rmem file instead of walking
+     *                                             the in-memory tree.
      */
     public function __construct(
         public readonly array $summary,
@@ -33,6 +39,7 @@ final class MemoryAnalysisResult
         public readonly ?array $class_objects_summary = null,
         public readonly ?\PDO $pre_populated_db = null,
         public readonly ?int $pre_populated_run_id = null,
+        public readonly ?string $pre_populated_rmem_path = null,
     ) {
     }
 }

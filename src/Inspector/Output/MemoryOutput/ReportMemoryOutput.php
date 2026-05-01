@@ -18,6 +18,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Formatter\JsonReportFormatter;
 use Reli\Inspector\Output\MemoryOutput\Report\Formatter\ReportFormatterInterface;
 use Reli\Inspector\Output\MemoryOutput\Report\Formatter\TextReportFormatter;
 use Reli\Inspector\Output\MemoryOutput\Report\ReportGenerator;
+use Reli\Inspector\Output\MemoryOutput\Report\ReportResult;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 
 final class ReportMemoryOutput implements MemoryOutputInterface
@@ -32,15 +33,17 @@ final class ReportMemoryOutput implements MemoryOutputInterface
     #[\Override]
     public function output(MemoryAnalysisResult $result): void
     {
+        if ($result->pre_populated_rmem_path !== null) {
+            $generator = new ReportGenerator();
+            $report = $generator->generateFromBinary($result->pre_populated_rmem_path);
+            $this->writeFormatted($report);
+            return;
+        }
+
         if ($result->pre_populated_db !== null && $result->pre_populated_run_id !== null) {
             $generator = new ReportGenerator();
             $report = $generator->generateFromDb($result->pre_populated_db, $result->pre_populated_run_id, true);
-            $formatted = $this->formatter->format($report);
-            if ($this->output_path !== null) {
-                file_put_contents($this->output_path, $formatted);
-            } else {
-                echo $formatted;
-            }
+            $this->writeFormatted($report);
             return;
         }
 
@@ -62,13 +65,7 @@ final class ReportMemoryOutput implements MemoryOutputInterface
 
             $generator = new ReportGenerator();
             $report = $generator->generateFromDb($db, 1);
-            $formatted = $this->formatter->format($report);
-
-            if ($this->output_path !== null) {
-                file_put_contents($this->output_path, $formatted);
-            } else {
-                echo $formatted;
-            }
+            $this->writeFormatted($report);
         } finally {
             if (file_exists($tmp_path)) {
                 @unlink($tmp_path);
@@ -89,5 +86,15 @@ final class ReportMemoryOutput implements MemoryOutputInterface
         ?string $output_path = null,
     ): self {
         return new self(new JsonReportFormatter($pretty_print), $region_boundaries, $output_path);
+    }
+
+    private function writeFormatted(ReportResult $report): void
+    {
+        $formatted = $this->formatter->format($report);
+        if ($this->output_path !== null) {
+            file_put_contents($this->output_path, $formatted);
+        } else {
+            echo $formatted;
+        }
     }
 }

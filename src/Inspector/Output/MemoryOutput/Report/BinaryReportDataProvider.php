@@ -550,6 +550,109 @@ final class BinaryReportDataProvider
     }
 
     /**
+     * Compute location_types summary from the binary locations section.
+     *
+     * Equivalent to PdoMemoryOutput::insertLocationTypesSummaryFromDb but
+     * derived directly from the rmem locations section.
+     *
+     * @return array<string, array{count: int, memory_usage: int}>
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    public static function computeLocationTypesSummary(BinaryReader $reader): array
+    {
+        if (!$reader->hasSection(Format::SECTION_LOCATIONS)) {
+            return [];
+        }
+        $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
+        $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+        $dict = $reader->getStringDict();
+
+        $relevant_regions = ['zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena'];
+
+        /** @var array<string, array{count: int, memory_usage: int}> $result */
+        $result = [];
+        $offset = 0;
+        for ($i = 0; $i < $count; $i++) {
+            $location_type_id = unpack('V', $data, $offset + 4)[1];
+            $size = unpack('P', $data, $offset + 20)[1];
+            $region_id = unpack('V', $data, $offset + 40)[1];
+            $offset += Format::LOCATION_ROW_SIZE;
+
+            $region = $dict->lookup($region_id);
+            if ($region !== null && !in_array($region, $relevant_regions, true)) {
+                continue;
+            }
+
+            $type = $dict->lookup($location_type_id);
+            if ($type === null) {
+                continue;
+            }
+            if (!isset($result[$type])) {
+                $result[$type] = ['count' => 0, 'memory_usage' => 0];
+            }
+            $result[$type]['count']++;
+            $result[$type]['memory_usage'] += $size;
+        }
+
+        uasort($result, fn (array $a, array $b): int => $b['memory_usage'] <=> $a['memory_usage']);
+        return $result;
+    }
+
+    /**
+     * Compute class_objects summary from the binary locations section.
+     *
+     * Equivalent to PdoMemoryOutput::insertClassObjectsSummaryFromDb but
+     * derived directly from the rmem locations section.
+     *
+     * @return array<string, array{count: int, memory_usage: int}>
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    public static function computeClassObjectsSummary(BinaryReader $reader): array
+    {
+        if (!$reader->hasSection(Format::SECTION_LOCATIONS)) {
+            return [];
+        }
+        $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
+        $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+        $dict = $reader->getStringDict();
+
+        $relevant_regions = ['zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena'];
+
+        /** @var array<string, array{count: int, memory_usage: int}> $result */
+        $result = [];
+        $offset = 0;
+        for ($i = 0; $i < $count; $i++) {
+            $class_id = unpack('V', $data, $offset + 8)[1];
+            $size = unpack('P', $data, $offset + 20)[1];
+            $region_id = unpack('V', $data, $offset + 40)[1];
+            $offset += Format::LOCATION_ROW_SIZE;
+
+            if ($class_id === Format::NULL_STRING_ID) {
+                continue;
+            }
+            $region = $dict->lookup($region_id);
+            if ($region !== null && !in_array($region, $relevant_regions, true)) {
+                continue;
+            }
+
+            $class_name = $dict->lookup($class_id);
+            if ($class_name === null) {
+                continue;
+            }
+            if (!isset($result[$class_name])) {
+                $result[$class_name] = ['count' => 0, 'memory_usage' => 0];
+            }
+            $result[$class_name]['count']++;
+            $result[$class_name]['memory_usage'] += $size;
+        }
+
+        uasort($result, fn (array $a, array $b): int => $b['memory_usage'] <=> $a['memory_usage']);
+        return $result;
+    }
+
+    /**
      * Load summary key/value pairs from the binary file's summary section.
      *
      * Mirrors the shape expected by summary-based passes (OverviewPass,
