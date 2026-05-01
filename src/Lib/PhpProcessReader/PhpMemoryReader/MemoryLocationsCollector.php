@@ -349,14 +349,20 @@ final class MemoryLocationsCollector
         // Post-processing: memory limit violation real call stack recovery.
         // This is a rare edge case that reconstructs the call stack from
         // VM stack scanning. It runs after the main loop because it needs
-        // the memory_limit_error_function_context set during function collection.
+        // the memory_limit_error_function_context set during function
+        // collection (targeted mode), or any user-function-shaped frame
+        // header found on the VM stack (broad-scan mode).
         if (
             $memory_limit_error_details
-            and !is_null($ctx->memory_limit_error_function_context)
+            and (
+                !is_null($ctx->memory_limit_error_function_context)
+                or $memory_limit_error_details->broad_scan
+            )
         ) {
             $this->collectRealCallStackOnMemoryLimitViolation(
                 $ctx->memory_limit_error_function_context,
                 $memory_limit_error_details->max_challenge_depth,
+                $memory_limit_error_details->broad_scan,
                 $eg,
                 $ctx,
             );
@@ -386,12 +392,30 @@ final class MemoryLocationsCollector
     }
 
     private function collectRealCallStackOnMemoryLimitViolation(
-        UserFunctionDefinitionContext $memory_limit_error_function_context,
+        ?UserFunctionDefinitionContext $memory_limit_error_function_context,
         int $max_challenge_depth,
+        bool $broad_scan,
         ZendExecutorGlobals $eg,
         Collector\CollectorContext $ctx,
     ): void {
-        $op_array_address = $memory_limit_error_function_context->getOpArrayAddress();
+        // Targeted mode: filter candidate slots by op_array_address resolved
+        // from --memory-limit-error-file/--line. Broad-scan mode: accept any
+        // slot whose value dereferences to a user-mode zend_function.
+        $op_array_address = $memory_limit_error_function_context?->getOpArrayAddress();
+        if ($op_array_address === null and !$broad_scan) {
+            return;
+        }
+        // Broad-scan keeps a much shallower chain-walk budget than the
+        // targeted path: a candidate that does not validate gets discarded
+        // after this many prev_execute_data hops, which bounds wasted work
+        // on garbage chains. Real OOM-shutdown orphan chains (e.g. <main>
+        // → entry frame) are 1–2 hops deep, well inside this budget.
+        $broad_scan_max_depth = min($max_challenge_depth, 32);
+        $effective_max_depth = $broad_scan ? $broad_scan_max_depth : $max_challenge_depth;
+
+        // Per-value caches so repeated stack words don't pay the same
+        // deref/walk cost again. user_function_cache: address → bool.
+        $user_function_cache = [];
 
         if (is_null($eg->vm_stack)) {
             return;
@@ -405,6 +429,31 @@ final class MemoryLocationsCollector
         if (is_null($root_vm_stack->top)) {
             return;
         }
+
+        // Frames already represented by the live EG(current_execute_data)
+        // chain — those have been emitted by EmitCallFramesJob already, so
+        // we must skip them in broad-scan mode to avoid both duplicates and
+        // re-emitting the shutdown-handler chain that triggered the dump in
+        // the first place.
+        $live_chain_frame_addresses = [];
+        if ($broad_scan and !is_null($eg->current_execute_data)) {
+            try {
+                $current_frame = $ctx->dereferencer->deref($eg->current_execute_data);
+                foreach ($current_frame->iterateStackChain($ctx->dereferencer) as $frame) {
+                    $live_chain_frame_addresses[$frame->getPointer()->address] = true;
+                }
+            } catch (\Throwable) {
+                // best-effort; missing live-chain knowledge only means we
+                // may emit a duplicate, not that we miss orphans
+            }
+        }
+
+        $zend_function_size = $ctx->zend_type_reader->sizeOf('zend_function');
+        $zend_execute_data_size = $ctx->zend_type_reader->sizeOf('zend_execute_data');
+
+        // Track chain tops we have already emitted so multiple slot matches
+        // belonging to the same chain don't produce duplicate output.
+        $emitted_chain_top_addresses = [];
 
         $first_stack = true;
         foreach ($last_vm_stack->iterateStackChain($ctx->dereferencer) as $vm_stack) {
@@ -421,24 +470,64 @@ final class MemoryLocationsCollector
                 $ctx->dereferencer,
                 $stack_end_address
             );
+            $base_address = $materialized_vm_stack->getPointer()->address;
             foreach ($materialized_vm_stack->getReverseIteratorAsInt() as $key => $value) {
-                if ($value !== $op_array_address) {
+                if ($op_array_address !== null) {
+                    if ($value !== $op_array_address) {
+                        continue;
+                    }
+                } else {
+                    // Broad-scan shape gate: must be a non-null, 8-byte
+                    // aligned address that dereferences to a user-mode
+                    // zend_function. Most VM stack words are zvals or
+                    // numerics, so this rejects 99% of slots cheaply.
+                    if ($value === 0 or ($value & 7) !== 0) {
+                        continue;
+                    }
+                    if (isset($user_function_cache[$value])) {
+                        if (!$user_function_cache[$value]) {
+                            continue;
+                        }
+                    } else {
+                        try {
+                            $func_candidate = $ctx->dereferencer->deref(
+                                new Pointer(
+                                    \Reli\Lib\PhpInternals\Types\Zend\ZendFunction::class,
+                                    $value,
+                                    $zend_function_size,
+                                )
+                            );
+                            $is_user = $func_candidate->isUserFunction();
+                            $user_function_cache[$value] = $is_user;
+                            if (!$is_user) {
+                                continue;
+                            }
+                        } catch (\Throwable) {
+                            $user_function_cache[$value] = false;
+                            continue;
+                        }
+                    }
+                }
+                $pointer_address = $key * 8 + $base_address - 24;
+                if (isset($live_chain_frame_addresses[$pointer_address])) {
                     continue;
                 }
-                $pointer_address = $key * 8 + $materialized_vm_stack->getPointer()->address - 24;
                 Log::debug('candidate frame found', ['frame_address' => $pointer_address]);
                 $frame_candidate = new Pointer(
                     ZendExecuteData::class,
                     $pointer_address,
-                    $ctx->zend_type_reader->sizeOf('zend_execute_data')
+                    $zend_execute_data_size,
                 );
                 try {
                     $execute_data_candidate = $ctx->dereferencer->deref($frame_candidate);
                     $root_execute_data_candidate = $execute_data_candidate->getRootFrame(
                         $ctx->dereferencer,
-                        $max_challenge_depth,
+                        $effective_max_depth,
                     );
                     if ($root_vm_stack->top->address !== $root_execute_data_candidate->getPointer()->address) {
+                        continue;
+                    }
+                    if (isset($emitted_chain_top_addresses[$pointer_address])) {
                         continue;
                     }
                     Log::debug('root candidate frame found', ['frame_address' => $root_vm_stack->top->address]);
@@ -473,7 +562,16 @@ final class MemoryLocationsCollector
                         }
                     }
 
-                    return;
+                    $emitted_chain_top_addresses[$pointer_address] = true;
+                    if (!$broad_scan) {
+                        // Targeted mode preserves the original "first match
+                        // wins" behaviour to avoid changing existing output.
+                        return;
+                    }
+                    // Broad-scan keeps going so a stack with multiple
+                    // disjoint orphan chains (rare but possible) emits all
+                    // of them.
+                    continue;
                 } catch (\Throwable $e) {
                     Log::debug(
                         'failed to collect real call stack from this candidate',

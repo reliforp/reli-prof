@@ -280,7 +280,10 @@ final class CollectorHelpers
             $op_array_context->add('dynamic_function_definitions', $dynamic_func_defs_context);
         }
 
-        if (!is_null($ctx->memory_limit_error_details)) {
+        if (
+            !is_null($ctx->memory_limit_error_details)
+            and !is_null($ctx->memory_limit_error_details->file)
+        ) {
             if (
                 $function_definition_context->isThisContext(
                     $ctx->memory_limit_error_details->file,

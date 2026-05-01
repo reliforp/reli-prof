@@ -66,14 +66,26 @@ final class CallStackPass implements PassInterface
     private function analyzeWithSubstrate(): array
     {
         assert($this->substrate !== null);
-        $callFramesNodeId = null;
-        foreach ($this->substrate->iterateNodeSizes() as $node_id => $_) {
+        // CallFramesContext nodes have no payload, so they don't appear in
+        // iterateNodeSizes(). Look them up via the tree-link-name index
+        // instead — both the live capture chain ('call_frames') and the
+        // recovered OOM chain ('memory_limit_call_frames') are top-level
+        // roots emitted with these labels.
+        $liveRootId = null;
+        foreach ($this->substrate->iterateTreeChildrenByLinkName('call_frames') as $node_id) {
             if ($this->substrate->getNodeType($node_id) === 'CallFramesContext') {
-                $callFramesNodeId = $node_id;
+                $liveRootId = $node_id;
                 break;
             }
         }
-        if ($callFramesNodeId === null) {
+        $oomRootId = null;
+        foreach ($this->substrate->iterateTreeChildrenByLinkName('memory_limit_call_frames') as $node_id) {
+            if ($this->substrate->getNodeType($node_id) === 'CallFramesContext') {
+                $oomRootId = $node_id;
+                break;
+            }
+        }
+        if ($liveRootId === null and $oomRootId === null) {
             return [];
         }
 
@@ -83,8 +95,31 @@ final class CallStackPass implements PassInterface
             $this->frame_labels,
             $this->canonical_names,
         );
+
+        $findings = [];
+        if ($liveRootId !== null) {
+            $live_frames = $this->collectFrames($liveRootId, $labeler);
+            if ($live_frames !== []) {
+                $findings = array_merge($findings, $this->buildFindings($live_frames));
+            }
+        }
+        if ($oomRootId !== null) {
+            $oom_frames = $this->collectFrames($oomRootId, $labeler);
+            if ($oom_frames !== []) {
+                $findings[] = $this->buildOomFinding($oom_frames);
+            }
+        }
+        return $findings;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function collectFrames(int $rootId, NodeLabeler $labeler): array
+    {
+        assert($this->substrate !== null);
         $framesByNo = [];
-        foreach ($this->substrate->getChildren($callFramesNodeId) as $child_id) {
+        foreach ($this->substrate->getChildren($rootId) as $child_id) {
             $link_name = $this->substrate->getTreeLinkName($child_id) ?? '?';
             // Call Stack is the one rendering site that benefits from
             // the line-number suffix ("paused at line N of fn"); every
@@ -105,7 +140,30 @@ final class CallStackPass implements PassInterface
             return [];
         }
         ksort($framesByNo);
-        return $this->buildFindings(array_values($framesByNo));
+        return array_values($framesByNo);
+    }
+
+    /**
+     * @param list<string> $frames
+     */
+    private function buildOomFinding(array $frames): Finding
+    {
+        $lines = [];
+        foreach ($frames as $i => $frame) {
+            $lines[] = "#{$i} {$frame}";
+        }
+        return new Finding(
+            kind: 'call_stack_oom',
+            severity: FindingSeverity::Info,
+            confidence: FindingConfidence::High,
+            summary: 'OOM call stack (recovered): ' . implode(' -> ', $frames),
+            facts: [
+                'frames' => $frames,
+                'depth' => count($frames),
+                'source' => 'memory_limit_call_frames',
+            ],
+            hypothesis: implode("\n", $lines),
+        );
     }
 
     /**

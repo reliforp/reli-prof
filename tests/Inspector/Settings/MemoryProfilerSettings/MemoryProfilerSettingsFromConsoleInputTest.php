@@ -39,6 +39,7 @@ class MemoryProfilerSettingsFromConsoleInputTest extends BaseTestCase
     {
         $input = $this->createBaseMock();
         $input->expects()->hasOption('stop-process')->andReturns(true)->atLeast()->once();
+        $input->expects()->hasOption('memory-limit-error-broad-scan')->andReturns(false)->zeroOrMoreTimes();
         $input->expects()->getOption('stop-process')->andReturns(true)->atLeast()->once();
         $input->expects()->getOption('pretty-print')->andReturns(false)->atLeast()->once();
         $input->expects()->getOption('memory-limit-error-file')->andReturns('abc.php')->atLeast()->once();
@@ -62,6 +63,7 @@ class MemoryProfilerSettingsFromConsoleInputTest extends BaseTestCase
     {
         $input = $this->createBaseMock();
         $input->expects()->hasOption('stop-process')->andReturns(true)->zeroOrMoreTimes();
+        $input->expects()->hasOption('memory-limit-error-broad-scan')->andReturns(false)->zeroOrMoreTimes();
         $input->expects()->getOption('stop-process')->andReturns(true)->zeroOrMoreTimes();
         $input->expects()->getOption('pretty-print')->andReturns(false)->zeroOrMoreTimes();
         $input->expects()->getOption('memory-limit-error-file')->andReturns('abc.php')->atLeast()->once();
@@ -80,6 +82,7 @@ class MemoryProfilerSettingsFromConsoleInputTest extends BaseTestCase
     {
         $input = $this->createBaseMock();
         $input->expects()->hasOption('stop-process')->andReturns(true)->zeroOrMoreTimes();
+        $input->expects()->hasOption('memory-limit-error-broad-scan')->andReturns(false)->zeroOrMoreTimes();
         $input->expects()->getOption('stop-process')->andReturns(true)->zeroOrMoreTimes();
         $input->expects()->getOption('pretty-print')->andReturns(false)->zeroOrMoreTimes();
         $input->expects()->getOption('memory-limit-error-file')->andReturns('abc.php')->atLeast()->once();
@@ -117,6 +120,7 @@ class MemoryProfilerSettingsFromConsoleInputTest extends BaseTestCase
     {
         $input = $this->createBaseMock();
         $input->expects()->hasOption('stop-process')->andReturns(true)->zeroOrMoreTimes();
+        $input->expects()->hasOption('memory-limit-error-broad-scan')->andReturns(false)->zeroOrMoreTimes();
         $input->expects()->getOption('stop-process')->andReturns(true)->zeroOrMoreTimes();
         $input->expects()->getOption('pretty-print')->andReturns(false)->zeroOrMoreTimes();
         $input->expects()->getOption('memory-limit-error-file')->andReturns(null)->atLeast()->once();
@@ -135,6 +139,7 @@ class MemoryProfilerSettingsFromConsoleInputTest extends BaseTestCase
     {
         $input = $this->createBaseMock();
         $input->expects()->hasOption('stop-process')->andReturns(true)->zeroOrMoreTimes();
+        $input->expects()->hasOption('memory-limit-error-broad-scan')->andReturns(false)->zeroOrMoreTimes();
         $input->expects()->getOption('stop-process')->andReturns(true)->zeroOrMoreTimes();
         $input->expects()->getOption('pretty-print')->andReturns(false)->zeroOrMoreTimes();
         $input->expects()->getOption('memory-limit-error-file')->andReturns('abc.php')->atLeast()->once();

@@ -45,7 +45,7 @@ final class TextReportFormatter implements ReportFormatterInterface
         $top_strings = [];
 
         foreach ($result->findings as $finding) {
-            if (in_array($finding->kind, ['overview', 'coverage_gap', 'call_stack'], true)) {
+            if (in_array($finding->kind, ['overview', 'coverage_gap', 'call_stack', 'call_stack_oom'], true)) {
                 $overview[] = $finding;
             } elseif ($finding->kind === 'type_ranking') {
                 $type_rankings[] = $finding;
@@ -78,6 +78,12 @@ final class TextReportFormatter implements ReportFormatterInterface
                 if ($finding->kind === 'call_stack' && $finding->hypothesis !== '') {
                     $lines[] = '';
                     $lines[] = '  Call Stack at capture:';
+                    foreach (explode("\n", $finding->hypothesis) as $frame) {
+                        $lines[] = '    ' . $frame;
+                    }
+                } elseif ($finding->kind === 'call_stack_oom' && $finding->hypothesis !== '') {
+                    $lines[] = '';
+                    $lines[] = '  Call Stack at OOM (recovered from VM stack):';
                     foreach (explode("\n", $finding->hypothesis) as $frame) {
                         $lines[] = '    ' . $frame;
                     }

@@ -104,6 +104,14 @@ final class MemoryProfilerSettingsFromConsoleInput
             'max attempts to trace back the VM stack on memory_limit error',
             512,
         );
+        $command->addOption(
+            'memory-limit-error-broad-scan',
+            null,
+            InputOption::VALUE_NONE,
+            'recover orphan call frames by scanning the VM stack without a file/line filter '
+                . '(useful when the dump was taken from a shutdown handler that shadows the '
+                . 'OOM site, e.g. ext-session decode failure)',
+        );
     }
 
     public function createSettings(InputInterface $input): MemoryProfilerSettings
@@ -112,11 +120,14 @@ final class MemoryProfilerSettingsFromConsoleInput
             ? Cast::toBool($input->getOption('stop-process'))
             : true;
         $pretty_print = Cast::toBool($input->getOption('pretty-print'));
+        $broad_scan = $input->hasOption('memory-limit-error-broad-scan')
+            ? Cast::toBool($input->getOption('memory-limit-error-broad-scan'))
+            : false;
         $memory_exhaustion_error_details = null;
-        if (
+        $has_file_line =
             $input->getOption('memory-limit-error-file') !== null
-            and $input->getOption('memory-limit-error-line') !== null
-        ) {
+            and $input->getOption('memory-limit-error-line') !== null;
+        if ($has_file_line or $broad_scan) {
             $memory_limit_error_max_depth = filter_var(
                 $input->getOption('memory-limit-error-max-depth'),
                 FILTER_VALIDATE_INT
@@ -129,16 +140,26 @@ final class MemoryProfilerSettingsFromConsoleInput
                     MemoryProfilerSettingsException::MEMORY_LIMIT_ERROR_MAX_DEPTH_IS_NOT_POSITIVE_INTEGER
                 );
             }
-            $line = filter_var($input->getOption('memory-limit-error-line'), FILTER_VALIDATE_INT);
-            if ($line === false) {
-                throw MemoryProfilerSettingsException::create(
-                    MemoryProfilerSettingsException::MEMORY_LIMIT_ERROR_LINE_IS_NOT_INTEGER
+            $file = null;
+            $line = 0;
+            if ($has_file_line) {
+                $line_validated = filter_var(
+                    $input->getOption('memory-limit-error-line'),
+                    FILTER_VALIDATE_INT,
                 );
+                if ($line_validated === false) {
+                    throw MemoryProfilerSettingsException::create(
+                        MemoryProfilerSettingsException::MEMORY_LIMIT_ERROR_LINE_IS_NOT_INTEGER
+                    );
+                }
+                $file = Cast::toString($input->getOption('memory-limit-error-file'));
+                $line = $line_validated;
             }
             $memory_exhaustion_error_details = new MemoryLimitErrorDetails(
-                Cast::toString($input->getOption('memory-limit-error-file')),
+                $file,
                 $line,
                 $memory_limit_error_max_depth,
+                $broad_scan,
             );
         }
         $output_format = NullableCast::toString($input->getOption('output-format'));

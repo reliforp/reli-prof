@@ -16,9 +16,10 @@ namespace Reli\Inspector\Settings\MemoryProfilerSettings;
 final class MemoryLimitErrorDetails
 {
     public function __construct(
-        public string $file,
+        public ?string $file,
         public int $line,
         public int $max_challenge_depth,
+        public bool $broad_scan = false,
     ) {
     }
 }
