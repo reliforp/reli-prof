@@ -473,6 +473,63 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
         $this->assertStringContainsString('*RECURSION*', $display);
     }
 
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testPhpSerializeCycleRoundTripsThroughUnserialize(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        $target_script = <<<'CODE'
+            <?php
+            class Node { public ?Node $next = null; public string $tag = "x"; }
+            $GLOBALS['n'] = new Node();
+            $GLOBALS['n']->next = $GLOBALS['n'];
+            fputs(STDOUT, "ready\n");
+            fgets(STDIN);
+            CODE;
+
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes,
+        );
+        $this->assertSame("ready\n", fgets($pipes[1]));
+
+        $command = $this->createCommand();
+        (new Application())->addCommand($command);
+
+        $tester = new CommandTester($command);
+        $tester->execute([
+            '-p' => (string)$pid,
+            '--var' => ['global::$n'],
+            '--format' => 'php-serialize',
+            '--php-version' => $php_version,
+        ]);
+
+        $this->assertSame(0, $tester->getStatusCode());
+        $display = $tester->getDisplay();
+
+        // Strip the leading "global::$n = " prefix to get just the
+        // serialize payload, then feed it back through unserialize().
+        $prefix = 'global::$n = ';
+        $start = strpos($display, $prefix);
+        $this->assertIsInt($start);
+        $payload = trim(substr($display, $start + strlen($prefix)));
+        $this->assertStringStartsWith('O:4:"Node":', $payload);
+        $this->assertStringContainsString('r:1;', $payload);
+
+        // Round-trip back through unserialize. Class Node doesn't exist
+        // in the test process, so PHP returns __PHP_Incomplete_Class —
+        // that's fine: we care that the cycle survives and the property
+        // is recoverable.
+        $revived = unserialize($payload);
+        $this->assertInstanceOf(\__PHP_Incomplete_Class::class, $revived);
+        $array = (array)$revived;
+        $this->assertSame('x', $array['tag']);
+        // Self-reference back through `next`: identity holds.
+        $this->assertSame($revived, $array['next']);
+    }
+
     public function testNoVarReturnsError(): void
     {
         $command = $this->createCommand();

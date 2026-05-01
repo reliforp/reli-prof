@@ -734,6 +734,13 @@ final class VariableReader implements VariableReaderInterface
                 VariableValue::TYPE_RECURSION,
                 null,
                 null,
+                null,
+                null,
+                null,
+                false,
+                false,
+                null,
+                $address,
             );
         }
         $arr = $dereferencer->deref($arr_pointer);
@@ -744,6 +751,13 @@ final class VariableReader implements VariableReaderInterface
                 VariableValue::TYPE_ARRAY,
                 null,
                 $count,
+                null,
+                null,
+                null,
+                false,
+                false,
+                null,
+                $address,
             );
         }
         $seen[$address] = true;
@@ -779,6 +793,9 @@ final class VariableReader implements VariableReaderInterface
             null,
             null,
             $truncated,
+            false,
+            null,
+            $address,
         );
     }
 
@@ -812,6 +829,10 @@ final class VariableReader implements VariableReaderInterface
                 null,
                 null,
                 $handle,
+                false,
+                false,
+                null,
+                $address,
             );
         }
         $class_name = null;
@@ -832,6 +853,10 @@ final class VariableReader implements VariableReaderInterface
                 null,
                 $class_name,
                 $handle,
+                false,
+                false,
+                null,
+                $address,
             );
         }
 
@@ -857,6 +882,10 @@ final class VariableReader implements VariableReaderInterface
                     [],
                     $class_name,
                     $handle,
+                    false,
+                    false,
+                    null,
+                    $address,
                 );
             }
             $property_count = $ce->default_properties_count;
@@ -960,6 +989,9 @@ final class VariableReader implements VariableReaderInterface
             $class_name,
             $handle,
             $truncated,
+            false,
+            null,
+            $address,
         );
     }
 

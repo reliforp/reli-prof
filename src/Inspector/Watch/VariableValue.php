@@ -46,6 +46,7 @@ final class VariableValue
         public readonly bool $children_truncated = false,
         public readonly bool $string_truncated = false,
         public readonly ?int $original_string_length = null,
+        public readonly ?int $address = null,
     ) {
     }
 }
