@@ -2,29 +2,90 @@
 
 ## Status
 
-  - **Stage K (table b-tree merge): landed**, with `PdoMemoryOutputRmemIngestTest`
-    passing on the 5-node fixture and the merged DB returning
-    `PRAGMA integrity_check = ok`.
-  - **Stage L (integer index k-way merge): plumbed in but has a
-    correctness bug at ≥ 5K rows.** All foundation pieces work
-    standalone: RecordEncoder is byte-for-byte verified against
-    SQLite's own on-disk encoding for every type-code transition;
-    SortRunWriter / SortRunReader round-trip; IntegerIndexMerger
-    builds correct b-trees for the small (5-row) parity fixture.
-    What fails at 5K is the *integration*: the format-direct table
-    merge ends up with 5000 rows in `context_edges` while the
-    integer index `idx_context_edges_run_child` has 5013, so
-    `PRAGMA integrity_check` reports `wrong # of entries in
-    index idx_context_edges_run_child`. The mismatch is
-    `BinaryContextTreeSink`'s edge section element count (5013 for
-    a 5000-node tree because of the synthetic root sentinel and
-    a couple of internal extras) vs the merged table's row count
-    (5000). One of these is right; the other is wrong. The
-    investigation handoff is in the next subsection.
+  - **Stage K (table b-tree merge): landed**, with parity tests
+    passing and `PRAGMA integrity_check = ok` on synthetic data
+    up to 5K rows.
+  - **Stage L (integer index k-way merge): correct, but not yet a
+    wall-clock win.** The merge produces SQLite-correct integer
+    indexes (5K-row reproducer: `integrity_check = ok`, COUNT(*)
+    matches the table's full-scan count, lookups by indexed
+    column return the right row). At 100K nodes, however, the
+    PHP-side IntegerIndexMerger overhead (sort-run dump in
+    workers + k-way merge + leaf-page byte assembly via string
+    operations in main) exceeds the CREATE INDEX time it saves.
+    L only replaces 3 of 10 production indexes (the integer-only
+    ones not depending on post-merge data); the remaining 7 are
+    text-keyed or partial and still go through CREATE INDEX, so
+    the upper bound on L's savings is ~30% of CREATE INDEX time.
 
-### Next-session handoff for the L correctness bug
+    See **next-session followups for L** below.
 
-Reproducer (synthetic, no I/O outside reli's existing classes):
+### How the index b-tree convention bit us
+
+The bug we hit on the way to L's correctness was subtle and worth
+calling out so the next iteration doesn't re-introduce it:
+SQLite's index b-tree convention *promotes* the last leaf cell
+into the parent interior page as the divider key, and then
+**removes** that entry from the leaf. So unique entries are split
+between leaves (most) and interior cells (one per non-rightmost
+leaf), and dbstat sums them as `(leaf_cells + interior_cells)`
+to match the actual entry count.
+
+Our first IntegerIndexMerger draft kept all entries in leaves
+*and* added separate divider records in interior cells, so
+dbstat reported 5013 entries for 5000 rows of input. SQLite's
+COUNT(*) over the index trusted this, queries like
+`SELECT COUNT(*) FROM t INDEXED BY idx WHERE col=…` returned
+5013 instead of 5000, and `PRAGMA integrity_check` reported
+`wrong # of entries in index idx_context_edges_run_child`.
+The fix is in the current `IntegerIndexMerger::merge` shape:
+when emitting a non-rightmost leaf, hold back its last cell and
+pass the *payload* of that cell up as the interior divider, so
+each entry lives in exactly one place in the b-tree.
+
+### Next-session followups for L
+
+L is correct but doesn't yet beat the wall-clock cost of CREATE
+INDEX it replaces. Three meaningful followups, in priority order:
+
+  1. **Extend coverage from 3 of 10 indexes to all 10**.
+     The biggest leverage is the partial index
+     `idx_context_edges_strong_nontree_links` (`WHERE is_tree=0
+     AND strength='strong'`, 4-column key including `link_name`
+     TEXT) and the 5 other text-keyed indexes. Each needs the
+     IntegerIndexMerger generalised to handle TEXT columns —
+     the encoder already does (`RecordEncoder::encodeIntegerRow`
+     becomes `encodeRow` with a per-column type vector), but the
+     k-way merge needs a comparator that respects SQLite's
+     default BINARY collation for TEXT (bytewise compare),
+     and the partial index needs the worker's SQL dump to add
+     the `WHERE` predicate.
+
+  2. **Replace string-based page assembly with FFI buffer ops.**
+     `IntegerIndexMerger::buildLeafPage` currently does
+     `substr_replace` for every cell pointer and cell payload —
+     that's quadratic in cells per page (~370 substr_replace
+     calls per leaf, each scanning a 4 KiB string). A `FFI::new`
+     `unsigned char[4096]` plus direct offset writes via
+     `FFI::memcpy` would drop this to linear. Same for
+     `buildInteriorPage`. Same trick is already used in
+     `Reli\Lib\File\NativeFileReader` so the pattern fits.
+
+  3. **Skip the per-shard SQLite SELECT for sort-run dumps**.
+     Workers currently `SELECT key, rowid FROM table ORDER BY …`
+     into the sort run, which makes SQLite re-sort already-sorted
+     data (rmem-derived rows arrive in node_id / rowid order
+     anyway). Reading directly from the rmem section in the
+     worker, projecting the indexed columns, and writing the
+     sort run without round-tripping through SQLite would skip
+     a full table scan + sort per index per shard. For 4 cores
+     × 3 indexes × 100K rows that's ~12 saves of an n-log-n
+     sort.
+
+Combined, (1) + (2) close the wall-clock gap to direct-write at
+100K and put parallel solidly ahead at 1M+. (3) is gravy.
+
+### Reproducing the L correctness check (now passing)
 
 ```php
 $rmem = tempnam(sys_get_temp_dir(), 'x_') . '.rmem';
@@ -42,40 +103,13 @@ for ($i = 1; $i <= 5000; $i++) {
     );
 }
 (new BinaryMemoryOutput($rmem))->finalizeStreaming($sink, [['k' => 'v']]);
-
 (new PdoMemoryOutput(new SqliteDriver($dbp)))->ingestFromRmem($rmem, [['k' => 'v']]);
 
 $db = new PDO("sqlite:$dbp");
-$db->query('PRAGMA integrity_check'); // returns "wrong # of entries in index idx_context_edges_run_child"
-$db->query('SELECT COUNT(*) FROM context_edges');                          // 5013 (uses index)
-$db->query('SELECT COUNT(*) FROM context_edges NOT INDEXED WHERE run_id=1'); // 5000 (full scan)
+$db->query('PRAGMA integrity_check')->fetchColumn();                                           // "ok"
+$db->query('SELECT COUNT(*) FROM context_edges INDEXED BY idx_context_edges_run_child WHERE run_id=1'); // 5000
+$db->query('SELECT COUNT(*) FROM context_edges NOT INDEXED');                                 // 5000
 ```
-
-Investigation suggestions:
-
-  1. Print `$reader->getSectionElementCount(Format::SECTION_EDGES)`
-     immediately after `BinaryMemoryOutput::finalizeStreaming` for
-     the same fixture. If it's 5013, then workers correctly slice
-     5013 rows; the integer index population is fine; the table
-     merge is dropping 13 rows. If it's 5000, then the integer
-     index is over-counting somewhere — probably a duplicate cell
-     emitted from the k-way merge heap.
-  2. If the table merge is dropping rows, instrument
-     `TableMerger::verifyLeafAndGetMaxRowid` to count cells per
-     leaf and sum across all leaves it copies. Compare to
-     `cell_count` field of the source leaf header.
-  3. Suspect: empty trailing leaves on shards (the
-     `if ((int)$cell_count === 0) continue` branch). For 5013 / 4
-     workers, three workers get 1253 rows each and one gets 1254,
-     so empty leaves are unlikely — but worth verifying.
-
-The integer index merger and the foundation classes (RecordEncoder,
-varint, SortRunReader/Writer, IndexLeafBuilder logic) are all unit-
-tested independently and known good. The bug is in *one of*: table
-merge cell-collection at scale, or the heap behaviour in
-`IntegerIndexMerger::mergeStream` when sort runs hit specific
-boundaries. Both are local to a single class and should be
-diagnosable in <1 session of focused work.
 
 ## Why we want this
 

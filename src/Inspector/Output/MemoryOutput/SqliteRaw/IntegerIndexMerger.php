@@ -71,11 +71,18 @@ final class IntegerIndexMerger
         $inline_max = $page_size - 35;
 
         // Build leaf pages by streaming the k-way merge into a
-        // running leaf buffer. When the buffer can't fit the next
-        // cell we flush it as a new page in main.
-        /** @var list<array{pgno: int, max_key: int, max_rowid: int}> $leaves */
-        $leaves = [];
+        // running leaf buffer. SQLite's index b-tree convention
+        // *promotes* the last cell of each non-rightmost leaf into
+        // the interior page as the divider key; that promoted entry
+        // lives only in the interior, not in the leaf below. So
+        // when we flush a non-final leaf we hold back its last
+        // cell and turn it into the interior cell.
+        /** @var list<array{pgno: int, divider_payload: string}> $leaves_with_dividers */
+        $leaves_with_dividers = [];
+        /** @var list<string> $cells */
         $cells = [];
+        /** @var list<string> $payloads */
+        $payloads = [];
         $cells_size = 0;
 
         foreach ($this->mergeStream() as [$key, $rowid]) {
@@ -90,61 +97,116 @@ final class IntegerIndexMerger
 
             $needed = 8 + (count($cells) + 1) * 2 + $cells_size + strlen($cell);
             if ($needed > $page_size && count($cells) > 0) {
-                // Current buffer is full — emit it.
-                [$max_key, $max_rowid] = $this->lastDecoded($cells[count($cells) - 1]);
-                $page = $this->buildLeafPage($cells, $page_size);
-                $pgno = $this->main->appendPage($page);
-                $leaves[] = ['pgno' => $pgno, 'max_key' => $max_key, 'max_rowid' => $max_rowid];
+                // Promote the last cell as the divider; emit the
+                // remaining cells (still ≥ 1 because we required
+                // count > 0 above) as the leaf.
+                $promoted_payload = $payloads[count($payloads) - 1];
+                $promoted_cell = $cells[count($cells) - 1];
+                $promoted_cell_size = strlen($promoted_cell);
+                $cells_size -= $promoted_cell_size;
+                array_pop($cells);
+                array_pop($payloads);
+                if ($cells === []) {
+                    // The single-cell-leaf case: SQLite would still
+                    // require at least one entry per leaf. Fall
+                    // back to keeping it (no promotion this time)
+                    // and starting the next leaf with $cell. The
+                    // next promotion happens normally.
+                    $cells[] = $promoted_cell;
+                    $payloads[] = $promoted_payload;
+                    $cells_size += $promoted_cell_size;
+                    $page = $this->buildLeafPage($cells, $page_size);
+                    $pgno = $this->main->appendPage($page);
+                    // Use the only cell we have as the divider.
+                    $leaves_with_dividers[] = [
+                        'pgno' => $pgno,
+                        'divider_payload' => $promoted_payload,
+                    ];
+                } else {
+                    $page = $this->buildLeafPage($cells, $page_size);
+                    $pgno = $this->main->appendPage($page);
+                    $leaves_with_dividers[] = [
+                        'pgno' => $pgno,
+                        'divider_payload' => $promoted_payload,
+                    ];
+                }
                 $cells = [];
+                $payloads = [];
                 $cells_size = 0;
             }
             $cells[] = $cell;
+            $payloads[] = $payload;
             $cells_size += strlen($cell);
         }
 
-        // Final partial buffer.
+        // Final partial buffer becomes the rightmost leaf; no
+        // promotion (the rightmost has no divider in the interior
+        // page — the rightmost-child pointer lives in the page
+        // header instead).
+        $rightmost_pgno = 0;
         if (count($cells) > 0) {
-            [$max_key, $max_rowid] = $this->lastDecoded($cells[count($cells) - 1]);
             $page = $this->buildLeafPage($cells, $page_size);
-            $pgno = $this->main->appendPage($page);
-            $leaves[] = ['pgno' => $pgno, 'max_key' => $max_key, 'max_rowid' => $max_rowid];
+            $rightmost_pgno = $this->main->appendPage($page);
         }
 
-        if ($leaves === []) {
-            // No data — leave the empty leaf at $main_index_rootpage in
-            // place (CREATE INDEX produced one).
+        if ($leaves_with_dividers === [] && $rightmost_pgno === 0) {
+            // No data — leave the empty leaf in place.
             return;
         }
 
-        if (count($leaves) === 1) {
-            // Just one leaf — copy it over the rootpage.
-            $this->main->writePage($main_index_rootpage, $this->main->readPage($leaves[0]['pgno']));
-            // Note: the appended page at $leaves[0]['pgno'] becomes a
-            // freelist leak. Acceptable for now — page count grows by
-            // one. integrity_check tolerates this when freelist
-            // accounting is consistent (we don't update freelist
-            // bookkeeping; SQLite treats pages past page_count as
-            // EOF and beyond page_count as not-mine).
+        if ($leaves_with_dividers === [] && $rightmost_pgno !== 0) {
+            // Only one leaf; copy it over the rootpage.
+            $this->main->writePage($main_index_rootpage, $this->main->readPage($rightmost_pgno));
             return;
         }
 
-        // Multi-level interior tree.
-        $level = $leaves;
+        // Multi-level interior tree. Build the first level above
+        // the leaves, then recurse upward.
+        /** @var list<array{pgno: int, divider_payload: string}> $level */
+        $level = $leaves_with_dividers;
+        // The very last child of this level is the rightmost leaf
+        // (which has no divider).
+        $rightmost = $rightmost_pgno;
+
         $max_children = $this->maxInteriorCellCount($page_size);
-        while (count($level) > $max_children) {
-            /** @var list<array{pgno: int, max_key: int, max_rowid: int}> $next */
+        while (count($level) >= $max_children) {
+            /** @var list<array{pgno: int, divider_payload: string}> $next */
             $next = [];
+            $remaining_rightmost = $rightmost;
             for ($i = 0, $n = count($level); $i < $n; $i += $max_children) {
                 $chunk = array_slice($level, $i, $max_children);
-                $page = $this->buildInteriorPage($chunk, $page_size);
+                $is_last_chunk = ($i + $max_children >= $n);
+                if ($is_last_chunk) {
+                    $chunk_rightmost = $remaining_rightmost;
+                } else {
+                    // The last entry of this chunk gets promoted to
+                    // become the divider in the next-level interior
+                    // cell; its child becomes that interior cell's
+                    // rightmost descendant for this internal page.
+                    $last = $chunk[count($chunk) - 1];
+                    $chunk_rightmost = $last['pgno'];
+                }
+                $page = $this->buildInteriorPage($chunk, $chunk_rightmost, $page_size);
                 $pgno = $this->main->appendPage($page);
-                $last = $chunk[count($chunk) - 1];
-                $next[] = ['pgno' => $pgno, 'max_key' => $last['max_key'], 'max_rowid' => $last['max_rowid']];
+                if ($is_last_chunk) {
+                    $rightmost = $pgno;
+                    break; // no divider needed for the last chunk; it's the rightmost of the next level
+                }
+                // The cell that gets promoted up: divider = the
+                // promoted entry from the last leaf in this chunk.
+                $promoted = $chunk[count($chunk) - 1]['divider_payload'];
+                $next[] = ['pgno' => $pgno, 'divider_payload' => $promoted];
             }
             $level = $next;
         }
 
-        $root = $this->buildInteriorPage($level, $page_size);
+        // Final root: $level entries plus rightmost.
+        if (count($level) === 0) {
+            // The rightmost is the entire tree — copy it.
+            $this->main->writePage($main_index_rootpage, $this->main->readPage($rightmost));
+            return;
+        }
+        $root = $this->buildInteriorPage($level, $rightmost, $page_size);
         $this->main->writePage($main_index_rootpage, $root);
     }
 
@@ -331,27 +393,24 @@ final class IntegerIndexMerger
     }
 
     /**
-     * Build an interior index page (type 0x02) whose left-children
-     * are entries [0..N-2] of $children and rightmost child is
-     * entry N-1. Each interior cell stores the divider key/rowid as
-     * its payload (the maximum (key, rowid) in the left subtree).
+     * Build an interior index page (type 0x02). $children is a list
+     * of `{pgno, divider_payload}` pairs — each becomes an interior
+     * cell pointing at `pgno` with the SQLite-record `divider_payload`
+     * as the separator key. `$rightmost_pgno` is stored separately in
+     * the page header (the rightmost child has no key in interior
+     * index pages — same convention as table interior pages).
      *
-     * @param list<array{pgno: int, max_key: int, max_rowid: int}> $children
+     * @param list<array{pgno: int, divider_payload: string}> $children
      */
-    private function buildInteriorPage(array $children, int $page_size): string
+    private function buildInteriorPage(array $children, int $rightmost_pgno, int $page_size): string
     {
-        $count = count($children);
-        $rightmost = $children[$count - 1]['pgno'];
-        $interior_count = $count - 1;
+        $interior_count = count($children);
 
         /** @var list<string> $cell_blobs */
         $cell_blobs = [];
         $cells_total_size = 0;
-        for ($i = 0; $i < $interior_count; $i++) {
-            $entry = $children[$i];
-            $payload = RecordEncoder::encodeIntegerRow(
-                [$this->run_id, $entry['max_key'], $entry['max_rowid']],
-            );
+        foreach ($children as $entry) {
+            $payload = $entry['divider_payload'];
             $blob = pack('N', $entry['pgno']) . Format::writeVarint(strlen($payload)) . $payload;
             $cell_blobs[] = $blob;
             $cells_total_size += strlen($blob);
@@ -372,7 +431,7 @@ final class IntegerIndexMerger
         $cc_field = $cell_content_start === 65536 ? 0 : $cell_content_start;
         $page = substr_replace($page, pack('n', $cc_field), 5, 2);
         $page[7] = "\x00";
-        $page = substr_replace($page, pack('N', $rightmost), 8, 4);
+        $page = substr_replace($page, pack('N', $rightmost_pgno), 8, 4);
 
         $offset = $cell_content_start;
         $ptrs = [];
