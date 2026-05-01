@@ -347,8 +347,16 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * front so workers can write canonical run_id values into shard
      * rows without needing a placeholder / UPDATE round-trip.
      *
-     * Pre-creates the integer indexes too, so the format-direct
-     * merger has empty rootpages to overwrite.
+     * Pre-creates the integer indexes too, but only when L is
+     * enabled — at 100K rows on the rbt:analyze trace, the
+     * IntegerIndexMerger spends ~0.49s building three integer
+     * indexes via PHP-side leaf assembly while the CREATE INDEX
+     * machinery in C only takes ~0.28s for the same three. L is
+     * still correct (5K integrity_check passes, COUNT(*) matches
+     * full-scan); it just isn't a wall-clock win at this scale
+     * with the current PHP-only implementation. Off by default
+     * until the followups in docs/internals/format-direct-merge.md
+     * land. Enable with RELI_FORMAT_DIRECT_INDEX=1.
      *
      * @param array<int, array<string, mixed>> $summary
      */
@@ -358,14 +366,26 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $db->exec('PRAGMA synchronous = OFF');
         $db->exec('PRAGMA temp_store = MEMORY');
         $this->createTables($db);
-        foreach (self::integerIndexSpecs() as [$index_name, $table, $key]) {
-            $db->exec("CREATE INDEX IF NOT EXISTS {$index_name} ON {$table}(run_id, {$key})");
+        if (self::formatDirectIndexEnabled()) {
+            foreach (self::integerIndexSpecs() as [$index_name, $table, $key]) {
+                $db->exec("CREATE INDEX IF NOT EXISTS {$index_name} ON {$table}(run_id, {$key})");
+            }
         }
         $db->beginTransaction();
         $run_id = $this->insertRun($db);
         $this->insertSummary($db, $run_id, $summary);
         $db->commit();
         return $run_id;
+    }
+
+    /**
+     * Toggle for the format-direct integer index merge path. See
+     * docs/internals/format-direct-merge.md for why it's off by
+     * default.
+     */
+    private static function formatDirectIndexEnabled(): bool
+    {
+        return getenv('RELI_FORMAT_DIRECT_INDEX') === '1';
     }
 
     /**
@@ -674,14 +694,15 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $db->commit();
         }
 
-        // Format-direct integer index merge. Has to run BEFORE the
-        // summary inserts: the integer indexes' rootpages were
-        // pre-allocated but currently hold an empty leaf, and
-        // SQLite's planner happily uses them for queries like
-        // `SELECT ... WHERE run_id = ?`, which then returns zero
-        // rows. Populating the indexes first means subsequent
-        // SELECTs that route through them see the real data.
-        if (!$needs_sql_fallback) {
+        // Format-direct integer index merge (gated, off by default).
+        // When enabled, has to run BEFORE the summary inserts:
+        // the integer indexes' rootpages were pre-allocated but
+        // currently hold an empty leaf, and SQLite's planner
+        // happily uses them for queries like `SELECT ... WHERE
+        // run_id = ?`, which then returns zero rows. Populating
+        // the indexes first means subsequent SELECTs that route
+        // through them see the real data.
+        if (!$needs_sql_fallback && self::formatDirectIndexEnabled()) {
             unset($db);
             $this->mergeIntegerIndexes($shard_paths, $main_path);
             $db = $this->driver->createConnection();
