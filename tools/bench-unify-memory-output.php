@@ -185,6 +185,62 @@ function bench_rmem_intermediate_report(int $n, string $tmp_out): array
     return ['collect' => $t_collect, 'output' => $t_output, 'total' => $t_collect + $t_output];
 }
 
+/**
+ * Direct PDO write to a SQLite output (the legacy path for sqlite3 format).
+ *
+ * @return array{collect: float, output: float, total: float}
+ */
+function bench_pdo_direct_sqlite(int $n): array
+{
+    $tmp_db = tempnam(sys_get_temp_dir(), 'reli_bench_pdo_db_') . '.sqlite3';
+    @unlink(substr($tmp_db, 0, -9));
+
+    $t0 = microtime(true);
+    $driver = new SqliteDriver($tmp_db);
+    $pdo_output = new PdoMemoryOutput($driver);
+    [$sink, $run_id, $db] = $pdo_output->createStreamingSink();
+    emit_tree($sink, $n);
+    $summary = [['memory_get_usage' => 1024]];
+    $pdo_output->finalizeStreaming($db, $run_id, $sink, $summary);
+    $t_collect = microtime(true) - $t0;
+
+    @unlink($tmp_db);
+    // No separate "output" stage on the direct path — finalizeStreaming
+    // produced the final file. Treat it as collect for parity with the
+    // rmem path's split.
+    return ['collect' => $t_collect, 'output' => 0.0, 'total' => $t_collect];
+}
+
+/**
+ * rmem-intermediate then ingestFromRmem to SQLite.
+ *
+ * @return array{collect: float, output: float, total: float}
+ */
+function bench_rmem_ingest_sqlite(int $n): array
+{
+    $tmp_rmem = tempnam(sys_get_temp_dir(), 'reli_bench_rmem_') . '.rmem';
+    @unlink(substr($tmp_rmem, 0, -5));
+    $tmp_db = tempnam(sys_get_temp_dir(), 'reli_bench_ingest_') . '.sqlite3';
+    @unlink(substr($tmp_db, 0, -9));
+
+    $t0 = microtime(true);
+    $bin_out = new BinaryMemoryOutput($tmp_rmem);
+    $sink = $bin_out->createStreamingSink();
+    emit_tree($sink, $n);
+    $summary = [['memory_get_usage' => 1024]];
+    $bin_out->finalizeStreaming($sink, $summary);
+    $t_collect = microtime(true) - $t0;
+
+    $t1 = microtime(true);
+    $pdo = new PdoMemoryOutput(new SqliteDriver($tmp_db));
+    $pdo->ingestFromRmem($tmp_rmem, $summary);
+    $t_output = microtime(true) - $t1;
+
+    @unlink($tmp_rmem);
+    @unlink($tmp_db);
+    return ['collect' => $t_collect, 'output' => $t_output, 'total' => $t_collect + $t_output];
+}
+
 function median_field(array $samples, string $field): float
 {
     $vals = array_map(fn ($s) => $s[$field], $samples);
@@ -252,6 +308,30 @@ for ($i = 0; $i < $runs; $i++) {
     );
 }
 
+echo "\n=== SQLite output ($runs runs each) ===\n";
+$pdo_sqlite = [];
+for ($i = 0; $i < $runs; $i++) {
+    $pdo_sqlite[] = bench_pdo_direct_sqlite($node_count);
+    echo sprintf(
+        "  pdo  run %d: collect=%.3fs output=%.3fs total=%.3fs\n",
+        $i + 1,
+        end($pdo_sqlite)['collect'],
+        end($pdo_sqlite)['output'],
+        end($pdo_sqlite)['total']
+    );
+}
+$rmem_sqlite = [];
+for ($i = 0; $i < $runs; $i++) {
+    $rmem_sqlite[] = bench_rmem_ingest_sqlite($node_count);
+    echo sprintf(
+        "  rmem run %d: collect=%.3fs output=%.3fs total=%.3fs\n",
+        $i + 1,
+        end($rmem_sqlite)['collect'],
+        end($rmem_sqlite)['output'],
+        end($rmem_sqlite)['total']
+    );
+}
+
 echo "\n=== Summary (median of $runs runs) ===\n";
 echo "                       collect       output        total       speedup\n";
 echo sprintf(
@@ -279,6 +359,19 @@ echo sprintf(
     median_field($rmem_report, 'output'),
     median_field($rmem_report, 'total'),
     median_field($pdo_report, 'total') / median_field($rmem_report, 'total')
+);
+echo sprintf(
+    "SQLite pdo  direct      : %7.3fs %12.3fs %12.3fs\n",
+    median_field($pdo_sqlite, 'collect'),
+    median_field($pdo_sqlite, 'output'),
+    median_field($pdo_sqlite, 'total')
+);
+echo sprintf(
+    "SQLite rmem ingest      : %7.3fs %12.3fs %12.3fs   %.2fx\n",
+    median_field($rmem_sqlite, 'collect'),
+    median_field($rmem_sqlite, 'output'),
+    median_field($rmem_sqlite, 'total'),
+    median_field($pdo_sqlite, 'total') / median_field($rmem_sqlite, 'total')
 );
 
 @unlink($tmp_json);
