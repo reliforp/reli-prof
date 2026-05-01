@@ -129,24 +129,28 @@ The `zendmm_heap_fragmentation_high` finding already walks `chunk->map`
 to compute free-page space. The new walker is the same traversal with
 slot-level emission added; both should share the underlying iterator.
 
-### Outputs (rmem sidecar)
+### Outputs (rmem)
+
+Both stored directly in rmem, always populated (no opt-in):
 
 - `bin_histogram`: `{ bin_id → { count, total_bytes } }`
 - `bin_slots`: `{ bin_id → address[] }` (drill-down)
 
 ### Sizing
 
-Worst case for a daemon with hundreds of MiB ZendMM: ~10M slots,
-80 MiB raw uint64 list. Mitigations:
+Worst case for a daemon with hundreds of MiB ZendMM is on the order
+of 10M slots × 8 B = ~80 MiB raw uint64 list. Acceptable to land in
+rmem as-is; rmem is already in this size range for non-trivial
+captures.
 
-- **Default**: histogram only; `bin_slots` populated only for bins
-  with `count ≥ threshold` or `size ≤ N` (cheap-to-store sizes)
-- **Opt-in**: `--include-orphans` for full slot lists
-- **Storage**: vbyte / delta-encode addresses inside a chunk
-  (consecutive slots in a small run differ by a constant) —
-  3-5× compression in practice
-- **Sidecar file**: write to `.rmem.bins` (same pattern as
-  `.rmem.derived`) so the base rmem stays unchanged
+Compression knobs available if needed later:
+
+- vbyte / delta-encode addresses inside a chunk (consecutive slots in
+  a small run differ by a constant) — 3-5× in practice
+- Skip per-bin slot lists for bins below a threshold count, keeping
+  histogram only
+
+Default is no compression; revisit if profiling shows a real problem.
 
 ## B. compare deltas
 
@@ -282,10 +286,11 @@ op_arrays but are actually live compiled bytecode).
 | `IovecDetector` | `(ptr, len)` pairs with valid pointers and reasonable lengths | MED |
 | `GlibcMallocChunkHeader` | `size_with_flags` low-3-bit pattern + `prev_size` consistency | MED |
 
-PHP / POSIX / glibc only in core. Extension-specific detectors
-(`uv_fs_t`, `curl_easy`, `xmlNode`, `pdo_stmt_dbh`, `event_t`, …) live
-in `src/Detector/Contrib/` and are auto-registered. Out-of-tree
-contributions can register their own via Composer autoloading.
+PHP / POSIX / glibc only in core, registered statically. Extension-
+specific detectors (`uv_fs_t`, `curl_easy`, `xmlNode`, `pdo_stmt_dbh`,
+`event_t`, …) are out of scope for the initial implementation; the
+packaging story (in-tree contrib vs. Composer-discovered plugin) is
+deferred until external authors need it.
 
 ### Pipeline
 
@@ -414,25 +419,28 @@ when detectors don't quite reach a confident label.
          emalloc. See bin histogram delta and region map delta.
 ```
 
-## Open questions
+## Decisions
 
-1. **Bin walker cost on large heaps.** A multi-hundred-MiB ZendMM may
-   contain ~10M slots. Defaulting to histogram-only (no slot list)
-   avoids the worst case; `--include-orphans` flips the switch.
-2. **rmem size.** Address lists balloon `.rmem`. Recommendation:
-   write to `.rmem.bins` sidecar (same idiom as `.rmem.derived`) so
-   the base rmem is untouched and the sidecar can be regenerated.
-3. **Best-detection selection rule.** Confidence-first or
-   specificity-first? Tentative: confidence-first — bias toward fewer
-   wrong labels at the cost of occasional generic ones.
+1. **Bin walker cost on large heaps.** ~10M slots for hundreds of MiB
+   of ZendMM is acceptable; the walker always runs and always emits
+   the full slot list. Compression is a future knob, not a v1 concern.
+2. **rmem size.** Slot lists land directly in rmem alongside
+   `bin_histogram`. No sidecar file; rmem already sits in the same
+   order of magnitude for non-trivial captures.
+3. **Best-detection selection rule.** Confidence-first, then
+   specificity on tie. Bias toward fewer wrong labels at the cost of
+   occasional generic ones.
 4. **PHP version coverage.** ZendMM layout is stable across 7.x / 8.x
    in shape but the chunk-map encoding macros differ. Branch via
    `PhpVersionDetector` (already used elsewhere). FrankenPHP-style
-   embedded SAPIs are also in scope (see CLAUDE.md notes on libphp
+   embedded SAPIs are in scope (see CLAUDE.md notes on libphp
    preemption).
-5. **Detector plugin packaging.** Composer package or in-tree
-   `src/Detector/Contrib/`? Tentative: in-tree to start; Composer
-   discovery later if external authors need it.
+
+## Deferred
+
+- **Detector plugin packaging.** In-tree contrib vs. Composer
+  discovery is left open; revisit when external authors actually
+  ask for it. For now built-in detectors are registered statically.
 
 ## Phasing
 
@@ -467,9 +475,9 @@ which is the actual conclusion of the manual session.
 - C.3 POSIX / glibc detectors (`StatDetector`, `SockaddrDetector`,
   `IovecDetector`, `TimespecDetector`, `GlibcMallocChunkHeader`)
 - E.1 `rmem:query --bin`
-- Detector plugin registry (in-tree contrib + autoloading)
-- Extension-specific detectors as contrib (`uv_fs_t`, `curl_easy`,
-  libxml node, …)
+
+Extension-specific detectors and the plugin packaging question are
+deferred until there is real demand.
 
 ## Validation
 
