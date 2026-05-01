@@ -28,6 +28,27 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
 {
     use InlineCDataCreatorTrait;
 
+    /**
+     * Zval type tags that may legitimately appear in a TMP/VAR slot on
+     * PHP 7.0 when scanned without live_range guidance. Anything outside
+     * this set (IS_UNDEF, internal compiler tags like IS_PTR /
+     * IS_CONSTANT_AST, or "UNKNOWN" garbage bytes) is treated as stale.
+     * Stored as a flipped map so `isset()` lookup is O(1).
+     */
+    private const TMP_TYPE_WHITELIST_PHP70 = [
+        'IS_NULL' => true,
+        'IS_FALSE' => true,
+        'IS_TRUE' => true,
+        'IS_LONG' => true,
+        'IS_DOUBLE' => true,
+        'IS_STRING' => true,
+        'IS_ARRAY' => true,
+        'IS_OBJECT' => true,
+        'IS_RESOURCE' => true,
+        'IS_REFERENCE' => true,
+        'IS_INDIRECT' => true,
+    ];
+
     /** @var Pointer<ZendFunction>|null */
     public ?Pointer $func;
 
@@ -434,6 +455,18 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
             $name = '$_T[' . ($i - $compiled_variables_num) . ']';
             $zval = $variable_table->offsetGet($i);
             if ($zval->isUndef()) {
+                continue;
+            }
+            // No liveness info (PHP 7.0): a stale slot can hold a non-UNDEF
+            // zval whose type byte is junk, or an internal compiler tag
+            // (IS_PTR, IS_CONSTANT_AST, etc.) that has no user-visible
+            // representation. Drop those before they reach the resolver,
+            // where a bogus value pointer would otherwise turn into a
+            // phantom node or an extra cross-edge via address dedup.
+            if (
+                $live_tmp_vars_map === null
+                and !isset(self::TMP_TYPE_WHITELIST_PHP70[$zval->getType()])
+            ) {
                 continue;
             }
             yield $name => $zval;
