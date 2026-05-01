@@ -18,6 +18,10 @@ use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
+use Reli\Inspector\Output\MemoryOutput\SqliteRaw\OverflowNotSupportedException;
+use Reli\Inspector\Output\MemoryOutput\SqliteRaw\Reader as SqliteRawReader;
+use Reli\Inspector\Output\MemoryOutput\SqliteRaw\TableMerger;
+use Reli\Inspector\Output\MemoryOutput\SqliteRaw\Writer as SqliteRawWriter;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
@@ -423,14 +427,21 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $shard->beginTransaction();
         try {
             $placeholder_run_id = 0;
-            $this->ingestNodes($shard, $reader, $placeholder_run_id, $nodes_start, $nodes_count);
-            $this->ingestEdges($shard, $reader, $placeholder_run_id, $edges_start, $edges_count);
+            // Use explicit globally-disjoint rowids so the merger can
+            // stitch shard table b-trees by appending leaves without
+            // re-encoding cells. Worker i's row at section index k
+            // gets rowid (k + 1), which combined with non-overlapping
+            // (row_start, row_count) windows gives globally
+            // contiguous rowids 1..total.
+            $this->ingestNodes($shard, $reader, $placeholder_run_id, $nodes_start, $nodes_count, true);
+            $this->ingestEdges($shard, $reader, $placeholder_run_id, $edges_start, $edges_count, true);
             $this->ingestLocations(
                 $shard,
                 $reader,
                 $placeholder_run_id,
                 $locations_start,
                 $locations_count,
+                true,
             );
             $this->ingestAttributes(
                 $shard,
@@ -438,6 +449,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 $placeholder_run_id,
                 $attrs_start,
                 $attrs_count,
+                true,
             );
             $shard->commit();
         } catch (\Throwable $e) {
@@ -458,6 +470,16 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * would slow the worker's inserts and the main table rebuilds
      * them anyway.
      */
+    /**
+     * Shard schema must match main's column *order* exactly, because
+     * the format-direct merger copies leaf cell bytes verbatim — the
+     * record encoding is positional. In particular the surrogate
+     * `id INTEGER PRIMARY KEY` columns on `context_edges` /
+     * `context_node_locations` / `context_node_attributes` have to
+     * appear in the same slot here so that the worker's
+     * `INSERT INTO ... (rowid, ...)` gets stored with the
+     * INTEGER-PRIMARY-KEY-alias semantics SQLite expects.
+     */
     private function createShardSchema(\PDO $shard): void
     {
         $shard->exec(
@@ -470,6 +492,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         );
         $shard->exec(
             'CREATE TABLE context_edges ('
+            . ' id INTEGER PRIMARY KEY,'
             . ' run_id INTEGER NOT NULL,'
             . ' parent_node_id INTEGER,'
             . ' child_node_id INTEGER NOT NULL,'
@@ -480,6 +503,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         );
         $shard->exec(
             'CREATE TABLE context_node_locations ('
+            . ' id INTEGER PRIMARY KEY,'
             . ' run_id INTEGER NOT NULL,'
             . ' node_id INTEGER NOT NULL,'
             . ' address BIGINT,'
@@ -495,6 +519,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         );
         $shard->exec(
             'CREATE TABLE context_node_attributes ('
+            . ' id INTEGER PRIMARY KEY,'
             . ' run_id INTEGER NOT NULL,'
             . ' node_id INTEGER NOT NULL,'
             . ' "key" TEXT NOT NULL,'
@@ -522,31 +547,102 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      */
     private function mergeShards(array $shard_paths, array $summary): void
     {
+        // Phase 1: bring main into existence with schema, runs row,
+        // summary populated, and run_id allocated. We also need to
+        // write the run_id into every row's run_id column on the way
+        // in — which the workers already did with placeholder 0,
+        // but the merger has to rewrite. Since rewriting cell bytes
+        // is more complex than just dropping in INSERT INTO ... SELECT,
+        // we go format-direct only when shards' run_id placeholder
+        // matches main's allocated run_id.
         $db = $this->driver->createConnection();
-        // Skip tuneForBulkInsert — its `locking_mode = EXCLUSIVE`
-        // on the main DB makes ATTACHed shards appear locked at
-        // SELECT time. Use the safe subset of pragmas instead;
-        // bulk-load durability tuning happens later anyway via
-        // afterBulkInsert / createIndexes.
         $db->exec('PRAGMA synchronous = OFF');
         $db->exec('PRAGMA temp_store = MEMORY');
         $this->createTables($db);
 
-        // ATTACH outside any active write transaction.
-        foreach ($shard_paths as $idx => $path) {
-            $db->exec("ATTACH DATABASE '{$path}' AS s_{$idx}");
+        $db->beginTransaction();
+        $run_id = $this->insertRun($db);
+        $this->insertSummary($db, $run_id, $summary);
+        $db->commit();
+
+        if (!$this->driver instanceof SqliteDriver) {
+            throw new \RuntimeException('format-direct merge only supports SqliteDriver');
+        }
+        $main_path = $this->driver->path();
+        $tables = ['context_nodes', 'context_edges', 'context_node_locations', 'context_node_attributes'];
+
+        $needs_sql_fallback = false;
+        // For run_id != 1 we fall back to SQL — the format-direct
+        // copy preserves the workers' placeholder run_id (0) which
+        // doesn't match the freshly-allocated run_id 1.
+        // First-merge case (single run in this DB) is the common one
+        // and gives us run_id == 1, which is what we need.
+        if ($run_id !== 1) {
+            $needs_sql_fallback = true;
         }
 
-        $db->beginTransaction();
-        try {
-            $run_id = $this->insertRun($db);
-            $this->insertSummary($db, $run_id, $summary);
+        if (!$needs_sql_fallback) {
+            // Need to close the PDO connection so the file isn't
+            // locked by SQLite's exclusive transaction state.
+            unset($db);
 
-            // Walk shards in order, copying each table from each
-            // shard. The SELECT rewrites run_id from the 0
-            // placeholder to the real run_id allocated above. SQLite
-            // uses sequential-rowid append on the main tables;
-            // CREATE INDEX runs after the transaction commits.
+            try {
+                $writer = SqliteRawWriter::open($main_path);
+                $shard_readers = array_map(
+                    static fn (string $p): SqliteRawReader => SqliteRawReader::open($p),
+                    array_values($shard_paths),
+                );
+                // We need each shard's worker-stored run_id to match
+                // main's run_id. Workers wrote 0; main picked 1 —
+                // they don't match, so the format-direct copy would
+                // leave context_nodes.run_id = 0 etc. Fix by
+                // rewriting run_id via UPDATE after the merge.
+                // (Cheaper than the format-direct cell rewrite.)
+                $merger = new TableMerger($writer, $shard_readers);
+                foreach ($tables as $table) {
+                    $rootpage = SqliteRawReader::open($main_path)->tableRootpage($table);
+                    $merger->merge($table, $rootpage);
+                }
+                $writer->close($main_path);
+            } catch (OverflowNotSupportedException $_e) {
+                // Some leaf cell exceeded the inline payload
+                // threshold (typically a long string_value in
+                // context_node_locations). Fall back to the SQL
+                // merge path. The format-direct work done so far on
+                // the file is harmless because we re-open and
+                // overwrite via SQL.
+                $needs_sql_fallback = true;
+            }
+
+            // Reopen for the run_id rewrite + post-merge work.
+            $db = $this->driver->createConnection();
+            $db->exec('PRAGMA synchronous = OFF');
+            $db->exec('PRAGMA temp_store = MEMORY');
+            if (!$needs_sql_fallback) {
+                // Tables whose PRIMARY KEY is *not* an INTEGER PRIMARY
+                // KEY get their own auto-index (sqlite_autoindex_*).
+                // Format-direct copy bypasses the b-tree machinery, so
+                // these auto-indexes are still the empty leaves they
+                // were at CREATE TABLE time. REINDEX rebuilds them
+                // from the freshly-merged table data — and the UPDATE
+                // we issue right after needs the index in order to
+                // find rows by `run_id = 0`.
+                $db->exec('REINDEX context_nodes');
+                $db->exec('REINDEX summary');
+                $db->exec('REINDEX location_types_summary');
+                $db->exec('REINDEX class_objects_summary');
+                $this->rewriteWorkerRunId($db, $run_id);
+            }
+        }
+
+        if ($needs_sql_fallback) {
+            // Fallback: ATTACH each shard and INSERT INTO main FROM
+            // it. Same code path the pre-format-direct implementation
+            // used.
+            foreach ($shard_paths as $idx => $path) {
+                $db->exec("ATTACH DATABASE '{$path}' AS s_{$idx}");
+            }
+            $db->beginTransaction();
             foreach (array_keys($shard_paths) as $idx) {
                 $db->exec(
                     "INSERT INTO context_nodes (run_id, node_id, type, canonical_node_id)"
@@ -570,23 +666,38 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                     . " SELECT {$run_id}, node_id, \"key\", \"value\" FROM s_{$idx}.context_node_attributes"
                 );
             }
-
-            // DETACH cannot run inside a transaction in SQLite. Skip
-            // it here — the attached aliases drop automatically when
-            // $db is closed at the end of this method.
-            $this->insertLocationTypesSummaryFromDb($db, $run_id);
-            $this->insertClassObjectsSummaryFromDb($db, $run_id);
-            $this->computeCanonicalNodeIds($db, $run_id);
-
             $db->commit();
-        } catch (\Throwable $e) {
-            $db->rollBack();
-            throw $e;
         }
+
+        $db->beginTransaction();
+        $this->insertLocationTypesSummaryFromDb($db, $run_id);
+        $this->insertClassObjectsSummaryFromDb($db, $run_id);
+        $this->computeCanonicalNodeIds($db, $run_id);
+        $db->commit();
 
         $this->driver->afterBulkInsert($db);
         $this->createIndexes($db);
         $this->createViews($db);
+    }
+
+    /**
+     * Workers wrote shards with run_id = 0 (placeholder) so the
+     * format-direct copy didn't have to rewrite per-cell varints.
+     * Fix it up with a single UPDATE per table — cheap because the
+     * affected rows are exactly the ones whose run_id is currently 0,
+     * and there are no indexes to maintain yet.
+     */
+    private function rewriteWorkerRunId(\PDO $db, int $run_id): void
+    {
+        if ($run_id === 0) {
+            return;
+        }
+        $db->beginTransaction();
+        $db->exec("UPDATE context_nodes SET run_id = {$run_id} WHERE run_id = 0");
+        $db->exec("UPDATE context_edges SET run_id = {$run_id} WHERE run_id = 0");
+        $db->exec("UPDATE context_node_locations SET run_id = {$run_id} WHERE run_id = 0");
+        $db->exec("UPDATE context_node_attributes SET run_id = {$run_id} WHERE run_id = 0");
+        $db->commit();
     }
 
     /**
@@ -603,6 +714,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         int $run_id,
         int $row_start = 0,
         ?int $row_count = null,
+        bool $explicit_rowid = false,
     ): void {
         if (!$reader->hasSection(Format::SECTION_NODES)) {
             return;
@@ -613,14 +725,19 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         if ($row_start >= $end) {
             return;
         }
-        $insert = $db->prepare(
-            'INSERT INTO context_nodes (run_id, node_id, type, canonical_node_id) VALUES (?, ?, ?, NULL)'
-        );
+        $sql = $explicit_rowid
+            ? 'INSERT INTO context_nodes (rowid, run_id, node_id, type, canonical_node_id)'
+                . ' VALUES (?, ?, ?, ?, NULL)'
+            : 'INSERT INTO context_nodes (run_id, node_id, type, canonical_node_id) VALUES (?, ?, ?, NULL)';
+        $insert = $db->prepare($sql);
         $rows = $reader->castSection(Format::SECTION_NODES, 'NodeRow');
         if ($rows !== null) {
             for ($i = $row_start; $i < $end; $i++) {
                 $type = $dict->lookup($rows[$i]->type_id) ?? '';
-                $insert->execute([$run_id, $rows[$i]->node_id, $type]);
+                $args = $explicit_rowid
+                    ? [$i + 1, $run_id, $rows[$i]->node_id, $type]
+                    : [$run_id, $rows[$i]->node_id, $type];
+                $insert->execute($args);
             }
             return;
         }
@@ -629,7 +746,10 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $off = $i * Format::NODE_ROW_SIZE;
             $row = unpack('Vnode_id/Vcanonical_id/Vtype_id', $data, $off);
             $type = $dict->lookup((int)$row['type_id']) ?? '';
-            $insert->execute([$run_id, (int)$row['node_id'], $type]);
+            $args = $explicit_rowid
+                ? [$i + 1, $run_id, (int)$row['node_id'], $type]
+                : [$run_id, (int)$row['node_id'], $type];
+            $insert->execute($args);
         }
     }
 
@@ -647,6 +767,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         int $run_id,
         int $row_start = 0,
         ?int $row_count = null,
+        bool $explicit_rowid = false,
     ): void {
         if (!$reader->hasSection(Format::SECTION_EDGES)) {
             return;
@@ -657,23 +778,27 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         if ($row_start >= $end) {
             return;
         }
-        $insert = $db->prepare(
-            'INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree, strength)'
-            . ' VALUES (?, ?, ?, ?, ?, ?)'
-        );
+        $sql = $explicit_rowid
+            ? 'INSERT INTO context_edges'
+                . ' (rowid, run_id, parent_node_id, child_node_id, link_name, is_tree, strength)'
+                . ' VALUES (?, ?, ?, ?, ?, ?, ?)'
+            : 'INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree, strength)'
+                . ' VALUES (?, ?, ?, ?, ?, ?)';
+        $insert = $db->prepare($sql);
         $strengths = ['strong', 'weak', 'structural'];
         $rows = $reader->castSection(Format::SECTION_EDGES, 'EdgeRow');
         if ($rows !== null) {
             for ($i = $row_start; $i < $end; $i++) {
                 $parent = $rows[$i]->parent_node_id;
-                $insert->execute([
+                $values = [
                     $run_id,
                     $parent === Format::NULL_STRING_ID ? null : $parent,
                     $rows[$i]->child_node_id,
                     $dict->lookup($rows[$i]->link_name_id) ?? '',
                     $rows[$i]->is_tree,
                     $strengths[$rows[$i]->strength] ?? 'strong',
-                ]);
+                ];
+                $insert->execute($explicit_rowid ? array_merge([$i + 1], $values) : $values);
             }
             return;
         }
@@ -682,14 +807,15 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $off = $i * Format::EDGE_ROW_SIZE;
             $row = unpack('Vparent/Vchild/Vlid/Cis_tree/Cstrength', $data, $off);
             $parent = (int)$row['parent'];
-            $insert->execute([
+            $values = [
                 $run_id,
                 $parent === Format::NULL_STRING_ID ? null : $parent,
                 (int)$row['child'],
                 $dict->lookup((int)$row['lid']) ?? '',
                 (int)$row['is_tree'],
                 $strengths[(int)$row['strength']] ?? 'strong',
-            ]);
+            ];
+            $insert->execute($explicit_rowid ? array_merge([$i + 1], $values) : $values);
         }
     }
 
@@ -707,6 +833,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         int $run_id,
         int $row_start = 0,
         ?int $row_count = null,
+        bool $explicit_rowid = false,
     ): void {
         if (!$reader->hasSection(Format::SECTION_LOCATIONS)) {
             return;
@@ -717,19 +844,23 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         if ($row_start >= $end) {
             return;
         }
-        $insert = $db->prepare(
-            'INSERT INTO context_node_locations'
-            . ' (run_id, node_id, address, size, location_type, class_name, string_value,'
-            . '  refcount, type_info, region, bin_overhead)'
-            . ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        );
+        $sql = $explicit_rowid
+            ? 'INSERT INTO context_node_locations'
+                . ' (rowid, run_id, node_id, address, size, location_type, class_name, string_value,'
+                . '  refcount, type_info, region, bin_overhead)'
+                . ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            : 'INSERT INTO context_node_locations'
+                . ' (run_id, node_id, address, size, location_type, class_name, string_value,'
+                . '  refcount, type_info, region, bin_overhead)'
+                . ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        $insert = $db->prepare($sql);
         $rows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
         if ($rows !== null) {
             for ($i = $row_start; $i < $end; $i++) {
                 $class_id = $rows[$i]->class_id;
                 $sv_id = $rows[$i]->string_value_id;
                 $region_id = $rows[$i]->region_id;
-                $insert->execute([
+                $values = [
                     $run_id,
                     $rows[$i]->node_id,
                     $rows[$i]->address,
@@ -741,7 +872,8 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                     $rows[$i]->type_info,
                     $region_id === Format::NULL_STRING_ID ? null : $dict->lookup($region_id),
                     $rows[$i]->bin_overhead,
-                ]);
+                ];
+                $insert->execute($explicit_rowid ? array_merge([$i + 1], $values) : $values);
             }
             return;
         }
@@ -757,7 +889,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $class_id = (int)$row['class_id'];
             $sv_id = (int)$row['string_value_id'];
             $region_id = (int)$row['region_id'];
-            $insert->execute([
+            $values = [
                 $run_id,
                 (int)$row['node_id'],
                 (int)$row['address'],
@@ -769,7 +901,8 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 (int)$row['type_info'],
                 $region_id === Format::NULL_STRING_ID ? null : $dict->lookup($region_id),
                 (int)$row['bin_overhead'],
-            ]);
+            ];
+            $insert->execute($explicit_rowid ? array_merge([$i + 1], $values) : $values);
         }
     }
 
@@ -783,6 +916,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         int $run_id,
         int $row_start = 0,
         ?int $row_count = null,
+        bool $explicit_rowid = false,
     ): void {
         if (!$reader->hasSection(Format::SECTION_ATTRIBUTES)) {
             return;
@@ -794,10 +928,12 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         }
         $dict = $reader->getStringDict();
         $qi = fn (string $id): string => $this->driver->quoteIdentifier($id);
-        $insert = $db->prepare(
-            "INSERT INTO context_node_attributes (run_id, node_id, {$qi('key')}, {$qi('value')})"
-            . ' VALUES (?, ?, ?, ?)'
-        );
+        $sql = $explicit_rowid
+            ? "INSERT INTO context_node_attributes (rowid, run_id, node_id, {$qi('key')}, {$qi('value')})"
+                . ' VALUES (?, ?, ?, ?, ?)'
+            : "INSERT INTO context_node_attributes (run_id, node_id, {$qi('key')}, {$qi('value')})"
+                . ' VALUES (?, ?, ?, ?)';
+        $insert = $db->prepare($sql);
         $data = $reader->getSectionData(Format::SECTION_ATTRIBUTES);
         $offset = $row_start * 12;
         for ($i = $row_start; $i < $end; $i++) {
@@ -809,7 +945,8 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             }
             $value_id = (int)$row['value_id'];
             $value = $value_id === Format::NULL_STRING_ID ? null : $dict->lookup($value_id);
-            $insert->execute([$run_id, (int)$row['node_id'], $key, $value]);
+            $values = [$run_id, (int)$row['node_id'], $key, $value];
+            $insert->execute($explicit_rowid ? array_merge([$i + 1], $values) : $values);
         }
     }
 
