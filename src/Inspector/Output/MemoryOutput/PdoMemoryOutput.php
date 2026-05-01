@@ -14,6 +14,8 @@ declare(strict_types=1);
 namespace Reli\Inspector\Output\MemoryOutput;
 
 use PhpCast\Cast;
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
@@ -31,6 +33,11 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     #[\Override]
     public function output(MemoryAnalysisResult $result): void
     {
+        if ($result->pre_populated_rmem_path !== null) {
+            $this->ingestFromRmem($result->pre_populated_rmem_path, $result->summary);
+            return;
+        }
+
         if ($result->pre_populated_db !== null && $result->pre_populated_run_id !== null) {
             // Context tree was already streamed to this DB during collection.
             // Just copy the data to the target DB.
@@ -124,6 +131,258 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $this->driver->afterBulkInsert($db);
         $this->createIndexes($db);
         $this->createViews($db);
+    }
+
+    /**
+     * Bulk-load an .rmem intermediate into the target database.
+     *
+     * Schema construction, summary derivation, canonical-id resolution,
+     * index build, and view creation all happen here — the rmem file is
+     * a fully self-describing snapshot, so we never need to walk the
+     * in-memory context tree again. Called when the caller has already
+     * streamed the collection into a temp .rmem and now wants the same
+     * data materialised into a SQL database.
+     *
+     * @param array<int, array<string, mixed>> $summary
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidPropertyFetch
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    public function ingestFromRmem(string $rmem_path, array $summary): void
+    {
+        $reader = BinaryReader::open($rmem_path);
+        $dict = $reader->getStringDict();
+
+        $db = $this->driver->createConnection();
+        $this->driver->tuneForBulkInsert($db);
+        $this->createTables($db);
+
+        $db->beginTransaction();
+        try {
+            $run_id = $this->insertRun($db);
+            $this->insertSummary($db, $run_id, $summary);
+
+            $this->ingestNodes($db, $reader, $run_id);
+            $this->ingestEdges($db, $reader, $run_id);
+            $this->ingestLocations($db, $reader, $run_id);
+            $this->ingestAttributes($db, $reader, $run_id);
+
+            $this->insertLocationTypesSummaryFromDb($db, $run_id);
+            $this->insertClassObjectsSummaryFromDb($db, $run_id);
+            $this->computeCanonicalNodeIds($db, $run_id);
+
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+
+        $this->driver->afterBulkInsert($db);
+        $this->createIndexes($db);
+        $this->createViews($db);
+    }
+
+    /**
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidPropertyFetch
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    private function ingestNodes(\PDO $db, BinaryReader $reader, int $run_id): void
+    {
+        if (!$reader->hasSection(Format::SECTION_NODES)) {
+            return;
+        }
+        $dict = $reader->getStringDict();
+        $count = $reader->getSectionElementCount(Format::SECTION_NODES);
+        if ($count === 0) {
+            return;
+        }
+        $insert = $db->prepare(
+            'INSERT INTO context_nodes (run_id, node_id, type, canonical_node_id) VALUES (?, ?, ?, NULL)'
+        );
+        $rows = $reader->castSection(Format::SECTION_NODES, 'NodeRow');
+        if ($rows !== null) {
+            for ($i = 0; $i < $count; $i++) {
+                $type = $dict->lookup($rows[$i]->type_id) ?? '';
+                $insert->execute([$run_id, $rows[$i]->node_id, $type]);
+            }
+            return;
+        }
+        $data = $reader->getSectionData(Format::SECTION_NODES);
+        for ($i = 0; $i < $count; $i++) {
+            $off = $i * Format::NODE_ROW_SIZE;
+            $row = unpack('Vnode_id/Vcanonical_id/Vtype_id', $data, $off);
+            $type = $dict->lookup((int)$row['type_id']) ?? '';
+            $insert->execute([$run_id, (int)$row['node_id'], $type]);
+        }
+    }
+
+    /**
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidPropertyFetch
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    private function ingestEdges(\PDO $db, BinaryReader $reader, int $run_id): void
+    {
+        if (!$reader->hasSection(Format::SECTION_EDGES)) {
+            return;
+        }
+        $dict = $reader->getStringDict();
+        $count = $reader->getSectionElementCount(Format::SECTION_EDGES);
+        if ($count === 0) {
+            return;
+        }
+        $insert = $db->prepare(
+            'INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree, strength)'
+            . ' VALUES (?, ?, ?, ?, ?, ?)'
+        );
+        $strengths = ['strong', 'weak', 'structural'];
+        $rows = $reader->castSection(Format::SECTION_EDGES, 'EdgeRow');
+        if ($rows !== null) {
+            for ($i = 0; $i < $count; $i++) {
+                $parent = $rows[$i]->parent_node_id;
+                $insert->execute([
+                    $run_id,
+                    $parent === Format::NULL_STRING_ID ? null : $parent,
+                    $rows[$i]->child_node_id,
+                    $dict->lookup($rows[$i]->link_name_id) ?? '',
+                    $rows[$i]->is_tree,
+                    $strengths[$rows[$i]->strength] ?? 'strong',
+                ]);
+            }
+            return;
+        }
+        $data = $reader->getSectionData(Format::SECTION_EDGES);
+        for ($i = 0; $i < $count; $i++) {
+            $off = $i * Format::EDGE_ROW_SIZE;
+            $row = unpack('Vparent/Vchild/Vlid/Cis_tree/Cstrength', $data, $off);
+            $parent = (int)$row['parent'];
+            $insert->execute([
+                $run_id,
+                $parent === Format::NULL_STRING_ID ? null : $parent,
+                (int)$row['child'],
+                $dict->lookup((int)$row['lid']) ?? '',
+                (int)$row['is_tree'],
+                $strengths[(int)$row['strength']] ?? 'strong',
+            ]);
+        }
+    }
+
+    /**
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress PossiblyNullPropertyFetch
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidPropertyFetch
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    private function ingestLocations(\PDO $db, BinaryReader $reader, int $run_id): void
+    {
+        if (!$reader->hasSection(Format::SECTION_LOCATIONS)) {
+            return;
+        }
+        $dict = $reader->getStringDict();
+        $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+        if ($count === 0) {
+            return;
+        }
+        $insert = $db->prepare(
+            'INSERT INTO context_node_locations'
+            . ' (run_id, node_id, address, size, location_type, class_name, string_value,'
+            . '  refcount, type_info, region, bin_overhead)'
+            . ' VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        $rows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
+        if ($rows !== null) {
+            for ($i = 0; $i < $count; $i++) {
+                $class_id = $rows[$i]->class_id;
+                $sv_id = $rows[$i]->string_value_id;
+                $region_id = $rows[$i]->region_id;
+                $insert->execute([
+                    $run_id,
+                    $rows[$i]->node_id,
+                    $rows[$i]->address,
+                    $rows[$i]->size,
+                    $dict->lookup($rows[$i]->location_type_id) ?? '',
+                    $class_id === Format::NULL_STRING_ID ? null : $dict->lookup($class_id),
+                    $sv_id === Format::NULL_STRING_ID ? null : $dict->lookup($sv_id),
+                    $rows[$i]->refcount,
+                    $rows[$i]->type_info,
+                    $region_id === Format::NULL_STRING_ID ? null : $dict->lookup($region_id),
+                    $rows[$i]->bin_overhead,
+                ]);
+            }
+            return;
+        }
+        $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
+        for ($i = 0; $i < $count; $i++) {
+            $off = $i * Format::LOCATION_ROW_SIZE;
+            $row = unpack(
+                'Vnode_id/Vlocation_type_id/Vclass_id/Paddress/Psize'
+                . '/Vstring_value_id/Vrefcount/Vtype_info/Vregion_id/Vbin_overhead',
+                $data,
+                $off,
+            );
+            $class_id = (int)$row['class_id'];
+            $sv_id = (int)$row['string_value_id'];
+            $region_id = (int)$row['region_id'];
+            $insert->execute([
+                $run_id,
+                (int)$row['node_id'],
+                (int)$row['address'],
+                (int)$row['size'],
+                $dict->lookup((int)$row['location_type_id']) ?? '',
+                $class_id === Format::NULL_STRING_ID ? null : $dict->lookup($class_id),
+                $sv_id === Format::NULL_STRING_ID ? null : $dict->lookup($sv_id),
+                (int)$row['refcount'],
+                (int)$row['type_info'],
+                $region_id === Format::NULL_STRING_ID ? null : $dict->lookup($region_id),
+                (int)$row['bin_overhead'],
+            ]);
+        }
+    }
+
+    /**
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    private function ingestAttributes(\PDO $db, BinaryReader $reader, int $run_id): void
+    {
+        if (!$reader->hasSection(Format::SECTION_ATTRIBUTES)) {
+            return;
+        }
+        $count = $reader->getSectionElementCount(Format::SECTION_ATTRIBUTES);
+        if ($count === 0) {
+            return;
+        }
+        $dict = $reader->getStringDict();
+        $qi = fn (string $id): string => $this->driver->quoteIdentifier($id);
+        $insert = $db->prepare(
+            "INSERT INTO context_node_attributes (run_id, node_id, {$qi('key')}, {$qi('value')})"
+            . ' VALUES (?, ?, ?, ?)'
+        );
+        $data = $reader->getSectionData(Format::SECTION_ATTRIBUTES);
+        $offset = 0;
+        for ($i = 0; $i < $count; $i++) {
+            $row = unpack('Vnode_id/Vkey_id/Vvalue_id', $data, $offset);
+            $offset += 12;
+            $key = $dict->lookup((int)$row['key_id']);
+            if ($key === null) {
+                continue;
+            }
+            $value_id = (int)$row['value_id'];
+            $value = $value_id === Format::NULL_STRING_ID ? null : $dict->lookup($value_id);
+            $insert->execute([$run_id, (int)$row['node_id'], $key, $value]);
+        }
     }
 
     private function createTables(\PDO $db): void
