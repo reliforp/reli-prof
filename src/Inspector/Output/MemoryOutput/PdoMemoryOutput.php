@@ -450,8 +450,15 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $current_pages = (int)$db->query('PRAGMA page_count')->fetchColumn();
         unset($stmt, $db);
 
-        // Plan layout. Conservative estimate: 100 bytes/row average,
-        // ~35 cells/page → ~30 leaves per 1k rows. Pad 50% for safety.
+        // Estimate per-table average cell size by sampling the first
+        // few hundred rows of each section. Uses a fresh BinaryReader
+        // so we don't pin the rmem mapping into the parent for the
+        // rest of the run.
+        $est_avg_cell_bytes = $this->estimateAvgCellBytes($rmem_path, $section_counts, $run_id);
+
+        // Plan layout. Pages can hold ~3500 bytes after header; we
+        // size the reservation to fit the estimated row total plus
+        // a 15% safety margin and round up to whole pages.
         $tables = [];
         foreach ($section_counts as $name => $count) {
             if ($count === 0) {
@@ -461,9 +468,9 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 return false;
             }
             $rows_per_worker = (int)ceil($count / $worker_count);
-            $est_leaves = (int)ceil(($rows_per_worker * 100) / 3500);
-            $est_leaves = max(1, (int)ceil((float)$est_leaves * 1.5));
-            $tables[$name] = [$count, $est_leaves];
+            $bytes_per_row = (int)ceil(($est_avg_cell_bytes[$name] ?? 100) * 1.15);
+            $est_leaves = (int)ceil(($rows_per_worker * $bytes_per_row) / 3500);
+            $tables[$name] = [$count, max(1, $est_leaves)];
         }
         if ($tables === []) {
             return true;
@@ -575,18 +582,44 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 );
                 $all_unused = array_merge($all_unused, $unused);
             }
+
+            // Drop trailing unused pages from the file so the
+            // shared-mmap path doesn't bloat the DB by the worker
+            // safety-margin reservation. Remaining mid-file unused
+            // pages still need freelist entries.
+            $effective_total_pages = $total_pages;
+            if ($all_unused !== []) {
+                sort($all_unused);
+                $last_used = $total_pages;
+                while (
+                    $all_unused !== []
+                    && $all_unused[count($all_unused) - 1] === $last_used
+                ) {
+                    array_pop($all_unused);
+                    $last_used--;
+                }
+                $effective_total_pages = $last_used;
+            }
+
             SqliteFileMaintainer::finalize(
                 data_ptr: $data_ptr,
                 first_mapped_pgno: 1,
-                total_pages: $total_pages,
+                total_pages: $effective_total_pages,
                 unused_pgnos: $all_unused,
             );
             LibcFileWriter::msync($data_ptr, $data_len);
         } finally {
             LibcFileWriter::munmap($data_ptr, $data_len);
-            LibcFileWriter::close($data_fd);
             LibcFileWriter::munmap($meta_ptr, $meta_len);
             LibcFileWriter::close($meta_fd);
+            // Truncate the data file to the effective page count so
+            // the trailing safety-margin pages don't remain on disk.
+            // (Done after munmap so the shrinking truncate doesn't
+            // race with the still-mapped region.)
+            if (isset($effective_total_pages) && $effective_total_pages < $total_pages) {
+                LibcFileWriter::ftruncate($data_fd, $effective_total_pages * 4096);
+            }
+            LibcFileWriter::close($data_fd);
             @unlink($meta_path);
         }
 
@@ -609,6 +642,59 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $this->createViews($db);
 
         return true;
+    }
+
+    /**
+     * Sample the first ~500 rows of each section to estimate average
+     * encoded cell size. Used by the plan step to size each worker's
+     * leaf-page reservation tightly so the resulting file isn't
+     * bloated by safety-margin tail pages.
+     *
+     * @param array<string, int> $section_counts
+     * @return array<string, int>
+     * @psalm-suppress InaccessibleMethod
+     * @psalm-suppress UndefinedPropertyFetch
+     * @psalm-suppress InvalidPropertyFetch
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    private function estimateAvgCellBytes(
+        string $rmem_path,
+        array $section_counts,
+        int $run_id,
+    ): array {
+        $reader = BinaryReader::open($rmem_path);
+        $dict = $reader->getStringDict();
+        $sample_size = 500;
+        $factories = [
+            'context_nodes' => [$this, 'rowsForNodes'],
+            'context_edges' => [$this, 'rowsForEdges'],
+            'context_node_locations' => [$this, 'rowsForLocations'],
+            'context_node_attributes' => [$this, 'rowsForAttributes'],
+        ];
+        $out = [];
+        foreach ($factories as $name => $factory) {
+            $count = $section_counts[$name] ?? 0;
+            if ($count === 0) {
+                continue;
+            }
+            $sample = min($sample_size, $count);
+            $total_bytes = 0;
+            $rows_seen = 0;
+            /** @var \Generator<int, array{int, list<int|string|null>}> $rows */
+            $rows = $factory($reader, $dict, $run_id, 0, $sample);
+            foreach ($rows as [$rowid, $values]) {
+                $total_bytes += strlen(
+                    \Reli\Inspector\Output\MemoryOutput\SqliteRaw\TableCellEncoder::encodeTableLeafCell(
+                        $rowid,
+                        $values,
+                    )
+                );
+                $rows_seen++;
+            }
+            $out[$name] = $rows_seen === 0 ? 100 : (int)ceil($total_bytes / $rows_seen);
+        }
+        return $out;
     }
 
     /**
