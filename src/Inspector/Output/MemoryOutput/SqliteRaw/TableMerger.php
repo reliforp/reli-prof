@@ -131,8 +131,20 @@ final class TableMerger
         while (count($level) > $max_children) {
             /** @var list<array{pgno: int, max_rowid: int}> $next_level */
             $next_level = [];
-            for ($i = 0, $n = count($level); $i < $n; $i += $max_children) {
-                $chunk = array_slice($level, $i, $max_children);
+            $n = count($level);
+            $i = 0;
+            while ($i < $n) {
+                $remaining = $n - $i;
+                $take = min($max_children, $remaining);
+                // SQLite requires interior pages to carry at least one
+                // cell — i.e. at least 2 children. If a naive chunk
+                // would leave exactly one entry for the next chunk,
+                // back off by one so the trailing chunk has ≥2.
+                if ($remaining - $take === 1 && $take >= 3) {
+                    $take--;
+                }
+                $chunk = array_slice($level, $i, $take);
+                $i += $take;
                 $page = $this->buildInteriorPage($chunk, $page_size);
                 $pgno = $this->main->appendPage($page);
                 $next_level[] = ['pgno' => $pgno, 'max_rowid' => $chunk[count($chunk) - 1]['max_rowid']];
