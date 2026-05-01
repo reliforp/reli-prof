@@ -758,6 +758,15 @@ The references in the objects_store don't add refcount to the objects.
 - Data that can only be reached from circular references that don't contain any objects
 - Support for the opcache SHM
 
+## PHP 7.0 caveat: best-effort TMP/VAR inspection
+
+PHP 7.0 has no `zend_op_array.live_range` table (introduced in 7.1), so reli
+cannot determine which TMP/VAR slots are live at the current opcode. On 7.0
+targets reli scans every TMP/VAR slot and skips those whose zval is `IS_UNDEF`,
+which means a stale value left in a TMP slot by a previous opcode may surface
+as `$_T[N]` in the dump even though it is no longer logically live. On
+PHP 7.1+ liveness filtering remains exact.
+
 # Troubleshooting
 ## jq says "parse error: Exceeds depth limit for parsing at line 1"
 It's not a bug of Reli, but a limitation of `jq`. Currently, `jq` doesn't have a way to increase the limit without recompiling it. You can also try some other tools like `gojq` or `jj` instead.

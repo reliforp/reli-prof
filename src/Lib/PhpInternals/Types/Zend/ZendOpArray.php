@@ -248,11 +248,9 @@ final class ZendOpArray
 
     public function hasLiveRangeSupport(): bool
     {
-        return in_array(
-            'live_range',
-            \FFI::typeof($this->cdata->casted)->getStructFieldNames(),
-            true,
-        );
+        $fields = \FFI::typeof($this->cdata->casted)->getStructFieldNames();
+        return in_array('live_range', $fields, true)
+            and in_array('last_live_range', $fields, true);
     }
 
     /**
