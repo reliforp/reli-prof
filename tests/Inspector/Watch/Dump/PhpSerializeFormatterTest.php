@@ -288,6 +288,121 @@ class PhpSerializeFormatterTest extends TestCase
         );
     }
 
+    public function testScalarReferenceShareEmitsR(): void
+    {
+        // $x = "hello"; $arr = [&$x, &$x];
+        // → a:2:{i:0;s:5:"hello";i:1;R:2;}
+        // Reader stamps the same zend_reference address on both leaf
+        // VariableValues; formatter emits the second as R:2;.
+        $shared = new VariableValue(
+            VariableValue::TYPE_STRING,
+            'hello',
+            null,
+            null,
+            null,
+            null,
+            false,
+            false,
+            5,
+            null,
+            0xAAA,
+        );
+        $arr = new VariableValue(
+            VariableValue::TYPE_ARRAY,
+            null,
+            2,
+            [[0, $shared], [1, $shared]],
+            null,
+            null,
+            false,
+            false,
+            null,
+            0xBEEF,
+        );
+        $this->assertSame(
+            'a:2:{i:0;s:5:"hello";i:1;R:2;}',
+            PhpSerializeFormatter::format($arr),
+        );
+    }
+
+    public function testReferenceShareLivesThroughUnserialize(): void
+    {
+        // After round-tripping through unserialize, the recovered slots
+        // are still aliased — writing to one is visible from the other.
+        // This is the property that makes the format genuinely lossless
+        // for `&`-aliasing.
+        $shared = new VariableValue(
+            VariableValue::TYPE_STRING,
+            'hello',
+            null,
+            null,
+            null,
+            null,
+            false,
+            false,
+            5,
+            null,
+            0xAAA,
+        );
+        $arr = new VariableValue(
+            VariableValue::TYPE_ARRAY,
+            null,
+            2,
+            [[0, $shared], [1, $shared]],
+            null,
+            null,
+            false,
+            false,
+            null,
+            0xBEEF,
+        );
+        $revived = unserialize(PhpSerializeFormatter::format($arr));
+        $this->assertIsArray($revived);
+        $revived[0] = 'modified';
+        $this->assertSame('modified', $revived[1]);
+    }
+
+    public function testReferenceIdSurvivesIntervening(): void
+    {
+        // serialize([&$x, "world", &$x]) bumps the counter on the
+        // intervening string, so the second &$x resolves to id 2 (the
+        // first &$x's value) — not 4 — even with a non-shared sibling
+        // sitting between them.
+        $shared = new VariableValue(
+            VariableValue::TYPE_STRING,
+            'hello',
+            null,
+            null,
+            null,
+            null,
+            false,
+            false,
+            5,
+            null,
+            0xAAA,
+        );
+        $arr = new VariableValue(
+            VariableValue::TYPE_ARRAY,
+            null,
+            3,
+            [
+                [0, $shared],
+                [1, $this->string('world')],
+                [2, $shared],
+            ],
+            null,
+            null,
+            false,
+            false,
+            null,
+            0xCAFE,
+        );
+        $this->assertSame(
+            'a:3:{i:0;s:5:"hello";i:1;s:5:"world";i:2;R:2;}',
+            PhpSerializeFormatter::format($arr),
+        );
+    }
+
     public function testRecursionWithUnknownAddressFallsBackToNull(): void
     {
         // The reader can drop a cycle target if the target sat below a

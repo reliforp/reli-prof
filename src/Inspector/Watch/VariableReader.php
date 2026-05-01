@@ -602,6 +602,17 @@ final class VariableReader implements VariableReaderInterface
         int $depth,
         array $seen,
     ): VariableValue {
+        // Capture the originating zend_reference's pointer address before
+        // resolveIndirectAndRef collapses the IS_REFERENCE layer. We need
+        // it so the serialize formatter can emit R:N; for `&`-aliased
+        // slots that reach the same zend_reference (PHP gives them the
+        // same id and a back-edge for every occurrence after the first).
+        $reference_address = $this->detectReferenceAddress(
+            $zval,
+            $dereferencer,
+            $zend_type_reader,
+        );
+
         $resolved = $this->resolveIndirectAndRef(
             $zval,
             $dereferencer,
@@ -614,7 +625,60 @@ final class VariableReader implements VariableReaderInterface
                 null,
             );
         }
-        $zval = $resolved;
+        $built = $this->buildResolvedValue(
+            $resolved,
+            $dereferencer,
+            $zend_type_reader,
+            $options,
+            $depth,
+            $seen,
+        );
+        if ($reference_address !== null) {
+            return $built->withReferenceAddress($reference_address);
+        }
+        return $built;
+    }
+
+    /**
+     * Peek the zval (skipping any IS_INDIRECT layer) and return the
+     * underlying zend_reference pointer's address if the slot is a `&`-
+     * alias, otherwise null. Does not consume / modify the input.
+     */
+    private function detectReferenceAddress(
+        Zval $zval,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+    ): ?int {
+        $current = $zval;
+        if ($current->isIndirect()) {
+            try {
+                $ptr = $current->value->getAsPointer(
+                    Zval::class,
+                    $zend_type_reader->sizeOf('zval'),
+                );
+                $current = $dereferencer->deref($ptr);
+            } catch (\Throwable) {
+                return null;
+            }
+        }
+        if (!$current->isReference()) {
+            return null;
+        }
+        $ref_pointer = $current->value->ref;
+        if ($ref_pointer === null) {
+            return null;
+        }
+        return $ref_pointer->address;
+    }
+
+    private function buildResolvedValue(
+        Zval $zval,
+        Dereferencer $dereferencer,
+        ZendTypeReader $zend_type_reader,
+        ?VariableReadOptions $options,
+        int $depth,
+        array $seen,
+    ): VariableValue {
 
         if ($zval->isLong()) {
             return new VariableValue(

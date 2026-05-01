@@ -47,6 +47,30 @@ final class VariableValue
         public readonly bool $string_truncated = false,
         public readonly ?int $original_string_length = null,
         public readonly ?int $address = null,
+        public readonly ?int $reference_address = null,
     ) {
+    }
+
+    /**
+     * Return a copy with `reference_address` replaced. Used by the reader
+     * to stamp the originating zend_reference's pointer onto a value
+     * after resolveIndirectAndRef has already consumed the IS_REFERENCE
+     * layer.
+     */
+    public function withReferenceAddress(?int $reference_address): self
+    {
+        return new self(
+            $this->type,
+            $this->scalar_value,
+            $this->array_count,
+            $this->children,
+            $this->class_name,
+            $this->object_id,
+            $this->children_truncated,
+            $this->string_truncated,
+            $this->original_string_length,
+            $this->address,
+            $reference_address,
+        );
     }
 }

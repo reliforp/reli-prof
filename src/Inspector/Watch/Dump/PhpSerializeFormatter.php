@@ -24,17 +24,20 @@ use Reli\Inspector\Watch\VariableValue;
  *   - object cycles and *shared* (non-cyclic) object instances render as
  *     `r:N;` pointing to the id of the first emission, mirroring PHP's
  *     by-reference object semantics
+ *   - `&`-aliased slots (the same `zend_reference` reachable from multiple
+ *     places — including scalars) render as `R:N;` for every occurrence
+ *     after the first; the first occurrence emits its target value
+ *     normally and the reference's id piggybacks on that value's id, the
+ *     same way PHP's serialize does it
  *   - array cycles (only reachable through `&` aliasing in PHP) render as
- *     `R:N;`
- *   - if the cycle target is missing — e.g. it sat below a depth/element
- *     budget so the reader never assigned it an id — the back-edge falls
- *     back to `N;` (a benign placeholder that keeps the format parseable)
+ *     `R:N;` via the same mechanism
+ *   - if the cycle / share target is missing — e.g. it sat below a depth
+ *     / element budget so the reader never assigned it an id — the
+ *     back-edge falls back to `N;` (a benign placeholder that keeps the
+ *     format parseable)
  *
  * Compat caveats — what we *can't* reconstruct from a memory snapshot:
  *
- *   - true `&` references on scalars: the reader resolves `IS_REFERENCE`
- *     before we see it, so two `&$x` slots both render as their target's
- *     value rather than the second one becoming `R:N;`
  *   - element-truncated arrays/objects: the header count is rewritten to
  *     match the emitted body so `unserialize()` accepts the prefix; the
  *     elided entries are unrecoverable
@@ -51,6 +54,8 @@ final class PhpSerializeFormatter
     private array $object_ids = [];
     /** @var array<int, int> address → id (arrays, only valid while on the recursion path) */
     private array $array_stack_ids = [];
+    /** @var array<int, int> zend_reference address → id (persistent for the whole call) */
+    private array $reference_ids = [];
 
     public static function format(VariableValue $value): string
     {
@@ -58,6 +63,31 @@ final class PhpSerializeFormatter
     }
 
     private function render(VariableValue $value): string
+    {
+        // Reference-share back-edge: a slot whose zend_reference we've
+        // already emitted under some id N. PHP serialize() does this even
+        // for scalars (`R:N;`), and it does *not* bump the counter. We
+        // never assign a separate id to the reference itself — the id
+        // belongs to the target value, and the reference's address just
+        // becomes another lookup key for the same id.
+        $ref_addr = $value->reference_address;
+        if ($ref_addr !== null && isset($this->reference_ids[$ref_addr])) {
+            return 'R:' . $this->reference_ids[$ref_addr] . ';';
+        }
+        $before_counter = $this->counter;
+        $rendered = $this->dispatch($value);
+        // First-time reference: piggyback its id on whichever id
+        // dispatch() consumed (if any). If dispatch emitted a back-edge
+        // itself — e.g. an object that was already seen — counter didn't
+        // move, and we leave reference_ids alone so a future occurrence
+        // still resolves to the underlying object's id via object_ids.
+        if ($ref_addr !== null && $this->counter > $before_counter) {
+            $this->reference_ids[$ref_addr] = $before_counter + 1;
+        }
+        return $rendered;
+    }
+
+    private function dispatch(VariableValue $value): string
     {
         return match ($value->type) {
             VariableValue::TYPE_LONG => $this->scalarBump('i:' . (string)$value->scalar_value . ';'),

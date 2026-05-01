@@ -530,6 +530,66 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
         $this->assertSame($revived, $array['next']);
     }
 
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testPhpSerializeAmpersandShareSurvivesRoundTrip(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        // Two array slots aliased to the same scalar via `&`. After the
+        // round-trip the alias relationship must hold — writing through
+        // one slot is visible through the other. This pins the
+        // zend_reference-tracking path: the reader has to capture the
+        // ref pointer before resolveIndirectAndRef collapses it, and
+        // the formatter has to emit R:N; for the second occurrence.
+        $target_script = <<<'CODE'
+            <?php
+            $x = "hello";
+            $GLOBALS['arr'] = [&$x, &$x];
+            fputs(STDOUT, "ready\n");
+            fgets(STDIN);
+            CODE;
+
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes,
+        );
+        $this->assertSame("ready\n", fgets($pipes[1]));
+
+        $command = $this->createCommand();
+        (new Application())->addCommand($command);
+
+        $tester = new CommandTester($command);
+        $tester->execute([
+            '-p' => (string)$pid,
+            '--var' => ['global::$arr'],
+            '--format' => 'php-serialize',
+            '--php-version' => $php_version,
+        ]);
+
+        $this->assertSame(0, $tester->getStatusCode());
+        $display = $tester->getDisplay();
+        $prefix = 'global::$arr = ';
+        $start = strpos($display, $prefix);
+        $this->assertIsInt($start);
+        $payload = trim(substr($display, $start + strlen($prefix)));
+
+        // Native PHP serialize for [&$x, &$x] is a:2:{i:0;s:5:"hello";i:1;R:2;}
+        $this->assertSame('a:2:{i:0;s:5:"hello";i:1;R:2;}', $payload);
+
+        $revived = unserialize($payload);
+        $this->assertIsArray($revived);
+        $this->assertSame('hello', $revived[0]);
+        $revived[0] = 'modified';
+        $this->assertSame(
+            'modified',
+            $revived[1],
+            'writing to slot 0 must be visible from slot 1 — '
+                . 'the zend_reference alias is preserved',
+        );
+    }
+
     public function testNoVarReturnsError(): void
     {
         $command = $this->createCommand();
