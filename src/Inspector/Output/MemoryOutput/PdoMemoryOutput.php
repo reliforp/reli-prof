@@ -21,6 +21,7 @@ use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\CellTooLargeException;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\IntegerIndexMerger;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\OverflowNotSupportedException;
+use Reli\Inspector\Output\MemoryOutput\SqliteRaw\ParallelIndexBuilder;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\Reader as SqliteRawReader;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\SharedMmapPlan;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\SharedMmapTableWriter;
@@ -658,12 +659,152 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $this->computeCanonicalNodeIds($db, $run_id);
         $phase('computeCanonicalNodeIds');
         $this->driver->afterBulkInsert($db);
-        $this->createIndexes($db);
-        $phase('createIndexes');
+
+        if (self::parallelIndexEnabled() && $this->tryParallelCreateIndexes($db)) {
+            $phase('createIndexes (parallel sharded)');
+        } else {
+            $this->createIndexes($db);
+            $phase('createIndexes');
+        }
         $this->createViews($db);
         $phase('createViews');
 
         return true;
+    }
+
+    private static function parallelIndexEnabled(): bool
+    {
+        return getenv('RELI_PARALLEL_INDEX') === '1';
+    }
+
+    /**
+     * Per-index sharded CREATE INDEX. Returns true on success and
+     * the caller can skip the serial createIndexes(); false to
+     * signal "fell back".
+     *
+     * Each (name, table, sql) tuple matches one statement that
+     * createIndexes() would have run; ParallelIndexBuilder forks
+     * workers, each cp's main, runs CREATE INDEX natively in its
+     * shard, then page-relocates the index back into main via
+     * shared mmap.
+     */
+    private function tryParallelCreateIndexes(\PDO $db): bool
+    {
+        if (!$this->driver instanceof SqliteDriver) {
+            return false;
+        }
+        $specs = self::userIndexSpecs();
+        // Close PDO so the file is consistent before workers cp it.
+        $db_path = $this->driver->path();
+        // We can't unset the caller's $db, but we can rely on the
+        // file being in a consistent state after the prior commits.
+        $result = ParallelIndexBuilder::build(
+            $db_path,
+            $specs,
+            $this->defaultWorkerCount(),
+        );
+        if ($result === null) {
+            return false;
+        }
+        [$unused_pgnos, $effective_total_pages] = $result;
+        // ParallelIndexBuilder did its own ftruncate on tail trim
+        // already; what remains is the mid-file freelist work.
+        if ($unused_pgnos !== []) {
+            $libc = \FFI::cdef('int open(const char *, int, int);', null);
+            $fd = $libc->open($db_path, 2, 0);
+            if ($fd >= 0) {
+                $size = $effective_total_pages * 4096;
+                $res = LibcFileWriter::mmapShared($db_path, $size);
+                LibcFileWriter::close($fd);
+                if ($res !== null) {
+                    [$ptr, $len, $maint_fd] = $res;
+                    SqliteFileMaintainer::finalize(
+                        data_ptr: $ptr,
+                        first_mapped_pgno: 1,
+                        total_pages: $effective_total_pages,
+                        unused_pgnos: $unused_pgnos,
+                    );
+                    LibcFileWriter::msync($ptr, $len);
+                    LibcFileWriter::munmap($ptr, $len);
+                    LibcFileWriter::close($maint_fd);
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Single source of truth for user index specs that the
+     * parallel CREATE INDEX path uses. Mirrors the statements in
+     * {@see createIndexes} so both paths produce the same indexes.
+     *
+     * @return list<array{string, string, string}> [name, table, sql]
+     */
+    private static function userIndexSpecs(): array
+    {
+        return [
+            [
+                'idx_context_edges_run_child',
+                'context_edges',
+                'CREATE INDEX idx_context_edges_run_child'
+                    . ' ON context_edges(run_id, child_node_id)',
+            ],
+            [
+                'idx_context_node_locations_run_node',
+                'context_node_locations',
+                'CREATE INDEX idx_context_node_locations_run_node'
+                    . ' ON context_node_locations(run_id, node_id)',
+            ],
+            [
+                'idx_context_node_locations_run_class',
+                'context_node_locations',
+                'CREATE INDEX idx_context_node_locations_run_class'
+                    . ' ON context_node_locations(run_id, class_name)',
+            ],
+            [
+                'idx_context_node_attributes_run_node',
+                'context_node_attributes',
+                'CREATE INDEX idx_context_node_attributes_run_node'
+                    . ' ON context_node_attributes(run_id, node_id)',
+            ],
+            [
+                'idx_context_node_locations_run_type',
+                'context_node_locations',
+                'CREATE INDEX idx_context_node_locations_run_type'
+                    . ' ON context_node_locations(run_id, location_type)',
+            ],
+            [
+                'idx_context_node_locations_run_type_size',
+                'context_node_locations',
+                'CREATE INDEX idx_context_node_locations_run_type_size'
+                    . ' ON context_node_locations(run_id, location_type, size)',
+            ],
+            [
+                'idx_context_edges_run_link_parent',
+                'context_edges',
+                'CREATE INDEX idx_context_edges_run_link_parent'
+                    . ' ON context_edges(run_id, link_name, parent_node_id)',
+            ],
+            [
+                'idx_context_edges_strong_nontree_links',
+                'context_edges',
+                'CREATE INDEX idx_context_edges_strong_nontree_links'
+                    . ' ON context_edges(run_id, link_name, child_node_id, parent_node_id)'
+                    . " WHERE is_tree = 0 AND strength = 'strong'",
+            ],
+            [
+                'idx_context_nodes_canonical',
+                'context_nodes',
+                'CREATE INDEX idx_context_nodes_canonical'
+                    . ' ON context_nodes(run_id, canonical_node_id)',
+            ],
+            [
+                'idx_context_node_locations_region_addr_size',
+                'context_node_locations',
+                'CREATE INDEX idx_context_node_locations_region_addr_size'
+                    . ' ON context_node_locations(run_id, region, address, size)',
+            ],
+        ];
     }
 
     /**
