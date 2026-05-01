@@ -48,9 +48,13 @@ final class MemoryDumpReader
     ): void {
         if (MemoryOutputFactory::isRmemFormat($memory_profiler_settings)) {
             $this->readBinary($memory_profiler_settings);
-        } elseif (MemoryOutputFactory::isDbFormat($memory_profiler_settings)) {
-            $this->readPdo($memory_profiler_settings);
         } else {
+            // All non-rmem formats — DB (sqlite3 / mysql / postgresql) and
+            // export (json / report / report-json) — collect into a temp
+            // .rmem and then convert to the requested format. The DB path
+            // pays a one-time wall-clock cost over direct-write but cuts
+            // target pause time, since SQL INSERT and CREATE INDEX run
+            // after the target is resumed.
             $this->readBinaryThenConvert($memory_profiler_settings);
         }
     }

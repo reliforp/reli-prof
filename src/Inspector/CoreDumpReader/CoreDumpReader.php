@@ -73,18 +73,9 @@ final class CoreDumpReader
             return;
         }
 
-        if (MemoryOutputFactory::isDbFormat($memory_profiler_settings)) {
-            $this->readPdo(
-                $process_specifier,
-                $target_php_settings_version_decided,
-                $eg_address,
-                $cg_address,
-                $bg_address,
-                $memory_profiler_settings,
-            );
-            return;
-        }
-
+        // All non-rmem formats — DB (sqlite3 / mysql / postgresql) and
+        // export (json / report / report-json) — collect into a temp .rmem
+        // and then convert to the requested format.
         $this->readBinaryThenConvert(
             $process_specifier,
             $target_php_settings_version_decided,
