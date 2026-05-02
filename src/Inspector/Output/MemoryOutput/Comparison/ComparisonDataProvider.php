@@ -39,5 +39,41 @@ interface ComparisonDataProvider
      */
     public function loadClassMap(): array;
 
+    /**
+     * Decoded bin walker output from the summary section, or null when the
+     * snapshot pre-dates the bin walker / the ZendMM walk failed.
+     *
+     * @return array{
+     *     histogram: array<int, array{count: int, total_bytes: int}>,
+     *     large_run_count?: int,
+     *     large_run_bytes?: int,
+     *     live_small_slot_count?: int,
+     *     live_small_slot_bytes?: int,
+     *     walked_chunk_count?: int,
+     *     partial?: bool
+     * }|null
+     */
+    public function loadBinHistogramSnapshot(): ?array;
+
+    /**
+     * The address-range snapshot the analyze pipeline persisted via
+     * {@see \Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionMap}.
+     *
+     * @return list<array{kind: string, address: int, size: int}>|null
+     */
+    public function loadRegionMap(): ?array;
+
+    /**
+     * Per-(bin, shape) tally from the per-slot detector scan.
+     *
+     * @return array<int, array<string, array{
+     *     count: int,
+     *     reachable_count: int,
+     *     confidence: string,
+     *     sample_addrs: list<int>
+     * }>>|null
+     */
+    public function loadBinShapeCounts(): ?array;
+
     public function generateReport(bool $full_analysis, ?bool $ffi_csr): ReportResult;
 }

@@ -13,8 +13,11 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput\Comparison\Formatter;
 
+use Reli\Inspector\Output\MemoryOutput\Comparison\BinDelta;
+use Reli\Inspector\Output\MemoryOutput\Comparison\BinShapeDelta;
 use Reli\Inspector\Output\MemoryOutput\Comparison\ClassDelta;
 use Reli\Inspector\Output\MemoryOutput\Comparison\ComparisonResult;
+use Reli\Inspector\Output\MemoryOutput\Comparison\RegionDelta;
 use Reli\Inspector\Output\MemoryOutput\Comparison\SummaryDelta;
 use Reli\Inspector\Output\MemoryOutput\Comparison\TypeDelta;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
@@ -45,6 +48,32 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
 
         // Class deltas
         $this->formatClassDeltas($lines, $result);
+
+        // Region map delta (B.2) — Added / Grown / Shrunk / Removed
+        // groups of address ranges. Sits above the bin delta because
+        // a "+728 KiB at 0x..." callout points the user at the rough
+        // location before the bin histogram tells them what's inside.
+        $this->formatRegionDeltas($lines, $result->region_deltas);
+
+        // ZendMM bin histogram delta — sourced from the bin walker
+        // (analyze-time) and decoded from the rmem summary section.
+        // Lands above the findings diff so the user can correlate
+        // "+16,041 bin[32 B]" with the unaccounted-delta finding when
+        // both fire on the same comparison.
+        $this->formatBinDeltas($lines, $result->bin_deltas);
+
+        // Per-(bin, shape) deltas — the per-slot scan output. Surfaces
+        // "+2,000 Bucket(IS_STRING) in bin[3]" leaks that the periodic-
+        // group path (above) misses because content-varying shapes
+        // never form a fingerprint cluster.
+        $this->formatBinShapeDeltas($lines, $result->bin_shape_deltas);
+
+        // Synthetic "heap grew but typed delta ≈ 0" finding (B.4).
+        // High-severity callout above the regular findings diff so the
+        // signal can't get buried under per-class noise.
+        if ($result->unaccounted_finding !== null) {
+            $this->formatUnaccountedFinding($lines, $result->unaccounted_finding);
+        }
 
         // Findings diff
         $this->formatFindingsDiff($lines, $result);
@@ -274,6 +303,178 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
             }
             $lines[] = '';
         }
+    }
+
+    /**
+     * @param list<string> $lines
+     * @param list<RegionDelta> $deltas
+     */
+    private function formatRegionDeltas(array &$lines, array $deltas): void
+    {
+        if ($deltas === []) {
+            return;
+        }
+
+        $lines[] = '=== Region Map Delta ===';
+        $lines[] = '';
+
+        $by_change = [
+            RegionDelta::CHANGE_ADDED => [],
+            RegionDelta::CHANGE_GROWN => [],
+            RegionDelta::CHANGE_SHRUNK => [],
+            RegionDelta::CHANGE_REMOVED => [],
+        ];
+        foreach ($deltas as $rd) {
+            $by_change[$rd->change][] = $rd;
+        }
+
+        foreach (
+            [
+                RegionDelta::CHANGE_ADDED => 'Added',
+                RegionDelta::CHANGE_GROWN => 'Grown',
+                RegionDelta::CHANGE_SHRUNK => 'Shrunk',
+                RegionDelta::CHANGE_REMOVED => 'Removed',
+            ] as $change => $label
+        ) {
+            $rows = array_slice($by_change[$change], 0, 20);
+            if ($rows === []) {
+                continue;
+            }
+            $lines[] = "  {$label}:";
+            foreach ($rows as $rd) {
+                if ($change === RegionDelta::CHANGE_ADDED) {
+                    $lines[] = sprintf(
+                        '    + %s [%s] at 0x%012x',
+                        SizeFormatter::format($rd->target_size),
+                        $rd->kind,
+                        $rd->address,
+                    );
+                } elseif ($change === RegionDelta::CHANGE_REMOVED) {
+                    $lines[] = sprintf(
+                        '    - %s [%s] at 0x%012x',
+                        SizeFormatter::format($rd->baseline_size),
+                        $rd->kind,
+                        $rd->address,
+                    );
+                } else {
+                    $sign = $rd->size_delta >= 0 ? '+' : '-';
+                    $lines[] = sprintf(
+                        '    %s %s [%s] at 0x%012x  (%s → %s)',
+                        $sign,
+                        SizeFormatter::format(abs($rd->size_delta)),
+                        $rd->kind,
+                        $rd->address,
+                        SizeFormatter::format($rd->baseline_size),
+                        SizeFormatter::format($rd->target_size),
+                    );
+                }
+            }
+            if (count($by_change[$change]) > 20) {
+                $lines[] = sprintf(
+                    '    … %d more %s',
+                    count($by_change[$change]) - 20,
+                    $label,
+                );
+            }
+        }
+        $lines[] = '';
+    }
+
+    /**
+     * @param list<string> $lines
+     * @param list<BinDelta> $deltas
+     */
+    private function formatBinDeltas(array &$lines, array $deltas): void
+    {
+        if ($deltas === []) {
+            return;
+        }
+
+        $lines[] = '=== ZendMM Bin Histogram Delta ===';
+        $lines[] = '';
+        $lines[] = sprintf(
+            '  %3s  %8s %12s %12s %14s %14s',
+            'Bin',
+            'Size',
+            'Baseline',
+            'Target',
+            "Count \xce\x94",
+            "Memory \xce\x94",
+        );
+        $lines[] = '  ' . str_repeat('-', 73);
+
+        foreach (array_slice($deltas, 0, 30) as $bd) {
+            $count_str = sprintf('%+d', $bd->count_delta);
+            $bytes_sign = $bd->bytes_delta >= 0 ? '+' : '-';
+            $bytes_str = $bytes_sign . SizeFormatter::format(abs($bd->bytes_delta));
+            $lines[] = sprintf(
+                '  %3d  %8s %12s %12s %14s %14s',
+                $bd->bin_num,
+                SizeFormatter::format($bd->bin_size),
+                number_format($bd->baseline_count),
+                number_format($bd->target_count),
+                $count_str,
+                $bytes_str,
+            );
+        }
+        $lines[] = '';
+    }
+
+    /**
+     * @param list<string> $lines
+     * @param list<BinShapeDelta> $deltas
+     */
+    private function formatBinShapeDeltas(array &$lines, array $deltas): void
+    {
+        if ($deltas === []) {
+            return;
+        }
+        $lines[] = '=== Per-bin Shape Detection Delta ===';
+        $lines[] = '';
+        $lines[] = sprintf(
+            '  %3s  %-32s %14s %14s %14s',
+            'Bin',
+            'Shape',
+            "Count \xce\x94",
+            "Orphan \xce\x94",
+            "Reachable \xce\x94",
+        );
+        $lines[] = '  ' . str_repeat('-', 84);
+        foreach (array_slice($deltas, 0, 30) as $sd) {
+            $shape_cell = sprintf('%s [%s]', $sd->shape, strtoupper($sd->confidence));
+            $lines[] = sprintf(
+                '  %3d  %-32s %14s %14s %14s',
+                $sd->bin_num,
+                strlen($shape_cell) > 32 ? substr($shape_cell, 0, 31) . '…' : $shape_cell,
+                sprintf('%+d', $sd->count_delta),
+                sprintf('%+d', $sd->orphan_count_delta),
+                sprintf('%+d', $sd->reachable_count_delta),
+            );
+        }
+        $lines[] = '';
+    }
+
+    /**
+     * @param list<string> $lines
+     */
+    private function formatUnaccountedFinding(array &$lines, Finding $f): void
+    {
+        $lines[] = '=== Unaccounted Heap Delta ===';
+        $lines[] = '';
+        $tag = strtoupper($f->severity->value);
+        $impact = $f->impact_bytes > 0
+            ? SizeFormatter::format($f->impact_bytes)
+            : '—';
+        $lines[] = "  [{$tag}] {$impact}: {$f->summary}";
+        if ($f->hypothesis !== '') {
+            foreach (explode("\n", $f->hypothesis) as $h) {
+                $lines[] = "    {$h}";
+            }
+        }
+        if ($f->next_checks !== []) {
+            $lines[] = '    Next: ' . implode('; ', $f->next_checks);
+        }
+        $lines[] = '';
     }
 
     /**

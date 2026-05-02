@@ -13,10 +13,14 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\BinWalkResult;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
 
 final class CollectedMemories
 {
+    /** Region map computed lazily on first access; cached afterwards. */
+    private ?RegionMap $region_map = null;
+
     public function __construct(
         public MemoryLocations $chunk_memory_locations,
         public MemoryLocations $huge_memory_locations,
@@ -35,6 +39,15 @@ final class CollectedMemories
         public int $last_chunks_delete_count = 0,
         public int $chunks_total_free_bytes = 0,
         public int $chunks_mostly_empty_count = 0,
+        public ?BinWalkResult $bin_walk_result = null,
     ) {
+    }
+
+    public function getRegionMap(): RegionMap
+    {
+        if ($this->region_map === null) {
+            $this->region_map = RegionMap::fromCollectedMemories($this);
+        }
+        return $this->region_map;
     }
 }

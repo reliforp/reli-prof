@@ -39,6 +39,7 @@ final class MemoryDumpReader
         private ?int $bg_address = null,
         private ?int $rss_bytes = null,
         private ?FastPathReader $fast_path = null,
+        private bool $disable_bin_walk = false,
     ) {
     }
 
@@ -77,6 +78,7 @@ final class MemoryDumpReader
                 $this->bg_address,
                 $sink,
                 $this->fast_path,
+                $this->disable_bin_walk,
             );
 
             $region_boundaries = new RegionBoundaries(
@@ -166,6 +168,7 @@ final class MemoryDumpReader
             $this->bg_address,
             $sink,
             $this->fast_path,
+            $this->disable_bin_walk,
         );
 
         // RegionBoundaries is already set on the sink by collectAll()
@@ -231,6 +234,19 @@ final class MemoryDumpReader
                 'chunks_total_free_bytes' => $collected_memories->chunks_total_free_bytes,
                 'chunks_mostly_empty_count' => $collected_memories->chunks_mostly_empty_count,
             ]
+            + ($collected_memories->bin_walk_result !== null
+                ? [
+                    // Non-scalar values are JSON-encoded by the summary
+                    // writer (PDO + binary paths both call json_encode).
+                    'bin_walk' => $collected_memories->bin_walk_result->toSummaryHistogramArray(),
+                    'bin_walk_periodic_groups'
+                        => $collected_memories->bin_walk_result->toSummaryPeriodicGroupsArray(),
+                    'bin_shape_counts'
+                        => $collected_memories->bin_walk_result->toSummaryShapeCountsArray(),
+                ]
+                : []
+            )
+            + ['region_map' => $collected_memories->getRegionMap()->toSummaryArray()]
             + ($rss_bytes !== null ? ['rss' => $rss_bytes] : [])
             + [
                 'heap_memory_analyzed_percentage' =>

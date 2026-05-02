@@ -47,6 +47,7 @@ final class MemoryDumpReaderFactory
         array $path_mapping,
         int $read_buffer_size = 256 * 1024,
         bool $disable_fast_path = false,
+        bool $disable_bin_walk = false,
     ): MemoryDumpReader {
         $fp = fopen($file_path, 'rb');
         if ($fp === false) {
@@ -118,6 +119,7 @@ final class MemoryDumpReaderFactory
             $parsed['cg_address'],
             rss_bytes: $parsed['rss_bytes'],
             fast_path: $fast_path,
+            disable_bin_walk: $disable_bin_walk,
         );
     }
 

@@ -217,7 +217,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $sink = new ArrayContextTreeSink();
         $collected_memories = $memory_locations_collector->collectAll(
@@ -455,7 +458,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $collected_memories = $memory_locations_collector->collectAll(
             new ProcessSpecifier($pid),
@@ -622,7 +628,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $sink = new ArrayContextTreeSink();
         $collected_memories = $memory_locations_collector->collectAll(
@@ -775,7 +784,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $sink = new ArrayContextTreeSink();
         $collected_memories = $memory_locations_collector->collectAll(
@@ -944,7 +956,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $error = json_decode($error_json, true);
         $sink = new ArrayContextTreeSink();
@@ -1110,7 +1125,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $error = json_decode($error_json, true);
         $sink = new ArrayContextTreeSink();
@@ -1302,7 +1320,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $error = json_decode($error_json, true);
         $sink = new ArrayContextTreeSink();
@@ -1431,7 +1452,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $sink = new ArrayContextTreeSink();
         $memory_locations_collector->collectAll(
@@ -1720,7 +1744,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $tmp_path = tempnam(sys_get_temp_dir(), 'reli_test_gen_') . '.sqlite3';
         $driver = new SqliteDriver($tmp_path);
@@ -1894,7 +1921,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $collected_memories = $memory_locations_collector->collectAll(
             new ProcessSpecifier($pid),
@@ -2027,7 +2057,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $sink = new ArrayContextTreeSink();
         $collected_memories = $memory_locations_collector->collectAll(
@@ -2177,7 +2210,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $sink = new ArrayContextTreeSink();
         $collected_memories = $memory_locations_collector->collectAll(
@@ -2328,7 +2364,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $sink = new ArrayContextTreeSink();
         $collected_memories = $memory_locations_collector->collectAll(
@@ -2512,7 +2551,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $sink = new ArrayContextTreeSink();
         $collected_memories = $memory_locations_collector->collectAll(
@@ -2763,7 +2805,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $sink = new ArrayContextTreeSink();
         $collected_memories = $memory_locations_collector->collectAll(
@@ -2965,7 +3010,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $sink = new ArrayContextTreeSink();
         $memory_locations_collector->collectAll(
@@ -3261,7 +3309,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $sink = new ArrayContextTreeSink();
         $memory_locations_collector->collectAll(
@@ -3666,7 +3717,10 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 ProcessMemoryMapCreator::create(),
                 $type_reader_creator,
                 $php_globals_finder
-            )
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $collected_memories = $memory_locations_collector->collectAll(
             new ProcessSpecifier($pid),

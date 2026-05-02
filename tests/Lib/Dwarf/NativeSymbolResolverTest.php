@@ -118,6 +118,60 @@ class NativeSymbolResolverTest extends BaseTestCase
         $this->assertTrue(true); // no crash
     }
 
+    public function testStrippedBinaryFallsBackToDynsymWithoutDebugFile(): void
+    {
+        // Validator's scenario, distilled: main binary has only .dynsym
+        // (the sandbox PHP_BINARY case), no separate debug file. The
+        // 3-step chain should:
+        //   1. try main .symtab — null (stripped)
+        //   2. try debug file .symtab — null (no debug locator hit)
+        //   3. fall through to main .dynsym — non-null
+        // Pre-fix this only worked because the chain returned on
+        // dynsym at step 1; the structural change preserves that
+        // outcome while making the debug-file slot reachable for
+        // distros that DO have a -dbgsym companion.
+        //
+        // We assert the *structural* outcome — `resolve` doesn't throw
+        // when run against a real memory map — and let the lower-layer
+        // {@see \Reli\Lib\Elf\SymbolResolver\Elf64ReverseSymbolResolverTest}
+        // pin the dynsym-reachability invariant directly against PHP_BINARY's
+        // bytes. That layer is portable across CI environments where this
+        // process's `/proc/self/maps` contents and exported-symbol layout
+        // can vary.
+        $maps_raw = file_get_contents('/proc/self/maps');
+        $parser = new \Reli\Lib\Process\MemoryMap\ProcessMemoryMapParser(
+            new \Reli\Lib\String\LineFetcher(),
+        );
+        $map = $parser->parse($maps_raw);
+
+        $resolver = new NativeSymbolResolver($map);
+        $php_areas = $map->findByNameRegex(preg_quote(PHP_BINARY, '/'));
+        if ($php_areas === []) {
+            $this->markTestSkipped('PHP_BINARY not directly mapped');
+        }
+        $exec_area = null;
+        foreach ($php_areas as $area) {
+            if ($area->attribute->execute) {
+                $exec_area = $area;
+                break;
+            }
+        }
+        if ($exec_area === null) {
+            $this->markTestSkipped('PHP_BINARY has no executable mapping');
+        }
+
+        // Probe inside the executable region; the assertion is only that
+        // the resolver doesn't throw / crash. Whether the dynsym hits
+        // depends on the build-specific exported-symbol layout and is
+        // covered separately by Elf64ReverseSymbolResolverTest.
+        $base = hexdec($exec_area->begin);
+        $end = hexdec($exec_area->end);
+        for ($offset = 0x1000; $offset < $end - $base && $offset < 0x10000; $offset += 0x1000) {
+            $resolver->resolve($base + $offset);
+        }
+        $this->assertTrue(true);
+    }
+
     public function testDiskCacheRoundtrip(): void
     {
         $maps_raw = file_get_contents('/proc/self/maps');

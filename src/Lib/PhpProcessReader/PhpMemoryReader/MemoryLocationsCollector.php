@@ -25,6 +25,8 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
 use Reli\Lib\PhpInternals\Types\Zend\ZendMmChunk;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\BinWalkResult;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\ZendMmBinWalker;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\VmStackMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArenaMemoryLocation;
@@ -35,7 +37,14 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\UserFunctionDefin
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
+use Reli\Lib\Dwarf\NativeSymbolResolver;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
+use Reli\Lib\File\PathResolver\ProcessPathResolver;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\NativeSymbolResolverAdapter;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\SymbolResolverInterface;
 use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
@@ -52,6 +61,9 @@ final class MemoryLocationsCollector
         private MemoryReaderInterface $memory_reader,
         private ZendTypeReaderCreator $zend_type_reader_creator,
         private PhpZendMemoryManagerChunkFinder $chunk_finder,
+        private ProcessMemoryMapCreatorInterface $process_memory_map_creator,
+        private BinaryAnalysisCache $binary_analysis_cache,
+        private ProcessPathResolver $process_path_resolver,
     ) {
     }
 
@@ -109,6 +121,12 @@ final class MemoryLocationsCollector
      * @param \Reli\Inspector\MemoryDump\FastPath\FastPathReader|null $fast_path
      *     Optional fast-path reader for dump analysis. When provided,
      *     hot collector jobs use string-buffer reads instead of FFI.
+     * @param bool $disable_bin_walk When true, skip the ZendMM bin
+     *     walker that powers the orphan-allocation analysis pipeline
+     *     (per-bin histogram, periodic groups, shape detection,
+     *     region map). Reclaims the ~17% wall-time the walker adds at
+     *     analyze time on heaps where the orphan-allocation features
+     *     aren't needed.
      */
     public function collectAll(
         ProcessSpecifier $process_specifier,
@@ -119,6 +137,7 @@ final class MemoryLocationsCollector
         ?int $bg_address = null,
         ?ContextTreeSink $sink = null,
         ?\Reli\Inspector\MemoryDump\FastPath\FastPathReader $fast_path = null,
+        bool $disable_bin_walk = false,
     ): CollectedMemories {
         $pid = $process_specifier->pid;
         $php_version = $target_php_settings->php_version;
@@ -158,6 +177,7 @@ final class MemoryLocationsCollector
             }
             $walked_chunk_count++;
         }
+
         $huge_memory_locations = new MemoryLocations();
         $huge_total_bytes = 0;
         foreach ($zend_mm_main_chunk->heap_slot->iterateHugeList($dereferencer) as $huge_list) {
@@ -363,6 +383,56 @@ final class MemoryLocationsCollector
             );
         }
 
+        // Walk the small-bin freelists + chunk page maps to recover the
+        // per-bin live-allocation histogram and any periodic same-shape
+        // groups. Foundation for the orphan-allocation analysis path
+        // (see docs/internals/design-orphan-allocation-analysis.md).
+        // The region map snapshot (B.2) is built unconditionally — it's
+        // a couple of hundred entries even on heavy daemons, so the
+        // cost is negligible and lets the comparison path emit
+        // "+728 KiB at 0x..." callouts without round-tripping the rdump.
+        //
+        // Runs AFTER the DFS so we can hand the root walker's
+        // `address_map` to the bin walker as the reachability filter
+        // (design's "negative-evidence rule"). Without it, periodic
+        // groups can't tell normal claimed data from orphan leaks.
+        //
+        // The process memory map (when available) lets
+        // FunctionPointerDetector resolve `.text` pointers to module
+        // names — the validator's "is this libuv or libphp?" question.
+        // Both sources are best-effort; bin walker failures must not
+        // abort the analyze run.
+        $process_memory_map = null;
+        try {
+            $process_memory_map = $this->process_memory_map_creator
+                ->getProcessMemoryMap($pid);
+        } catch (\Throwable $e) {
+            Log::debug('process memory map fetch failed', ['exception' => $e]);
+        }
+        // Build a symbol resolver only when the process memory map is
+        // available AND at least one named module is reachable through
+        // the process path resolver. Both live (`/proc/<pid>/root`) and
+        // offline (`--dependency-root` MappedPathResolver) paths land
+        // here uniformly; the only reason to bail is "rdump from
+        // different host without --dependency-root" — module-level
+        // resolution still works in that case.
+        $symbol_resolver = $this->buildSymbolResolver($pid, $process_memory_map);
+        $bin_walk_result = null;
+        if (!$disable_bin_walk) {
+            try {
+                $bin_walk_result = (new ZendMmBinWalker($this->memory_reader))->walk(
+                    $pid,
+                    $zend_mm_main_chunk,
+                    $dereferencer,
+                    $ctx->address_map,
+                    $process_memory_map,
+                    $symbol_resolver,
+                );
+            } catch (\Throwable $e) {
+                Log::debug('ZendMmBinWalker failed', ['exception' => $e]);
+            }
+        }
+
         $context_pools->clear();
 
         return new CollectedMemories(
@@ -383,7 +453,107 @@ final class MemoryLocationsCollector
             $last_chunks_delete_count,
             $chunks_total_free_bytes,
             $chunks_mostly_empty_count,
+            $bin_walk_result,
         );
+    }
+
+    /**
+     * Build the symbol resolver used by FunctionPointerDetector.
+     *
+     * Routes through the autowired {@see ProcessPathResolver}, the same
+     * primitive {@see \Reli\Inspector\MemoryDump\DumpFileMemoryReader}
+     * uses to look up paths recorded inside an rdump. Three cases shake
+     * out from the same code path:
+     *
+     *  - Live target: the default
+     *    {@see \Reli\Lib\File\PathResolver\ContainerAwarePathResolver}
+     *    maps `/<path>` to `/proc/{pid}/root/<path>` (kernel-provided
+     *    chroot view, follows mount namespaces correctly).
+     *  - Offline rdump with `--dependency-root <dir>`:
+     *    {@see \Reli\Lib\File\PathResolver\MappedPathResolver} (set up
+     *    by MemoryDumpReaderFactory) maps `/<path>` to `<dir>/<path>`,
+     *    matching the coredump-reader convention.
+     *  - Offline rdump without `--dependency-root`: same MappedPathResolver
+     *    with no mappings, so `/<path>` resolves unchanged — the typical
+     *    "analyzing on the same machine where the binaries live"
+     *    workflow falls into this branch automatically.
+     *
+     * Returns null when the path resolver can't surface any binary
+     * (e.g. analyzing an rdump from a different host without
+     * `--dependency-root`) so the per-slot scan doesn't thrash through
+     * file-not-found syscalls.
+     */
+    private function buildSymbolResolver(
+        int $pid,
+        ?ProcessMemoryMap $process_memory_map,
+    ): ?SymbolResolverInterface {
+        if ($process_memory_map === null) {
+            return null;
+        }
+        $process_root = $this->probeProcessRoot($pid);
+        if (!$this->hasReachableModule($process_memory_map, $process_root)) {
+            return null;
+        }
+        try {
+            $native = new NativeSymbolResolver(
+                memoryMap: $process_memory_map,
+                processRoot: $process_root,
+                binaryAnalysisCache: $this->binary_analysis_cache,
+            );
+            return new NativeSymbolResolverAdapter($native);
+        } catch (\Throwable $e) {
+            Log::debug('symbol resolver build failed', ['exception' => $e]);
+            return null;
+        }
+    }
+
+    /**
+     * Derive the binary-lookup prefix the way NativeSymbolResolver
+     * expects (a string concatenated to a leading `/<path>`). Probes
+     * the {@see ProcessPathResolver} with a sentinel and strips the
+     * sentinel back off — works uniformly for the live
+     * `/proc/<pid>/root` resolver and the offline MappedPathResolver
+     * with `[/ => --dependency-root]`.
+     */
+    private function probeProcessRoot(int $pid): string
+    {
+        $sentinel = '/__reli_probe__';
+        $resolved = $this->process_path_resolver->resolve($pid, $sentinel);
+        if (str_ends_with($resolved, $sentinel)) {
+            return substr($resolved, 0, -strlen($sentinel));
+        }
+        return '';
+    }
+
+    /**
+     * Cheap check: is at least one named module from the memory map
+     * actually readable through the chosen `process_root`? When false,
+     * the symbol resolver would just thrash through file-not-found
+     * per slot — better to bail and let FunctionPointerDetector fall
+     * back to module-level labels.
+     */
+    private function hasReachableModule(
+        ProcessMemoryMap $process_memory_map,
+        string $process_root,
+    ): bool {
+        $candidates = $process_memory_map->findByNameRegex('\\.so\\b|/(php|php-fpm|frankenphp|httpd|apache2)$');
+        if ($candidates === []) {
+            // No real-binary mappings (e.g. CLI with statically linked
+            // PHP). We can still try with the executable mapping as a
+            // fallback — those always exist for any live process.
+            $candidates = $process_memory_map->findByNameRegex('^/');
+        }
+        foreach (array_slice($candidates, 0, 4) as $area) {
+            $name = $area->name;
+            if ($name === '' || $name[0] === '[') {
+                continue;
+            }
+            $path = $process_root . $name;
+            if (@is_readable($path)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function collectRealCallStackOnMemoryLimitViolation(

@@ -43,6 +43,10 @@ final class TextReportFormatter implements ReportFormatterInterface
         $class_rankings = [];
         $top_arrays = [];
         $top_strings = [];
+        $bin_histogram_overview = null;
+        $bin_histogram_entries = [];
+        $bin_periodic_groups = [];
+        $bin_shape_counts = [];
 
         foreach ($result->findings as $finding) {
             if (in_array($finding->kind, ['overview', 'coverage_gap', 'call_stack'], true)) {
@@ -55,6 +59,31 @@ final class TextReportFormatter implements ReportFormatterInterface
                 $top_arrays[] = $finding;
             } elseif ($finding->kind === 'large_string') {
                 $top_strings[] = $finding;
+            } elseif ($finding->kind === 'bin_histogram_overview') {
+                $bin_histogram_overview = $finding;
+            } elseif ($finding->kind === 'bin_histogram_entry') {
+                $bin_histogram_entries[] = $finding;
+            } elseif (
+                $finding->kind === 'bin_shape_count'
+                || $finding->kind === 'bin_shape_unclassified'
+            ) {
+                $bin_shape_counts[] = $finding;
+            } elseif (
+                $finding->kind === 'bin_periodic_group'
+                || $finding->kind === 'bin_periodic_hotspot'
+                || $finding->kind === 'bin_periodic_orphan'
+                || $finding->kind === 'bin_periodic_reachable'
+            ) {
+                // Hotspots also fall into the actionable section so the
+                // user gets the leak signal up top; the bin-level table
+                // below repeats them with stride/fingerprint detail.
+                // Reachable groups stay in the table for transparency
+                // (so the user sees what reli's root walker already
+                // claimed) but never go into the actionable section.
+                $bin_periodic_groups[] = $finding;
+                if ($finding->kind === 'bin_periodic_hotspot') {
+                    $actionable[] = $finding;
+                }
             } elseif (
                 in_array($finding->kind, ['root_blame', 'retained_exact', 'retained_approximate'], true)
             ) {
@@ -242,6 +271,214 @@ final class TextReportFormatter implements ReportFormatterInterface
                     SizeFormatter::format($memory),
                     $pct,
                 );
+            }
+            $lines[] = '';
+        }
+
+        // ZendMM bin histogram — per-bin live-allocation distribution
+        // recovered by the bin walker. Surfaces "where on the heap is
+        // mass concentrated" with bin granularity (the type breakdown
+        // above only sees what reli's root-traversal could claim).
+        if ($bin_histogram_entries !== []) {
+            $lines[] = '=== ZendMM Bin Histogram ===';
+            $lines[] = '';
+            if ($bin_histogram_overview !== null) {
+                $lines[] = '  ' . $bin_histogram_overview->summary;
+                $lines[] = '';
+            }
+            $lines[] = sprintf('  %3s  %8s %12s %14s', 'Bin', 'Size', 'Count', 'Memory');
+            $lines[] = '  ' . str_repeat('-', 41);
+
+            // Sort by total_bytes desc — biggest bins first.
+            usort(
+                $bin_histogram_entries,
+                static function (Finding $a, Finding $b): int {
+                    /** @var int $am */
+                    $am = $a->facts['total_bytes'] ?? 0;
+                    /** @var int $bm */
+                    $bm = $b->facts['total_bytes'] ?? 0;
+                    return $bm <=> $am;
+                },
+            );
+
+            foreach ($bin_histogram_entries as $finding) {
+                $facts = $finding->facts;
+                /** @var int $bin_num */
+                $bin_num = $facts['bin_num'] ?? 0;
+                /** @var int $bin_size */
+                $bin_size = $facts['bin_size'] ?? 0;
+                /** @var int $count */
+                $count = $facts['count'] ?? 0;
+                /** @var int $memory */
+                $memory = $facts['total_bytes'] ?? 0;
+                $lines[] = sprintf(
+                    '  %3d  %8s %12s %14s',
+                    $bin_num,
+                    SizeFormatter::format($bin_size),
+                    number_format($count),
+                    SizeFormatter::format($memory),
+                );
+            }
+            $lines[] = '';
+        }
+
+        // Periodic groups — runs of like-shaped slots that are the
+        // signature of "extension X is leaking copies of struct Y".
+        if ($bin_periodic_groups !== []) {
+            $lines[] = '=== ZendMM Periodic Groups ===';
+            $lines[] = '';
+            $lines[] = sprintf(
+                '   %8s %10s %8s  %-14s  %-9s %-32s %s',
+                'BinSize',
+                'Count',
+                'Stride',
+                'Sample addr',
+                'Reach',
+                'Inferred shape',
+                'Fingerprint',
+            );
+            $lines[] = '  ' . str_repeat('-', 105);
+
+            // Already sorted by count desc inside the bin walker but
+            // re-sort here to be defensive (findings may have been
+            // reshuffled by parallel passes). Hotspot rows float above
+            // non-hotspot rows of the same count so the leak signal
+            // lands first.
+            usort(
+                $bin_periodic_groups,
+                static function (Finding $a, Finding $b): int {
+                    $a_rank = self::periodicGroupKindRank($a->kind);
+                    $b_rank = self::periodicGroupKindRank($b->kind);
+                    if ($a_rank !== $b_rank) {
+                        return $a_rank <=> $b_rank;
+                    }
+                    /** @var int $ac */
+                    $ac = $a->facts['count'] ?? 0;
+                    /** @var int $bc */
+                    $bc = $b->facts['count'] ?? 0;
+                    return $bc <=> $ac;
+                },
+            );
+
+            foreach ($bin_periodic_groups as $finding) {
+                $facts = $finding->facts;
+                /** @var int $bin_size */
+                $bin_size = $facts['bin_size'] ?? 0;
+                /** @var int $count */
+                $count = $facts['count'] ?? 0;
+                /** @var int $stride */
+                $stride = $facts['stride'] ?? 0;
+                /** @var int $sample */
+                $sample = $facts['sample_addr'] ?? 0;
+                /** @var string $fp */
+                $fp = $facts['fingerprint'] ?? '';
+                /** @var string $shape */
+                $shape = $facts['inferred_shape'] ?? '';
+                /** @var string $confidence */
+                $confidence = $facts['effective_confidence']
+                    ?? $facts['inferred_confidence']
+                    ?? '';
+                /** @var string $reach */
+                $reach = $facts['reachability'] ?? '';
+                $shape_cell = $shape !== ''
+                    ? sprintf('%s [%s]', $shape, strtoupper($confidence))
+                    : '—';
+                $reach_cell = $reach !== '' ? $reach : '—';
+                $tag = match ($finding->kind) {
+                    'bin_periodic_hotspot'
+                        => $finding->severity === FindingSeverity::High ? '**' : '* ',
+                    'bin_periodic_orphan' => 'o ',
+                    'bin_periodic_reachable' => '= ',
+                    default => '  ',
+                };
+                $lines[] = sprintf(
+                    ' %s%8s %10s %8d  0x%012x  %-9s %-32s %s',
+                    $tag,
+                    SizeFormatter::format($bin_size),
+                    number_format($count),
+                    $stride,
+                    $sample,
+                    $reach_cell,
+                    strlen($shape_cell) > 32 ? substr($shape_cell, 0, 31) . '…' : $shape_cell,
+                    substr($fp, 0, 16),
+                );
+            }
+            $lines[] = '  (** = orphan hotspot, * = hotspot, o = orphan group,'
+                . ' = = reachable / claimed by PHP roots)';
+            $lines[] = '';
+        }
+
+        // Per-bin shape detection — built from per-slot detector hits,
+        // independent of fingerprint clustering. Surfaces "76% of bin[3]
+        // is Bucket(IS_STRING)" for content-varying shapes that the
+        // periodic-group path skips because their bytes don't match
+        // slot-to-slot. Grouped by bin so the user reads "what's in
+        // this bin?" in one block.
+        if ($bin_shape_counts !== []) {
+            /** @var array<int, list<Finding>> $by_bin */
+            $by_bin = [];
+            foreach ($bin_shape_counts as $f) {
+                /** @var int $bin_num */
+                $bin_num = $f->facts['bin_num'] ?? -1;
+                $by_bin[$bin_num][] = $f;
+            }
+            ksort($by_bin);
+
+            $lines[] = '=== Per-bin Shape Detection ===';
+            $lines[] = '';
+            $lines[] = sprintf(
+                '  %3s  %-32s %10s %8s  %s',
+                'Bin',
+                'Shape',
+                'Count',
+                '%',
+                'Reach (orphan/reachable)',
+            );
+            $lines[] = '  ' . str_repeat('-', 86);
+            foreach ($by_bin as $bin_num => $rows) {
+                // Sort within a bin: real shapes first (by count desc),
+                // unclassified last.
+                usort($rows, static function (Finding $a, Finding $b): int {
+                    $a_uc = $a->kind === 'bin_shape_unclassified' ? 1 : 0;
+                    $b_uc = $b->kind === 'bin_shape_unclassified' ? 1 : 0;
+                    if ($a_uc !== $b_uc) {
+                        return $a_uc <=> $b_uc;
+                    }
+                    /** @var int $ac */
+                    $ac = $a->facts['count'] ?? 0;
+                    /** @var int $bc */
+                    $bc = $b->facts['count'] ?? 0;
+                    return $bc <=> $ac;
+                });
+                foreach ($rows as $f) {
+                    /** @var int $count */
+                    $count = $f->facts['count'] ?? 0;
+                    /** @var float $pct */
+                    $pct = $f->facts['percentage'] ?? 0.0;
+                    if ($f->kind === 'bin_shape_unclassified') {
+                        $shape_cell = 'unclassified';
+                        $reach_cell = '—';
+                    } else {
+                        /** @var string $shape */
+                        $shape = $f->facts['shape'] ?? '?';
+                        /** @var string $confidence */
+                        $confidence = $f->facts['confidence'] ?? '';
+                        $shape_cell = sprintf('%s [%s]', $shape, strtoupper($confidence));
+                        /** @var int $orphan */
+                        $orphan = $f->facts['orphan_count'] ?? 0;
+                        /** @var int $reachable */
+                        $reachable = $f->facts['reachable_count'] ?? 0;
+                        $reach_cell = sprintf('%d / %d', $orphan, $reachable);
+                    }
+                    $lines[] = sprintf(
+                        '  %3d  %-32s %10s %7.1f%%  %s',
+                        $bin_num,
+                        strlen($shape_cell) > 32 ? substr($shape_cell, 0, 31) . '…' : $shape_cell,
+                        number_format($count),
+                        $pct,
+                        $reach_cell,
+                    );
+                }
             }
             $lines[] = '';
         }
@@ -486,6 +723,22 @@ final class TextReportFormatter implements ReportFormatterInterface
             FindingSeverity::Medium => 2,
             FindingSeverity::Low => 3,
             FindingSeverity::Info => 4,
+        };
+    }
+
+    /**
+     * Sort key for the ZendMM Periodic Groups table: hotspots first
+     * (orphan-promoted ahead of plain), then orphan-only groups, then
+     * unclassified, then reachable-only at the bottom (lowest signal).
+     */
+    private static function periodicGroupKindRank(string $kind): int
+    {
+        return match ($kind) {
+            'bin_periodic_hotspot' => 0,
+            'bin_periodic_orphan' => 1,
+            'bin_periodic_group' => 2,
+            'bin_periodic_reachable' => 3,
+            default => 4,
         };
     }
 

@@ -234,6 +234,211 @@ class ComparisonGeneratorTest extends BaseTestCase
         $this->assertContains('dominant_class', $resolved_kinds);
     }
 
+    public function testCompareBinHistogramEmitsDeltas(): void
+    {
+        $this->buildDb($this->baseline_path, [
+            ['zend_mm_heap_usage' => 1_000_000],
+            // Bin walker recorded 5,000 32 B slots and 100 192 B slots.
+            ['bin_walk' => json_encode([
+                'histogram' => [
+                    3 => ['count' => 5000, 'total_bytes' => 5000 * 32],
+                    13 => ['count' => 100, 'total_bytes' => 100 * 192],
+                ],
+            ])],
+        ]);
+        $this->buildDb($this->target_path, [
+            ['zend_mm_heap_usage' => 1_500_000],
+            // Bin 3 grew significantly; bin 13 unchanged; bin 7 (64 B) is new.
+            ['bin_walk' => json_encode([
+                'histogram' => [
+                    3 => ['count' => 21_000, 'total_bytes' => 21_000 * 32],
+                    13 => ['count' => 100, 'total_bytes' => 100 * 192],
+                    7 => ['count' => 50, 'total_bytes' => 50 * 64],
+                ],
+            ])],
+        ]);
+
+        $result = $this->compare();
+
+        $this->assertNotEmpty($result->bin_deltas);
+        // Sorted by |bytes_delta| desc, so bin 3 lands first.
+        $this->assertSame(3, $result->bin_deltas[0]->bin_num);
+        $this->assertSame(32, $result->bin_deltas[0]->bin_size);
+        $this->assertSame(16_000, $result->bin_deltas[0]->count_delta);
+        $this->assertSame(16_000 * 32, $result->bin_deltas[0]->bytes_delta);
+
+        // Unchanged bin (13) is omitted entirely.
+        $bin_nums = array_map(
+            static fn(BinDelta $d) => $d->bin_num,
+            $result->bin_deltas,
+        );
+        $this->assertNotContains(13, $bin_nums);
+        $this->assertContains(7, $bin_nums);
+    }
+
+    public function testUnaccountedDeltaFiringWhenHeapGrowsButTypesFlat(): void
+    {
+        $this->buildDb($this->baseline_path, [
+            ['zend_mm_heap_usage' => 10_000_000],
+        ]);
+        $this->buildDb($this->target_path, [
+            // Heap +1 MiB but no typed allocations changed (the dbs have no
+            // location data, so the type breakdown is empty on both sides).
+            ['zend_mm_heap_usage' => 11_048_576],
+        ]);
+
+        $result = $this->compare();
+
+        $this->assertNotNull($result->unaccounted_finding);
+        $this->assertSame('unaccounted_heap_delta', $result->unaccounted_finding->kind);
+        $this->assertGreaterThan(0, $result->unaccounted_finding->impact_bytes);
+    }
+
+    public function testUnaccountedDeltaSilentWhenHeapShrunk(): void
+    {
+        $this->buildDb($this->baseline_path, [
+            ['zend_mm_heap_usage' => 11_000_000],
+        ]);
+        $this->buildDb($this->target_path, [
+            ['zend_mm_heap_usage' => 10_000_000],
+        ]);
+
+        $result = $this->compare();
+        $this->assertNull($result->unaccounted_finding);
+    }
+
+    public function testUnaccountedDeltaSilentWhenHeapBarelyMoved(): void
+    {
+        // Heap +50 KiB on a 10 MiB baseline — both below 1% and below
+        // 100 KiB, so the synthetic finding stays quiet.
+        $this->buildDb($this->baseline_path, [
+            ['zend_mm_heap_usage' => 10_000_000],
+        ]);
+        $this->buildDb($this->target_path, [
+            ['zend_mm_heap_usage' => 10_050_000],
+        ]);
+
+        $result = $this->compare();
+        $this->assertNull($result->unaccounted_finding);
+    }
+
+    public function testCompareRegionMapEmitsCategorisedDeltas(): void
+    {
+        $this->buildDb($this->baseline_path, [
+            ['region_map' => json_encode([
+                ['kind' => 'chunk', 'address' => 0x10000000, 'size' => 2 * 1024 * 1024],
+                ['kind' => 'chunk', 'address' => 0x20000000, 'size' => 2 * 1024 * 1024],
+                ['kind' => 'huge', 'address' => 0x30000000, 'size' => 1 * 1024 * 1024],
+            ])],
+        ]);
+        $this->buildDb($this->target_path, [
+            ['region_map' => json_encode([
+                // 0x10000000 unchanged → no delta row
+                ['kind' => 'chunk', 'address' => 0x10000000, 'size' => 2 * 1024 * 1024],
+                // 0x20000000 grew (matches the issue #88 leak shape)
+                ['kind' => 'chunk', 'address' => 0x20000000, 'size' => (2 * 1024 * 1024) + 728 * 1024],
+                // 0x30000000 huge removed
+                // 0x40000000 chunk added
+                ['kind' => 'chunk', 'address' => 0x40000000, 'size' => 2 * 1024 * 1024],
+            ])],
+        ]);
+
+        $result = $this->compare();
+
+        $this->assertNotEmpty($result->region_deltas);
+        $changes = array_map(static fn(RegionDelta $d) => $d->change, $result->region_deltas);
+        $this->assertContains(RegionDelta::CHANGE_GROWN, $changes);
+        $this->assertContains(RegionDelta::CHANGE_ADDED, $changes);
+        $this->assertContains(RegionDelta::CHANGE_REMOVED, $changes);
+
+        // Sorted by |size_delta| desc — chunk add (+2 MiB) leads.
+        $this->assertSame(RegionDelta::CHANGE_ADDED, $result->region_deltas[0]->change);
+        $this->assertSame(0x40000000, $result->region_deltas[0]->address);
+
+        // Unchanged regions don't appear.
+        $addresses = array_map(static fn(RegionDelta $d) => $d->address, $result->region_deltas);
+        $this->assertNotContains(0x10000000, $addresses);
+    }
+
+    public function testCompareRegionMapEmptyWhenBothMissing(): void
+    {
+        $this->buildDb($this->baseline_path, [
+            ['memory_get_usage' => 100],
+        ]);
+        $this->buildDb($this->target_path, [
+            ['memory_get_usage' => 200],
+        ]);
+        $result = $this->compare();
+        $this->assertSame([], $result->region_deltas);
+    }
+
+    public function testCompareBinShapeCountsPicksUpContentVaryingLeak(): void
+    {
+        // T1: 619 Buckets baseline. T2: 2,810 Buckets (the issue #88
+        // shape: per-connection Bucket entries with distinct hashes
+        // and key pointers — content-varying, so the periodic-group
+        // path skips them entirely).
+        $this->buildDb($this->baseline_path, [
+            ['bin_shape_counts' => json_encode([
+                'bin' => [[
+                    'bin_num' => 3,
+                    'shapes' => [[
+                        'label' => 'Bucket(zval IS_STRING)',
+                        'count' => 619,
+                        'reachable_count' => 600,
+                        'confidence' => 'medium',
+                    ]],
+                    'unclassified' => 0,
+                ]],
+            ])],
+        ]);
+        $this->buildDb($this->target_path, [
+            ['bin_shape_counts' => json_encode([
+                'bin' => [[
+                    'bin_num' => 3,
+                    'shapes' => [[
+                        'label' => 'Bucket(zval IS_STRING)',
+                        'count' => 2810,
+                        'reachable_count' => 600,
+                        'confidence' => 'medium',
+                    ]],
+                    'unclassified' => 0,
+                ]],
+            ])],
+        ]);
+
+        $result = $this->compare();
+        $this->assertCount(1, $result->bin_shape_deltas);
+        $delta = $result->bin_shape_deltas[0];
+        $this->assertSame(3, $delta->bin_num);
+        $this->assertSame('Bucket(zval IS_STRING)', $delta->shape);
+        $this->assertSame(2191, $delta->count_delta);
+        // All the new copies are orphan — that's the leak signal.
+        $this->assertSame(2191, $delta->orphan_count_delta);
+        $this->assertSame(0, $delta->reachable_count_delta);
+    }
+
+    public function testCompareBinShapeCountsSkipsUnchangedShapes(): void
+    {
+        $payload = json_encode([
+            'bin' => [[
+                'bin_num' => 3,
+                'shapes' => [[
+                    'label' => 'X',
+                    'count' => 10,
+                    'reachable_count' => 5,
+                    'confidence' => 'medium',
+                ]],
+                'unclassified' => 0,
+            ]],
+        ]);
+        $this->buildDb($this->baseline_path, [['bin_shape_counts' => $payload]]);
+        $this->buildDb($this->target_path, [['bin_shape_counts' => $payload]]);
+
+        $result = $this->compare();
+        $this->assertSame([], $result->bin_shape_deltas);
+    }
+
     public function testComparisonResultToArray(): void
     {
         $this->buildDb($this->baseline_path, [

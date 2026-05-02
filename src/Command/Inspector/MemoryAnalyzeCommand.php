@@ -74,6 +74,15 @@ final class MemoryAnalyzeCommand extends ReliCommand
             InputOption::VALUE_NONE,
             'disable the offset-table fast path (use FFI path for all reads)',
         );
+        $this->addOption(
+            'no-bin-walk',
+            null,
+            InputOption::VALUE_NONE,
+            'skip the ZendMM bin walker (orphan-allocation analysis:'
+                . ' per-bin histogram, periodic groups, shape detectors,'
+                . ' region map). Reclaims ~17% wall-time on heaps where'
+                . ' the orphan-allocation features aren\'t needed.',
+        );
     }
 
     #[\Override]
@@ -100,11 +109,13 @@ final class MemoryAnalyzeCommand extends ReliCommand
 
         $read_buffer_size = self::parseByteSize((string) $input->getOption('read-buffer'));
         $no_fast_path = (bool) $input->getOption('no-fast-path');
+        $no_bin_walk = (bool) $input->getOption('no-bin-walk');
         $dump_reader = $this->memory_dump_reader_factory->createFromPath(
             $dump_file,
             $path_mapping,
             $read_buffer_size,
             $no_fast_path,
+            $no_bin_walk,
         );
         $dump_reader->read($memory_profiler_settings);
 
