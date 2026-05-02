@@ -167,6 +167,41 @@ final class BinaryComparisonDataProvider implements ComparisonDataProvider
         return null;
     }
 
+    /**
+     * @psalm-suppress MixedAssignment, PossiblyInvalidArrayAccess
+     */
+    #[\Override]
+    public function loadBinShapeCounts(): ?array
+    {
+        if (!$this->reader->hasSection(Format::SECTION_SUMMARY)) {
+            return null;
+        }
+        $data = $this->reader->getSectionData(Format::SECTION_SUMMARY);
+        $dict = $this->reader->getStringDict();
+
+        $offset = 0;
+        $entry_count = unpack('V', $data, $offset)[1];
+        $offset += 4;
+
+        for ($i = 0; $i < $entry_count; $i++) {
+            $key_id = unpack('V', $data, $offset)[1];
+            $offset += 4;
+            $value_id = unpack('V', $data, $offset)[1];
+            $offset += 4;
+
+            $key = $dict->lookup($key_id);
+            if ($key !== 'bin_shape_counts') {
+                continue;
+            }
+            $value = $dict->lookup($value_id);
+            if (!is_string($value) || $value === '') {
+                return null;
+            }
+            return BinShapeCountsSnapshot::decode($value);
+        }
+        return null;
+    }
+
     #[\Override]
     public function generateReport(bool $full_analysis, ?bool $ffi_csr): ReportResult
     {

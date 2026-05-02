@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\Output\MemoryOutput\Comparison\Formatter;
 
 use Reli\Inspector\Output\MemoryOutput\Comparison\BinDelta;
+use Reli\Inspector\Output\MemoryOutput\Comparison\BinShapeDelta;
 use Reli\Inspector\Output\MemoryOutput\Comparison\ClassDelta;
 use Reli\Inspector\Output\MemoryOutput\Comparison\ComparisonResult;
 use Reli\Inspector\Output\MemoryOutput\Comparison\RegionDelta;
@@ -60,6 +61,12 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
         // "+16,041 bin[32 B]" with the unaccounted-delta finding when
         // both fire on the same comparison.
         $this->formatBinDeltas($lines, $result->bin_deltas);
+
+        // Per-(bin, shape) deltas — the per-slot scan output. Surfaces
+        // "+2,000 Bucket(IS_STRING) in bin[3]" leaks that the periodic-
+        // group path (above) misses because content-varying shapes
+        // never form a fingerprint cluster.
+        $this->formatBinShapeDeltas($lines, $result->bin_shape_deltas);
 
         // Synthetic "heap grew but typed delta ≈ 0" finding (B.4).
         // High-severity callout above the regular findings diff so the
@@ -408,6 +415,40 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
                 number_format($bd->target_count),
                 $count_str,
                 $bytes_str,
+            );
+        }
+        $lines[] = '';
+    }
+
+    /**
+     * @param list<string> $lines
+     * @param list<BinShapeDelta> $deltas
+     */
+    private function formatBinShapeDeltas(array &$lines, array $deltas): void
+    {
+        if ($deltas === []) {
+            return;
+        }
+        $lines[] = '=== Per-bin Shape Detection Delta ===';
+        $lines[] = '';
+        $lines[] = sprintf(
+            '  %3s  %-32s %14s %14s %14s',
+            'Bin',
+            'Shape',
+            "Count \xce\x94",
+            "Orphan \xce\x94",
+            "Reachable \xce\x94",
+        );
+        $lines[] = '  ' . str_repeat('-', 84);
+        foreach (array_slice($deltas, 0, 30) as $sd) {
+            $shape_cell = sprintf('%s [%s]', $sd->shape, strtoupper($sd->confidence));
+            $lines[] = sprintf(
+                '  %3d  %-32s %14s %14s %14s',
+                $sd->bin_num,
+                strlen($shape_cell) > 32 ? substr($shape_cell, 0, 31) . '…' : $shape_cell,
+                sprintf('%+d', $sd->count_delta),
+                sprintf('%+d', $sd->orphan_count_delta),
+                sprintf('%+d', $sd->reachable_count_delta),
             );
         }
         $lines[] = '';

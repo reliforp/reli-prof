@@ -63,5 +63,16 @@ interface ComparisonDataProvider
      */
     public function loadRegionMap(): ?array;
 
+    /**
+     * Per-(bin, shape) tally from the per-slot detector scan.
+     *
+     * @return array<int, array<string, array{
+     *     count: int,
+     *     reachable_count: int,
+     *     confidence: string
+     * }>>|null
+     */
+    public function loadBinShapeCounts(): ?array;
+
     public function generateReport(bool $full_analysis, ?bool $ffi_csr): ReportResult;
 }

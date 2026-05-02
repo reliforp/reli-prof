@@ -372,6 +372,73 @@ class ComparisonGeneratorTest extends BaseTestCase
         $this->assertSame([], $result->region_deltas);
     }
 
+    public function testCompareBinShapeCountsPicksUpContentVaryingLeak(): void
+    {
+        // T1: 619 Buckets baseline. T2: 2,810 Buckets (the issue #88
+        // shape: per-connection Bucket entries with distinct hashes
+        // and key pointers — content-varying, so the periodic-group
+        // path skips them entirely).
+        $this->buildDb($this->baseline_path, [
+            ['bin_shape_counts' => json_encode([
+                'bin' => [[
+                    'bin_num' => 3,
+                    'shapes' => [[
+                        'label' => 'Bucket(zval IS_STRING)',
+                        'count' => 619,
+                        'reachable_count' => 600,
+                        'confidence' => 'medium',
+                    ]],
+                    'unclassified' => 0,
+                ]],
+            ])],
+        ]);
+        $this->buildDb($this->target_path, [
+            ['bin_shape_counts' => json_encode([
+                'bin' => [[
+                    'bin_num' => 3,
+                    'shapes' => [[
+                        'label' => 'Bucket(zval IS_STRING)',
+                        'count' => 2810,
+                        'reachable_count' => 600,
+                        'confidence' => 'medium',
+                    ]],
+                    'unclassified' => 0,
+                ]],
+            ])],
+        ]);
+
+        $result = $this->compare();
+        $this->assertCount(1, $result->bin_shape_deltas);
+        $delta = $result->bin_shape_deltas[0];
+        $this->assertSame(3, $delta->bin_num);
+        $this->assertSame('Bucket(zval IS_STRING)', $delta->shape);
+        $this->assertSame(2191, $delta->count_delta);
+        // All the new copies are orphan — that's the leak signal.
+        $this->assertSame(2191, $delta->orphan_count_delta);
+        $this->assertSame(0, $delta->reachable_count_delta);
+    }
+
+    public function testCompareBinShapeCountsSkipsUnchangedShapes(): void
+    {
+        $payload = json_encode([
+            'bin' => [[
+                'bin_num' => 3,
+                'shapes' => [[
+                    'label' => 'X',
+                    'count' => 10,
+                    'reachable_count' => 5,
+                    'confidence' => 'medium',
+                ]],
+                'unclassified' => 0,
+            ]],
+        ]);
+        $this->buildDb($this->baseline_path, [['bin_shape_counts' => $payload]]);
+        $this->buildDb($this->target_path, [['bin_shape_counts' => $payload]]);
+
+        $result = $this->compare();
+        $this->assertSame([], $result->bin_shape_deltas);
+    }
+
     public function testComparisonResultToArray(): void
     {
         $this->buildDb($this->baseline_path, [

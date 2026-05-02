@@ -33,6 +33,16 @@ final class BinWalkResult
      * @param array<int, array{count: int, total_bytes: int}> $small_bin_histogram
      *     Keyed by bin id (0..29). Only bins with at least one live slot are present.
      * @param list<PeriodicGroup> $periodic_groups
+     * @param array<int, array<string, array{
+     *     count: int,
+     *     reachable_count: int,
+     *     confidence: string
+     * }>> $bin_shape_counts
+     *     Per-(bin, shape) tally from the per-slot detector scan. Lets the
+     *     report surface "76% of bin[3] is Bucket(IS_STRING)" for shapes
+     *     the periodic-group path skips because the bytes vary per slot.
+     * @param array<int, int> $bin_unclassified_counts Per-bin slots no
+     *     detector matched.
      */
     public function __construct(
         public readonly array $small_bin_histogram,
@@ -43,6 +53,8 @@ final class BinWalkResult
         public readonly array $periodic_groups,
         public readonly int $walked_chunk_count,
         public readonly bool $partial,
+        public readonly array $bin_shape_counts = [],
+        public readonly array $bin_unclassified_counts = [],
     ) {
     }
 
@@ -93,6 +105,70 @@ final class BinWalkResult
      *     sampled_count?: int
      * }>
      */
+    /**
+     * Per-bin shape tally for the rmem summary section.
+     *
+     * Schema:
+     *   {
+     *     "bin": [
+     *       {
+     *         "bin_num": int,
+     *         "shapes": [
+     *           {label, count, reachable_count, confidence}, …
+     *         ],
+     *         "unclassified": int
+     *       }, …
+     *     ]
+     *   }
+     *
+     * Stored as a single JSON entry keyed `bin_shape_counts` so the
+     * comparison provider can decode it without the rmem reader caring
+     * about the inner shape.
+     *
+     * @return array{
+     *     bin: list<array{
+     *         bin_num: int,
+     *         shapes: list<array{
+     *             label: string,
+     *             count: int,
+     *             reachable_count: int,
+     *             confidence: string
+     *         }>,
+     *         unclassified: int
+     *     }>
+     * }
+     */
+    public function toSummaryShapeCountsArray(): array
+    {
+        $bin_rows = [];
+        $bin_nums = array_unique(array_merge(
+            array_keys($this->bin_shape_counts),
+            array_keys($this->bin_unclassified_counts),
+        ));
+        sort($bin_nums);
+        foreach ($bin_nums as $bin_num) {
+            $shapes = [];
+            foreach ($this->bin_shape_counts[$bin_num] ?? [] as $label => $row) {
+                $shapes[] = [
+                    'label' => $label,
+                    'count' => $row['count'],
+                    'reachable_count' => $row['reachable_count'],
+                    'confidence' => $row['confidence'],
+                ];
+            }
+            usort(
+                $shapes,
+                static fn(array $a, array $b): int => $b['count'] <=> $a['count'],
+            );
+            $bin_rows[] = [
+                'bin_num' => $bin_num,
+                'shapes' => $shapes,
+                'unclassified' => $this->bin_unclassified_counts[$bin_num] ?? 0,
+            ];
+        }
+        return ['bin' => $bin_rows];
+    }
+
     public function toSummaryPeriodicGroupsArray(): array
     {
         $out = [];

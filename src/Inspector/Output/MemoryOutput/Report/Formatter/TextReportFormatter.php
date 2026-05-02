@@ -46,6 +46,7 @@ final class TextReportFormatter implements ReportFormatterInterface
         $bin_histogram_overview = null;
         $bin_histogram_entries = [];
         $bin_periodic_groups = [];
+        $bin_shape_counts = [];
 
         foreach ($result->findings as $finding) {
             if (in_array($finding->kind, ['overview', 'coverage_gap', 'call_stack'], true)) {
@@ -62,6 +63,11 @@ final class TextReportFormatter implements ReportFormatterInterface
                 $bin_histogram_overview = $finding;
             } elseif ($finding->kind === 'bin_histogram_entry') {
                 $bin_histogram_entries[] = $finding;
+            } elseif (
+                $finding->kind === 'bin_shape_count'
+                || $finding->kind === 'bin_shape_unclassified'
+            ) {
+                $bin_shape_counts[] = $finding;
             } elseif (
                 $finding->kind === 'bin_periodic_group'
                 || $finding->kind === 'bin_periodic_hotspot'
@@ -399,6 +405,81 @@ final class TextReportFormatter implements ReportFormatterInterface
             }
             $lines[] = '  (** = orphan hotspot, * = hotspot, o = orphan group,'
                 . ' = = reachable / claimed by PHP roots)';
+            $lines[] = '';
+        }
+
+        // Per-bin shape detection — built from per-slot detector hits,
+        // independent of fingerprint clustering. Surfaces "76% of bin[3]
+        // is Bucket(IS_STRING)" for content-varying shapes that the
+        // periodic-group path skips because their bytes don't match
+        // slot-to-slot. Grouped by bin so the user reads "what's in
+        // this bin?" in one block.
+        if ($bin_shape_counts !== []) {
+            /** @var array<int, list<Finding>> $by_bin */
+            $by_bin = [];
+            foreach ($bin_shape_counts as $f) {
+                /** @var int $bin_num */
+                $bin_num = $f->facts['bin_num'] ?? -1;
+                $by_bin[$bin_num][] = $f;
+            }
+            ksort($by_bin);
+
+            $lines[] = '=== Per-bin Shape Detection ===';
+            $lines[] = '';
+            $lines[] = sprintf(
+                '  %3s  %-32s %10s %8s  %s',
+                'Bin',
+                'Shape',
+                'Count',
+                '%',
+                'Reach (orphan/reachable)',
+            );
+            $lines[] = '  ' . str_repeat('-', 86);
+            foreach ($by_bin as $bin_num => $rows) {
+                // Sort within a bin: real shapes first (by count desc),
+                // unclassified last.
+                usort($rows, static function (Finding $a, Finding $b): int {
+                    $a_uc = $a->kind === 'bin_shape_unclassified' ? 1 : 0;
+                    $b_uc = $b->kind === 'bin_shape_unclassified' ? 1 : 0;
+                    if ($a_uc !== $b_uc) {
+                        return $a_uc <=> $b_uc;
+                    }
+                    /** @var int $ac */
+                    $ac = $a->facts['count'] ?? 0;
+                    /** @var int $bc */
+                    $bc = $b->facts['count'] ?? 0;
+                    return $bc <=> $ac;
+                });
+                foreach ($rows as $f) {
+                    /** @var int $count */
+                    $count = $f->facts['count'] ?? 0;
+                    /** @var float $pct */
+                    $pct = $f->facts['percentage'] ?? 0.0;
+                    if ($f->kind === 'bin_shape_unclassified') {
+                        $shape_cell = 'unclassified';
+                        $reach_cell = '—';
+                    } else {
+                        /** @var string $shape */
+                        $shape = $f->facts['shape'] ?? '?';
+                        /** @var string $confidence */
+                        $confidence = $f->facts['confidence'] ?? '';
+                        $shape_cell = sprintf('%s [%s]', $shape, strtoupper($confidence));
+                        /** @var int $orphan */
+                        $orphan = $f->facts['orphan_count'] ?? 0;
+                        /** @var int $reachable */
+                        $reachable = $f->facts['reachable_count'] ?? 0;
+                        $reach_cell = sprintf('%d / %d', $orphan, $reachable);
+                    }
+                    $lines[] = sprintf(
+                        '  %3d  %-32s %10s %7.1f%%  %s',
+                        $bin_num,
+                        strlen($shape_cell) > 32 ? substr($shape_cell, 0, 31) . '…' : $shape_cell,
+                        number_format($count),
+                        $pct,
+                        $reach_cell,
+                    );
+                }
+            }
             $lines[] = '';
         }
 

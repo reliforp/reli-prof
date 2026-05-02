@@ -238,6 +238,8 @@ final class MemoryDumpReader
                     'bin_walk' => $collected_memories->bin_walk_result->toSummaryHistogramArray(),
                     'bin_walk_periodic_groups'
                         => $collected_memories->bin_walk_result->toSummaryPeriodicGroupsArray(),
+                    'bin_shape_counts'
+                        => $collected_memories->bin_walk_result->toSummaryShapeCountsArray(),
                 ]
                 : []
             )

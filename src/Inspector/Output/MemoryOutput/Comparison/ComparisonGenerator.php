@@ -52,6 +52,8 @@ final class ComparisonGenerator
         'bin_periodic_group',
         'bin_periodic_orphan',
         'bin_periodic_reachable',
+        'bin_shape_count',
+        'bin_shape_unclassified',
     ];
 
     public function compare(
@@ -97,6 +99,11 @@ final class ComparisonGenerator
             $target->loadRegionMap(),
         );
 
+        $bin_shape_deltas = $this->compareBinShapeCounts(
+            $baseline->loadBinShapeCounts(),
+            $target->loadBinShapeCounts(),
+        );
+
         $unaccounted = $this->detectUnaccountedDelta(
             $summary_deltas,
             $type_deltas,
@@ -114,7 +121,82 @@ final class ComparisonGenerator
             bin_deltas: $bin_deltas,
             unaccounted_finding: $unaccounted,
             region_deltas: $region_deltas,
+            bin_shape_deltas: $bin_shape_deltas,
         );
+    }
+
+    /**
+     * Outer-join two per-(bin, shape) snapshots and emit BinShapeDelta
+     * rows for every shape whose count moved. Sorted by |orphan_delta|
+     * descending — the leak signal is "orphans grew", regardless of
+     * whether reachable copies of the shape also grew on the side.
+     *
+     * @param array<int, array<string, array{
+     *     count: int,
+     *     reachable_count: int,
+     *     confidence: string
+     * }>>|null $baseline
+     * @param array<int, array<string, array{
+     *     count: int,
+     *     reachable_count: int,
+     *     confidence: string
+     * }>>|null $target
+     * @return list<BinShapeDelta>
+     */
+    private function compareBinShapeCounts(?array $baseline, ?array $target): array
+    {
+        if ($baseline === null && $target === null) {
+            return [];
+        }
+        $baseline ??= [];
+        $target ??= [];
+
+        $bin_nums = array_unique(array_merge(array_keys($baseline), array_keys($target)));
+
+        $out = [];
+        foreach ($bin_nums as $bin_num) {
+            $b_bin = $baseline[$bin_num] ?? [];
+            $t_bin = $target[$bin_num] ?? [];
+            $labels = array_unique(array_merge(array_keys($b_bin), array_keys($t_bin)));
+            foreach ($labels as $label) {
+                $b = $b_bin[$label] ?? [
+                    'count' => 0,
+                    'reachable_count' => 0,
+                    'confidence' => 'medium',
+                ];
+                $t = $t_bin[$label] ?? [
+                    'count' => 0,
+                    'reachable_count' => 0,
+                    'confidence' => 'medium',
+                ];
+                $count_delta = $t['count'] - $b['count'];
+                if ($count_delta === 0) {
+                    continue;
+                }
+                $reachable_delta = $t['reachable_count'] - $b['reachable_count'];
+                $orphan_delta = $count_delta - $reachable_delta;
+                $out[] = new BinShapeDelta(
+                    bin_num: $bin_num,
+                    bin_size: \Reli\Lib\PhpInternals\Types\Zend\ZendMmBinsInfo::getSize($bin_num),
+                    shape: $label,
+                    baseline_count: $b['count'],
+                    target_count: $t['count'],
+                    count_delta: $count_delta,
+                    baseline_reachable: $b['reachable_count'],
+                    target_reachable: $t['reachable_count'],
+                    reachable_count_delta: $reachable_delta,
+                    orphan_count_delta: $orphan_delta,
+                    confidence: $t['confidence'] !== '' ? $t['confidence'] : $b['confidence'],
+                );
+            }
+        }
+
+        usort(
+            $out,
+            static fn(BinShapeDelta $a, BinShapeDelta $b)
+                => abs($b->orphan_count_delta) <=> abs($a->orphan_count_delta),
+        );
+        return $out;
     }
 
     /**

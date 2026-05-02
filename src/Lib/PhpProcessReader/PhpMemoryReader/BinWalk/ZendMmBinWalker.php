@@ -18,6 +18,8 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendMmChunk;
 use Reli\Lib\PhpInternals\Types\Zend\ZendMmPageInfoFree;
 use Reli\Lib\PhpInternals\Types\Zend\ZendMmPageInfoLarge;
 use Reli\Lib\PhpInternals\Types\Zend\ZendMmPageInfoSmall;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\DetectorRegistry;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ShapeDetector;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\Pointer\Dereferencer;
@@ -33,8 +35,16 @@ use Reli\Lib\Process\Pointer\Dereferencer;
  */
 final class ZendMmBinWalker
 {
-    /** Fingerprint length (first N bytes of the slot used as a shape key). */
-    private const FINGERPRINT_BYTES = 24;
+    /**
+     * Fingerprint length: prefix bytes captured per slot for shape grouping
+     * + detector input. 128 B is enough to reach struct stat's `st_mode`
+     * (offset 0x40 on Linux x86_64) — the discriminating field for a
+     * StatDetector. The previous 24 B window collapsed all-zeros leak
+     * shapes to a single bucket because the per-slot identity bytes
+     * (gc/h/len for zend_string, st_mode for stat, …) live past the
+     * fingerprint horizon.
+     */
+    private const FINGERPRINT_BYTES = 128;
 
     /** Per-page chunk page count (2 MiB / 4 KiB). */
     private const PAGES_PER_CHUNK = ZendMmChunk::SIZE / ZendMmChunk::PAGE_SIZE;
@@ -42,9 +52,15 @@ final class ZendMmBinWalker
     /** Defensive cap on freelist length per bin (a chunk holds at most 512 8 B slots). */
     private const FREELIST_WALK_LIMIT = 200_000;
 
+    /** @var list<ShapeDetector> */
+    private readonly array $detectors;
+
+    /** @param list<ShapeDetector>|null $detectors */
     public function __construct(
         private MemoryReaderInterface $memory_reader,
+        ?array $detectors = null,
     ) {
+        $this->detectors = $detectors ?? DetectorRegistry::defaults();
     }
 
     /**
@@ -112,6 +128,24 @@ final class ZendMmBinWalker
          * @var array<int, array<int, list<array{addr: int, fp: string}>>>
          */
         $live_by_bin_by_chunk = [];
+
+        /**
+         * Per-bin shape tally — feeds the "Per-bin Shape Detection"
+         * report section. Tracks every detector hit, separately from the
+         * fingerprint-grouped periodic groups, so content-varying shapes
+         * (Bucket entries with per-entry hash + key) get counted instead
+         * of being shrugged off because they don't form a periodic run.
+         *
+         * @var array<int, array<string, array{
+         *     count: int,
+         *     reachable_count: int,
+         *     confidence: string
+         * }>>
+         */
+        $bin_shape_counts = [];
+
+        /** @var array<int, int> */
+        $bin_unclassified_counts = [];
 
         foreach ($main_chunk->iterateChunks($dereferencer) as $chunk) {
             $walked_chunk_count++;
@@ -185,6 +219,48 @@ final class ZendMmBinWalker
                             'addr' => $slot_addr,
                             'fp' => $fp,
                         ];
+
+                        // Per-slot detector scan — independent of periodic
+                        // grouping, so Bucket entries (same shape, different
+                        // hash + key per slot) count even though they never
+                        // form a same-fingerprint run.
+                        $detection = DetectorRegistry::pickBest(
+                            $this->detectors,
+                            $fp,
+                            $bin_size,
+                        );
+                        if ($detection === null) {
+                            $bin_unclassified_counts[$bin_num]
+                                = ($bin_unclassified_counts[$bin_num] ?? 0) + 1;
+                        } else {
+                            $label = $detection->label;
+                            if (!isset($bin_shape_counts[$bin_num][$label])) {
+                                $bin_shape_counts[$bin_num][$label] = [
+                                    'count' => 0,
+                                    'reachable_count' => 0,
+                                    'confidence' => $detection->confidence,
+                                ];
+                            }
+                            $bin_shape_counts[$bin_num][$label]['count']++;
+                            if (
+                                $reachable_set !== null
+                                && isset($reachable_set[$slot_addr])
+                            ) {
+                                $bin_shape_counts[$bin_num][$label]['reachable_count']++;
+                            }
+                            // Promote stored confidence if this slot earned a
+                            // higher one — same-label slots can earn different
+                            // confidences when one detector returns HIGH and
+                            // another MEDIUM for distinct content variants.
+                            $stored = $bin_shape_counts[$bin_num][$label]['confidence'];
+                            if (
+                                DetectorRegistry::confidenceRank($detection->confidence)
+                                > DetectorRegistry::confidenceRank($stored)
+                            ) {
+                                $bin_shape_counts[$bin_num][$label]['confidence']
+                                    = $detection->confidence;
+                            }
+                        }
                     }
                 }
 
@@ -193,8 +269,11 @@ final class ZendMmBinWalker
         }
 
         ksort($histogram);
+        ksort($bin_shape_counts);
+        ksort($bin_unclassified_counts);
         $periodic_groups = PeriodicityDetector::detect(
             $live_by_bin_by_chunk,
+            detectors: $this->detectors,
             reachable_set: $reachable_set,
         );
 
@@ -207,6 +286,8 @@ final class ZendMmBinWalker
             periodic_groups: $periodic_groups,
             walked_chunk_count: $walked_chunk_count,
             partial: $partial,
+            bin_shape_counts: $bin_shape_counts,
+            bin_unclassified_counts: $bin_unclassified_counts,
         );
     }
 

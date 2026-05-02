@@ -14,10 +14,9 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk;
 
 use Reli\Lib\PhpInternals\Types\Zend\ZendMmBinsInfo;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\BucketDetector;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\DetectorRegistry;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ShapeDetection;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ShapeDetector;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ZendStringDetector;
 
 /**
  * Periodicity detection over bin-walker output.
@@ -62,7 +61,7 @@ final class PeriodicityDetector
         ?array $reachable_set = null,
     ): array {
         if ($detectors === null) {
-            $detectors = self::defaultDetectors();
+            $detectors = DetectorRegistry::defaults();
         }
         $out = [];
         foreach ($live_by_bin_by_chunk as $bin_num => $by_chunk) {
@@ -82,7 +81,7 @@ final class PeriodicityDetector
                     if ($stride === 0) {
                         continue;
                     }
-                    $detection = self::pickBestDetection($detectors, $fp, $bin_size);
+                    $detection = DetectorRegistry::pickBest($detectors, $fp, $bin_size);
                     $samples = self::sampleAddresses($addrs);
                     $verdict = self::classifyReachability($samples, $reachable_set);
                     $reachable_count = $verdict[0];
@@ -158,55 +157,6 @@ final class PeriodicityDetector
             return [$reachable_count, PeriodicGroup::REACHABILITY_REACHABLE];
         }
         return [$reachable_count, PeriodicGroup::REACHABILITY_MIXED];
-    }
-
-    /** @return list<ShapeDetector> */
-    private static function defaultDetectors(): array
-    {
-        return [
-            new BucketDetector(),
-            new ZendStringDetector(),
-        ];
-    }
-
-    /**
-     * Pick the highest-confidence detection from the registered detectors.
-     * Confidence-first per the design's selection rule
-     * (HIGH > MEDIUM > LOW), then first-registered wins on tie. Detectors
-     * that return null are skipped.
-     *
-     * @param list<ShapeDetector> $detectors
-     */
-    private static function pickBestDetection(
-        array $detectors,
-        string $fp,
-        int $bin_size,
-    ): ?ShapeDetection {
-        $best = null;
-        foreach ($detectors as $d) {
-            $hit = $d->detect($fp, $bin_size);
-            if ($hit === null) {
-                continue;
-            }
-            if ($best === null) {
-                $best = $hit;
-                continue;
-            }
-            if (self::confidenceRank($hit->confidence) > self::confidenceRank($best->confidence)) {
-                $best = $hit;
-            }
-        }
-        return $best;
-    }
-
-    private static function confidenceRank(string $c): int
-    {
-        return match ($c) {
-            ShapeDetection::CONFIDENCE_HIGH => 3,
-            ShapeDetection::CONFIDENCE_MEDIUM => 2,
-            ShapeDetection::CONFIDENCE_LOW => 1,
-            default => 0,
-        };
     }
 
     /** @param list<int> $sorted_addrs */

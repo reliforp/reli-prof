@@ -27,6 +27,7 @@ final class ComparisonResult
      * @param list<ClassDelta> $class_removed
      * @param list<BinDelta> $bin_deltas
      * @param list<RegionDelta> $region_deltas
+     * @param list<BinShapeDelta> $bin_shape_deltas
      */
     public function __construct(
         public readonly array $baseline_meta,
@@ -40,6 +41,7 @@ final class ComparisonResult
         public readonly array $bin_deltas = [],
         public readonly ?Finding $unaccounted_finding = null,
         public readonly array $region_deltas = [],
+        public readonly array $bin_shape_deltas = [],
     ) {
     }
 
@@ -74,6 +76,12 @@ final class ComparisonResult
             $out['region_deltas'] = array_map(
                 fn(RegionDelta $d) => $d->toArray(),
                 $this->region_deltas,
+            );
+        }
+        if ($this->bin_shape_deltas !== []) {
+            $out['bin_shape_deltas'] = array_map(
+                fn(BinShapeDelta $d) => $d->toArray(),
+                $this->bin_shape_deltas,
             );
         }
         if ($this->unaccounted_finding !== null) {
