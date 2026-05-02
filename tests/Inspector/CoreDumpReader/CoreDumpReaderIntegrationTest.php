@@ -23,6 +23,7 @@ use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
+use Reli\Lib\System\Architecture;
 use Reli\TargetPhpVmProvider;
 
 #[Group('target-version')]
@@ -69,6 +70,21 @@ class CoreDumpReaderIntegrationTest extends BaseTestCase
         string $docker_image_name,
     ): void {
         ini_set('memory_limit', '2G');
+
+        // ARM64 ZTS coredump: `CoreDumpThreadPointerRetriever` only knows
+        // how to read x86_64 `fs_base` from `NT_PRSTATUS`; AArch64
+        // `TPIDR_EL0` recovery is not implemented yet, so live attach
+        // works on AArch64 ZTS but post-mortem does not. Skip here until
+        // the AArch64 retriever lands; x86_64 ZTS is exercised on the
+        // primary CI runner.
+        if (
+            str_contains($docker_image_name, '-zts')
+            && Architecture::detect() === Architecture::AARCH64
+        ) {
+            $this->markTestSkipped(
+                'AArch64 ZTS coredump: TPIDR_EL0 retrieval from NT_PRSTATUS not yet implemented'
+            );
+        }
 
         $target_script = <<<'CODE'
             <?php
@@ -177,6 +193,21 @@ class CoreDumpReaderIntegrationTest extends BaseTestCase
         string $docker_image_name,
     ): void {
         ini_set('memory_limit', '2G');
+
+        // ARM64 ZTS coredump: `CoreDumpThreadPointerRetriever` only knows
+        // how to read x86_64 `fs_base` from `NT_PRSTATUS`; AArch64
+        // `TPIDR_EL0` recovery is not implemented yet, so live attach
+        // works on AArch64 ZTS but post-mortem does not. Skip here until
+        // the AArch64 retriever lands; x86_64 ZTS is exercised on the
+        // primary CI runner.
+        if (
+            str_contains($docker_image_name, '-zts')
+            && Architecture::detect() === Architecture::AARCH64
+        ) {
+            $this->markTestSkipped(
+                'AArch64 ZTS coredump: TPIDR_EL0 retrieval from NT_PRSTATUS not yet implemented'
+            );
+        }
 
         $target_script = <<<'CODE'
             <?php

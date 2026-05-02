@@ -98,19 +98,26 @@ final class CoreDumpReaderFactory
                 ];
             }
         }
-        // Surface the "main executable" path as the lowest-start
-        // NT_FILE entry. /proc/<pid>/exe doesn't exist post-mortem,
-        // so we lean on the kernel-populated NT_FILE notes instead.
-        // A PIE main binary (current default for distros) is mapped
-        // at the lowest user-space address, well below the shared
-        // libraries (which the dynamic linker places much higher),
-        // so the lowest-start entry is reliably the main binary.
-        // We deliberately do *not* correlate against PT_LOAD here:
-        // when the target's coredump_filter excludes file-backed
-        // private mappings (the default 0x33 / 0x33-without-bit-0
-        // shape produced by gcore on shared text), the main
-        // executable's r-x VMAs are not in PT_LOAD even though they
-        // are in NT_FILE.
+        // Heuristic: the lowest-start named NT_FILE entry is treated as
+        // the target's main executable, because /proc/<pid>/exe doesn't
+        // exist post-mortem. On normal Linux PHP deployments — PIE main
+        // binary, dynamic linker placing shared libraries much higher up
+        // — the lowest-start entry is reliably the main binary, but this
+        // is not a guarantee (statically-positioned binaries, special
+        // loaders, or unusual mappings could violate it).
+        //
+        // We deliberately do *not* try to correlate against PT_LOAD here:
+        // with `coredump_filter` 0x33 (gcore default) the main
+        // executable's r-x text VMAs are excluded from PT_LOAD even
+        // though they appear in NT_FILE. If the heuristic picks the wrong
+        // file, downstream symbol resolution surfaces a clean failure
+        // (`php module not found`, `cannot read ELF header from ...`)
+        // rather than corrupting memory reads.
+        //
+        // A more principled implementation would parse NT_AUXV and use
+        // AT_EXECFN, but the auxv string lives at a target-process
+        // address that has to be resolved through `memory_areas`, which
+        // makes it a bigger change than this PR is scoped for.
         $main_executable_path = null;
         $main_executable_vaddr = null;
         /** @var NtFileEntry $file_map */
@@ -172,6 +179,8 @@ final class CoreDumpReaderFactory
             );
         }
 
+        $path_resolver = new MappedPathResolver($path_mapping);
+
         // NT_FILE entries enumerate every file-backed VMA the kernel
         // saw, including text (`r-x`) ones that `coredump_filter` may
         // exclude from PT_LOAD by default. Without those, ELF symbol
@@ -179,11 +188,19 @@ final class CoreDumpReaderFactory
         // throws OutOfBoundsException because the address isn't in
         // any tracked memory area. Add a synthetic memory area for
         // every NT_FILE range not already covered by a PT_LOAD-derived
-        // entry so the MemoryReader can fall back to reading the
-        // file via `--dependency-root`. The synthetic permissions
-        // are set to `r-x` because in practice the missing ranges
-        // are text segments — the dumper / readers don't actually
-        // gate on the bits, so being slightly imprecise is fine.
+        // entry so the MemoryReader can fall back to reading the file
+        // via `--dependency-root`. The synthetic permissions are set
+        // to `r-x` because the missing ranges are text segments in
+        // practice — the dumper / readers don't gate on the bits.
+        //
+        // The "covered" check rejects on *any* overlap rather than
+        // strict containment: kernel-written PT_LOAD and NT_FILE both
+        // walk VMAs, so the normal shape is "PT_LOAD == NT_FILE" or
+        // "one without the other". A partially-overlapping pair would
+        // be a sign of unusual VMA merging upstream, and we'd rather
+        // skip the synthetic entry (preferring the PT_LOAD-derived
+        // record that already carries the right coredump offset) than
+        // emit a duplicate that `findByAddress` could pick instead.
         foreach ($file_maps as $file_map) {
             if ($file_map->name === '') {
                 continue;
@@ -192,10 +209,9 @@ final class CoreDumpReaderFactory
             $fm_end = $file_map->end->toInt();
             $covered = false;
             foreach ($memory_areas as $area) {
-                if (
-                    hexdec($area->begin) <= $fm_start
-                    && $fm_end <= hexdec($area->end)
-                ) {
+                $a_begin = (int)hexdec($area->begin);
+                $a_end = (int)hexdec($area->end);
+                if ($a_begin < $fm_end && $fm_start < $a_end) {
                     $covered = true;
                     break;
                 }
@@ -203,7 +219,14 @@ final class CoreDumpReaderFactory
             if ($covered) {
                 continue;
             }
-            $inode_result = file_exists($file_map->name) ? fileinode($file_map->name) : false;
+            // Resolve through MappedPathResolver before stat'ing so the
+            // `--dependency-root` path is consulted. Without this the
+            // target-view path (e.g. `/usr/lib/x86_64-linux-gnu/libc.so.6`
+            // on the host running the analyser) is unlikely to exist
+            // and inode falls back to 0, weakening the binary
+            // fingerprint and pessimising the symbol cache.
+            $resolved_path = $path_resolver->resolve(0, $file_map->name);
+            $inode_result = file_exists($resolved_path) ? fileinode($resolved_path) : false;
             $synthetic_inode = $inode_result !== false ? $inode_result : 0;
             $memory_areas[] = new ProcessMemoryArea(
                 dechex($fm_start),
@@ -216,7 +239,6 @@ final class CoreDumpReaderFactory
             );
         }
 
-        $path_resolver = new MappedPathResolver($path_mapping);
         $process_memory_map = new ProcessMemoryMap($memory_areas);
         /** @var FFI&object{open:callable,lseek:callable,read:callable,close:callable} $libc_ffi */
         $libc_ffi = FFI::cdef('
