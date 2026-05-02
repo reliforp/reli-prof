@@ -153,4 +153,64 @@ class StatDetectorTest extends BaseTestCase
         $this->assertNotNull($hit);
         $this->assertStringContainsString('@+48', $hit->label);
     }
+
+    public function testRejectsModeWithMultipleSIfmtBitsSet(): void
+    {
+        // Validator's second-pass false positive: mode = 0o714171 has
+        // bits OR-ed across multiple file-type masks, so the strict
+        // "must equal exactly one S_IFMT" check rejects.
+        $detector = new StatDetector();
+        $bytes = $this->statBytes(mode: 0o714171);
+        $this->assertNull($detector->detect($bytes, 144));
+    }
+
+    public function testRejectsSingleAxisGarbage(): void
+    {
+        // mode passes S_IFMT but uid/gid/nlink/blksize/timestamps are
+        // all garbage — only 1 axis matches, below MIN_AXES (=4).
+        // The previous detector would have accepted this with confidence
+        // MEDIUM at a wrong offset; the bumped axis cutoff rejects.
+        $detector = new StatDetector();
+        $now = time();
+        $window = 100 * 31_557_600; // way beyond ±50 yr → tv_sec rejects
+        $garbage = pack('P', 0)        // st_dev
+            . pack('P', 0)             // st_ino
+            . pack('P', 0xFFFFFFFFFFFFFFFF) // st_nlink absurd
+            . pack('VVVV', 0o100644, 0xFFFFFFFE, 0xFFFFFFFE, 0) // mode OK, uid/gid garbage
+            . pack('P', 0)             // st_rdev
+            . pack('P', 0)             // st_size
+            . pack('P', 7)             // st_blksize: not in whitelist
+            . pack('P', 0)             // st_blocks
+            . pack('PP', $now + $window, 1_000_000_001) // tv_sec way out, tv_nsec absurd
+            . pack('PP', 0, 1_000_000_001)
+            . pack('PP', 0, 1_000_000_001)
+            . pack('PPP', 0, 0, 0);
+        $this->assertSame(144, strlen($garbage));
+        $this->assertNull($detector->detect($garbage, 144));
+    }
+
+    public function testRejectsBogusBlksize(): void
+    {
+        // Real stat layout but blksize = 7 (not a power of two between
+        // 512 and 1 MiB). Drops the blksize axis, but 5 other axes
+        // pass (mode, uid/gid, nlink, tv_sec, tv_nsec) → still HIGH.
+        // Confirms the blksize axis is *additive*, not blocking.
+        $detector = new StatDetector();
+        $now = time();
+        $bytes = pack('P', 0)
+            . pack('P', 0)
+            . pack('P', 1)             // nlink=1
+            . pack('VVVV', 0o100644, 1000, 1000, 0)
+            . pack('P', 0)
+            . pack('P', 0)
+            . pack('P', 7)             // blksize invalid
+            . pack('P', 0)
+            . pack('PP', $now, 0)
+            . pack('PP', $now, 0)
+            . pack('PP', $now, 0)
+            . pack('PPP', 0, 0, 0);
+        $hit = $detector->detect($bytes, 144);
+        $this->assertNotNull($hit);
+        $this->assertSame(ShapeDetection::CONFIDENCE_HIGH, $hit->confidence);
+    }
 }

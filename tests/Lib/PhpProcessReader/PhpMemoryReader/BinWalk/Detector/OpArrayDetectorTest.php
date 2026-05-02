@@ -77,4 +77,26 @@ class OpArrayDetectorTest extends BaseTestCase
         $detector = new OpArrayDetector();
         $this->assertNull($detector->detect(str_repeat("\x00", 224), 224));
     }
+
+    public function testAcceptsByteAlignedHandlerPointers(): void
+    {
+        // Validator's issue #88 retest: opcode handler addresses end
+        // in arbitrary bytes (0x5a, 0xee, 0xb5, 0xe0, 0x01) because
+        // execute_ex's computed-goto labels land at byte-granular
+        // offsets. The previous 4-byte alignment check rejected these
+        // and left bin[14] 1037-slot unclassified; relaxing the check
+        // restores the match.
+        $detector = new OpArrayDetector();
+        $bytes = $this->block(0x00005570b9eab05a) // ends in 0x5a
+            . $this->block(0x00005570b9ea92ee)    // ends in 0xee
+            . $this->block(0x00005570b9eabdb5)    // ends in 0xb5
+            . $this->block(0x00005570b9ea78e0)    // ends in 0xe0
+            . $this->block(0x00005570b9ea7701);   // ends in 0x01
+        $this->assertSame(160, strlen($bytes));
+        $hit = $detector->detect($bytes, 160);
+        $this->assertNotNull($hit);
+        $this->assertStringContainsString('5 ×', $hit->label);
+        // 5 hits → HIGH per the detector's threshold.
+        $this->assertSame(ShapeDetection::CONFIDENCE_HIGH, $hit->confidence);
+    }
 }

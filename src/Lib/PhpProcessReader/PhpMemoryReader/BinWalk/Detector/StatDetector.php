@@ -81,11 +81,29 @@ final class StatDetector implements ShapeDetector
     ];
 
     /**
-     * Candidate offsets to scan. Includes natural boundaries (0, multiples
-     * of 8) plus the ones the validator's traffic actually exhibited
-     * (48 for 192 B uv_fs_t, 80 for 224 B uv_fs_t variants).
+     * Candidate offsets to scan. Includes the natural 8-byte boundaries
+     * the validator actually exhibits (48 for 192 B uv_fs_t, 80 for
+     * 224 B variants) plus 4-byte intermediates so we tolerate stat
+     * embedded after fields with non-8-byte natural alignment.
      */
-    private const OFFSETS = [0, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80];
+    private const OFFSETS = [0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80];
+
+    /**
+     * Minimum number of validation axes a candidate offset must score
+     * before we accept the slot. Bumped from the original 3 after the
+     * second validator pass found a single-S_IFMT-axis match at @+32
+     * winning over the real stat at @+48 — combining mode + uid/gid +
+     * nlink + blksize + timespec sanity makes accidental matches
+     * essentially impossible.
+     */
+    private const MIN_AXES = 4;
+    private const HIGH_AXES = 5;
+
+    /** Plausible st_blksize values — Linux fs blocksizes. */
+    private const VALID_BLKSIZES = [
+        512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072,
+        262144, 524288, 1048576,
+    ];
 
     #[\Override]
     public function name(): string
@@ -172,6 +190,17 @@ final class StatDetector implements ShapeDetector
             }
         }
 
+        // st_blksize @ +56 (8). Standard Linux fs blocksizes are powers
+        // of two from 512 to 1 MiB. Random uint64s essentially never hit
+        // that whitelist, so this axis is a strong false-positive killer.
+        if ($visible >= 64) {
+            /** @var array{1: int} $bs */
+            $bs = unpack('P', substr($fp, $offset + 56, 8));
+            if (in_array($bs[1], self::VALID_BLKSIZES, true)) {
+                $axes++;
+            }
+        }
+
         // Timespecs at +72 / +88 / +104. Visible at all?
         if ($visible >= 80) {
             $now = time();
@@ -204,11 +233,11 @@ final class StatDetector implements ShapeDetector
             }
         }
 
-        if ($axes < 3) {
+        if ($axes < self::MIN_AXES) {
             return null;
         }
 
-        $confidence = $axes >= 4
+        $confidence = $axes >= self::HIGH_AXES
             ? ShapeDetection::CONFIDENCE_HIGH
             : ShapeDetection::CONFIDENCE_MEDIUM;
 

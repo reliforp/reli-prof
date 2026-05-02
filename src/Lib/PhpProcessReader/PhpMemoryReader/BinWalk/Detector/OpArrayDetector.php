@@ -32,14 +32,19 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector;
  *
  * Validation:
  *   - At least 3 consecutive 32-byte sub-blocks each start with a
- *     plausible `.text` pointer (in [0x100000, POINTER_MAX), 4-byte
- *     aligned to match common ELF text alignment).
+ *     plausible `.text` pointer (in [0x100000, POINTER_MAX)).
  *   - The total length stays within the slot.
  *
  * Confidence:
  *   - 3-4 sub-blocks → MEDIUM (could still be coincidence).
  *   - 5+ sub-blocks  → HIGH (the chance of a 5-pointer .text run by
  *     accident is negligible).
+ *
+ * Alignment is not checked: PHP's opcode handlers (`execute_ex`'s
+ * computed-goto labels) and JIT trampolines land at byte-granular
+ * offsets inside `.text`, so requiring 4/16-byte alignment turns out
+ * to miss the validator's exact leak shape (handler addresses ending
+ * in 0x5a / 0xee / 0xb5 / 0xe0 / 0x01 — clearly 1-byte aligned).
  *
  * Symbol resolution (resolving the leading `.text` ptr to e.g.
  * `execute_ex+0x...` or `php_uv_*`) is the design's negative-evidence
@@ -115,9 +120,10 @@ final class OpArrayDetector implements ShapeDetector
         if ($ptr < self::TEXT_MIN) {
             return false;
         }
-        // ELF function entries are typically 16-byte aligned but we
-        // accept 4-byte alignment to tolerate older toolchains and
-        // odd JIT-emitted code.
-        return ($ptr & 0x3) === 0;
+        // No alignment check: PHP opcode handlers are computed-goto
+        // labels at byte-granular offsets inside execute_ex, and JIT
+        // trampolines land wherever the page allocator gave them.
+        // Range membership is the only safe filter.
+        return true;
     }
 }
