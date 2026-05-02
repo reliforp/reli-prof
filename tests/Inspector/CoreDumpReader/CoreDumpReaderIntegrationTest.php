@@ -70,19 +70,6 @@ class CoreDumpReaderIntegrationTest extends BaseTestCase
     ): void {
         ini_set('memory_limit', '2G');
 
-        // ZTS PHP 8.2+: _tsrm_ls_cache is not in .dynsym (stripped binary) so
-        // PhpTsrmLsCacheFinder falls back to brute-force TLS scanning. However,
-        // with the auto_prepend_file mechanism used by runScriptViaContainer,
-        // the TLS block does not contain _tsrm_ls_cache at the expected location.
-        if (
-            str_contains($docker_image_name, '-zts')
-            && $php_version >= 'v82'
-        ) {
-            $this->markTestSkipped(
-                'ZTS PHP 8.2+ coredump: _tsrm_ls_cache not found in TLS block'
-            );
-        }
-
         $target_script = <<<'CODE'
             <?php
             $data = array_fill(0, 1000, str_repeat('x', 100));
@@ -190,16 +177,6 @@ class CoreDumpReaderIntegrationTest extends BaseTestCase
         string $docker_image_name,
     ): void {
         ini_set('memory_limit', '2G');
-
-        // ZTS PHP 8.2+: same skip rationale as testReadFromCoreDump.
-        if (
-            str_contains($docker_image_name, '-zts')
-            && $php_version >= 'v82'
-        ) {
-            $this->markTestSkipped(
-                'ZTS PHP 8.2+ coredump: _tsrm_ls_cache not found in TLS block'
-            );
-        }
 
         $target_script = <<<'CODE'
             <?php
