@@ -38,16 +38,18 @@ final class BinWalkResult
      *     reachable_count: int,
      *     confidence: string
      * }>> $bin_shape_counts
-     *     Per-(bin, shape) tally from the per-slot detector scan. Lets the
-     *     report surface "76% of bin[3] is Bucket(IS_STRING)" for shapes
-     *     the periodic-group path skips because the bytes vary per slot.
-     * @param array<int, int> $bin_unclassified_counts Per-bin slots no
-     *     detector matched.
+     *     Per-(bin, label) tally from the per-slot detector scan. Lets
+     *     the report surface "76% of bin[3] is Bucket(IS_STRING)" for
+     *     shapes the periodic-group path skips because the bytes vary
+     *     per slot. Slots that no detector matched live under the
+     *     special label `unclassified` inside this same map so they
+     *     can be drilled into via bin-query.
      * @param array<int, array<string, list<int>>> $bin_shape_addrs
      *     Per-(bin, label) sample addresses (capped at
      *     {@see ZendMmBinWalker::PER_SHAPE_SAMPLE_CAP}). Persisted in the
      *     rmem summary so `inspector:memory:bin-query` can return real
      *     pointer-into-the-leak addresses for `memory:peek` follow-up.
+     *     Includes the `unclassified` label.
      */
     public function __construct(
         public readonly array $small_bin_histogram,
@@ -59,7 +61,6 @@ final class BinWalkResult
         public readonly int $walked_chunk_count,
         public readonly bool $partial,
         public readonly array $bin_shape_counts = [],
-        public readonly array $bin_unclassified_counts = [],
         public readonly array $bin_shape_addrs = [],
     ) {
     }
@@ -121,17 +122,15 @@ final class BinWalkResult
      *         "bin_num": int,
      *         "shapes": [
      *           {label, count, reachable_count, confidence, sample_addrs}, …
-     *         ],
-     *         "unclassified": int
+     *         ]
      *       }, …
      *     ]
      *   }
      *
-     * Stored as a single JSON entry keyed `bin_shape_counts` so the
-     * comparison provider can decode it without the rmem reader caring
-     * about the inner shape. The sample_addrs list (capped per
-     * {@see ZendMmBinWalker::PER_SHAPE_SAMPLE_CAP}) is what backs the
-     * `inspector:memory:bin-query` drill-down.
+     * The `unclassified` slots live inside `shapes` under the literal
+     * label `"unclassified"` — the validator's drill-down ask
+     * (`bin-query --shape=unclassified`) is satisfied by the same code
+     * path as classified shapes; no separate field needed.
      *
      * @return array{
      *     bin: list<array{
@@ -142,22 +141,18 @@ final class BinWalkResult
      *             reachable_count: int,
      *             confidence: string,
      *             sample_addrs: list<int>
-     *         }>,
-     *         unclassified: int
+     *         }>
      *     }>
      * }
      */
     public function toSummaryShapeCountsArray(): array
     {
         $bin_rows = [];
-        $bin_nums = array_unique(array_merge(
-            array_keys($this->bin_shape_counts),
-            array_keys($this->bin_unclassified_counts),
-        ));
+        $bin_nums = array_keys($this->bin_shape_counts);
         sort($bin_nums);
         foreach ($bin_nums as $bin_num) {
             $shapes = [];
-            foreach ($this->bin_shape_counts[$bin_num] ?? [] as $label => $row) {
+            foreach ($this->bin_shape_counts[$bin_num] as $label => $row) {
                 $shapes[] = [
                     'label' => $label,
                     'count' => $row['count'],
@@ -173,7 +168,6 @@ final class BinWalkResult
             $bin_rows[] = [
                 'bin_num' => $bin_num,
                 'shapes' => $shapes,
-                'unclassified' => $this->bin_unclassified_counts[$bin_num] ?? 0,
             ];
         }
         return ['bin' => $bin_rows];

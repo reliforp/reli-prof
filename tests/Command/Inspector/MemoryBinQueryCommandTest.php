@@ -130,6 +130,34 @@ class MemoryBinQueryCommandTest extends BaseTestCase
         $this->assertStringNotContainsString('0x0000000000001000', $display);
     }
 
+    public function testListsAddressesForUnclassifiedShape(): void
+    {
+        // Validator's drill-down ask: when shape detectors miss a slot,
+        // it lands under `unclassified` and the user can still pull
+        // sample addresses to peek at.
+        $this->writeRmemWithShapeCounts([
+            3 => [
+                'unclassified' => [
+                    'count' => 2044,
+                    'reachable_count' => 0,
+                    'confidence' => 'low',
+                    'sample_addrs' => [0x7f00deadbeef, 0x7f00deadcafe],
+                ],
+            ],
+        ]);
+        $tester = new CommandTester(new MemoryBinQueryCommand());
+        $rc = $tester->execute([
+            'rmem-file' => $this->rmem_path,
+            '--bin' => '3',
+            '--shape' => 'unclassified',
+        ]);
+        $this->assertSame(0, $rc);
+        $display = $tester->getDisplay();
+        $this->assertStringContainsString('unclassified', $display);
+        $this->assertStringContainsString('0x00007f00deadbeef', $display);
+        $this->assertStringContainsString('0x00007f00deadcafe', $display);
+    }
+
     public function testFailsWhenBinUnknown(): void
     {
         $this->writeRmemWithShapeCounts([

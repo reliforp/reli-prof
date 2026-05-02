@@ -32,6 +32,7 @@ final class DetectorRegistry
             new BucketDetector(),
             new ZendStringDetector(),
             new StatDetector(),
+            new OpArrayDetector(),
         ];
     }
 

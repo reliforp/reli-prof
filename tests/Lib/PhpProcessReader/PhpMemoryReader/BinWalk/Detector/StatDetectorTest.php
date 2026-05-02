@@ -123,4 +123,34 @@ class StatDetectorTest extends BaseTestCase
         $detector = new StatDetector();
         $this->assertNull($detector->detect($this->statBytes(), 128));
     }
+
+    public function testRejectsModeWithBogusSIfmtBits(): void
+    {
+        // The validator's first-pass false-positive: detector accepted
+        // mode = 0o177000 because the loose `& S_IFMT != 0` check
+        // passed. With strict S_IFMT membership the bogus value is
+        // rejected, letting the +48 candidate (real stat) win.
+        $detector = new StatDetector();
+        $bytes = $this->statBytes(mode: 0o177000);
+        $this->assertNull($detector->detect($bytes, 144));
+    }
+
+    public function testPicksOffset48OverOffset24WhenBothPlausible(): void
+    {
+        // Issue #88 leak shape: 48 bytes of garbage prefix (one of which
+        // happens to look like a regular file mode at +24 in the slot,
+        // i.e. offset 0 of a stat at +24) followed by a real struct
+        // stat at +48. With the strict S_IFMT check the +24 candidate
+        // either rejects outright or scores fewer axes than +48.
+        $detector = new StatDetector();
+        $real_stat = $this->statBytes();
+        // 48 B prefix that is NOT a plausible stat (mode bytes at
+        // prefix offset +24 are 0).
+        $prefix = str_repeat("\x00", 48);
+        $bytes = $prefix . $real_stat;
+        $this->assertSame(192, strlen($bytes));
+        $hit = $detector->detect($bytes, 192);
+        $this->assertNotNull($hit);
+        $this->assertStringContainsString('@+48', $hit->label);
+    }
 }

@@ -67,14 +67,13 @@ final class BinShapePass implements PassInterface
                 continue;
             }
             $bin_num = (int)($bin_row['bin_num'] ?? -1);
-            $unclassified = (int)($bin_row['unclassified'] ?? 0);
             $shapes = is_array($bin_row['shapes'] ?? null) ? $bin_row['shapes'] : [];
 
             if ($bin_num < 0) {
                 continue;
             }
 
-            $total = $unclassified;
+            $total = 0;
             foreach ($shapes as $row) {
                 if (is_array($row) && isset($row['count'])) {
                     $total += (int)$row['count'];
@@ -97,20 +96,30 @@ final class BinShapePass implements PassInterface
                 }
                 $orphan = $count - $reachable;
                 $pct = (float)$count / (float)$total * 100.0;
+                $is_unclassified = $label === 'unclassified';
 
                 $findings[] = new Finding(
-                    kind: 'bin_shape_count',
+                    kind: $is_unclassified ? 'bin_shape_unclassified' : 'bin_shape_count',
                     severity: FindingSeverity::Info,
-                    confidence: $this->mapConfidence($confidence),
-                    summary: sprintf(
-                        'bin[%d]: %s × %s (%.1f%%, %d orphan / %d reachable)',
-                        $bin_num,
-                        $label,
-                        number_format($count),
-                        $pct,
-                        $orphan,
-                        $reachable,
-                    ),
+                    confidence: $is_unclassified
+                        ? FindingConfidence::Low
+                        : $this->mapConfidence($confidence),
+                    summary: $is_unclassified
+                        ? sprintf(
+                            'bin[%d]: unclassified × %s (%.1f%%)',
+                            $bin_num,
+                            number_format($count),
+                            $pct,
+                        )
+                        : sprintf(
+                            'bin[%d]: %s × %s (%.1f%%, %d orphan / %d reachable)',
+                            $bin_num,
+                            $label,
+                            number_format($count),
+                            $pct,
+                            $orphan,
+                            $reachable,
+                        ),
                     facts: [
                         'bin_num' => $bin_num,
                         'shape' => $label,
@@ -119,26 +128,6 @@ final class BinShapePass implements PassInterface
                         'orphan_count' => $orphan,
                         'percentage' => round($pct, 1),
                         'confidence' => $confidence,
-                    ],
-                );
-            }
-
-            if ($unclassified > 0) {
-                $pct = (float)$unclassified / (float)$total * 100.0;
-                $findings[] = new Finding(
-                    kind: 'bin_shape_unclassified',
-                    severity: FindingSeverity::Info,
-                    confidence: FindingConfidence::Low,
-                    summary: sprintf(
-                        'bin[%d]: unclassified × %s (%.1f%%)',
-                        $bin_num,
-                        number_format($unclassified),
-                        $pct,
-                    ),
-                    facts: [
-                        'bin_num' => $bin_num,
-                        'count' => $unclassified,
-                        'percentage' => round($pct, 1),
                     ],
                 );
             }

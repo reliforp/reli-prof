@@ -26,6 +26,9 @@ class BinShapePassTest extends BaseTestCase
 
     public function testEmitsBinShapeCountFinding(): void
     {
+        // Unclassified slots live inside `shapes` under the literal
+        // label "unclassified" — the data model the validator's
+        // bin-query drill-down relies on.
         $pass = new BinShapePass([[
             'bin_shape_counts' => json_encode([
                 'bin' => [
@@ -38,8 +41,13 @@ class BinShapePassTest extends BaseTestCase
                                 'reachable_count' => 150,
                                 'confidence' => 'medium',
                             ],
+                            [
+                                'label' => 'unclassified',
+                                'count' => 601,
+                                'reachable_count' => 0,
+                                'confidence' => 'low',
+                            ],
                         ],
-                        'unclassified' => 601,
                     ],
                 ],
             ]),
@@ -48,14 +56,43 @@ class BinShapePassTest extends BaseTestCase
         // One bin_shape_count + one bin_shape_unclassified.
         $this->assertCount(2, $findings);
         $kinds = array_map(static fn(Finding $f) => $f->kind, $findings);
-        $this->assertSame(['bin_shape_count', 'bin_shape_unclassified'], $kinds);
+        $this->assertContains('bin_shape_count', $kinds);
+        $this->assertContains('bin_shape_unclassified', $kinds);
 
-        $shape_finding = $findings[0];
+        $shape_finding = array_values(array_filter(
+            $findings,
+            static fn(Finding $f) => $f->kind === 'bin_shape_count',
+        ))[0];
         $this->assertSame(2150, $shape_finding->facts['count']);
         $this->assertSame(2000, $shape_finding->facts['orphan_count']);
         $this->assertSame(150, $shape_finding->facts['reachable_count']);
         // 2150 / (2150 + 601) ≈ 78.2%
         $this->assertEqualsWithDelta(78.2, $shape_finding->facts['percentage'], 0.5);
+    }
+
+    public function testUnclassifiedRowEmitsUnclassifiedFinding(): void
+    {
+        $pass = new BinShapePass([[
+            'bin_shape_counts' => json_encode([
+                'bin' => [
+                    [
+                        'bin_num' => 3,
+                        'shapes' => [
+                            [
+                                'label' => 'unclassified',
+                                'count' => 200,
+                                'reachable_count' => 5,
+                                'confidence' => 'low',
+                            ],
+                        ],
+                    ],
+                ],
+            ]),
+        ]]);
+        $findings = $pass->analyze();
+        $this->assertCount(1, $findings);
+        $this->assertSame('bin_shape_unclassified', $findings[0]->kind);
+        $this->assertSame(200, $findings[0]->facts['count']);
     }
 
     public function testToleratesArrayInput(): void
@@ -73,7 +110,6 @@ class BinShapePassTest extends BaseTestCase
                                 'confidence' => 'high',
                             ],
                         ],
-                        'unclassified' => 0,
                     ],
                 ],
             ],

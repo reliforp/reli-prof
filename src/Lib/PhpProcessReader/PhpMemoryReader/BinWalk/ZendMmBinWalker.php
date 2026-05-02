@@ -144,6 +144,10 @@ final class ZendMmBinWalker
          * (Bucket entries with per-entry hash + key) get counted instead
          * of being shrugged off because they don't form a periodic run.
          *
+         * Slots that no detector matched land under the special label
+         * `unclassified` — kept inside the same map so bin-query can
+         * surface addresses for them via --shape=unclassified.
+         *
          * @var array<int, array<string, array{
          *     count: int,
          *     reachable_count: int,
@@ -151,9 +155,6 @@ final class ZendMmBinWalker
          * }>>
          */
         $bin_shape_counts = [];
-
-        /** @var array<int, int> */
-        $bin_unclassified_counts = [];
 
         /**
          * Per-(bin, label) sample addresses for `memory:bin-query`
@@ -248,42 +249,46 @@ final class ZendMmBinWalker
                             $bin_size,
                         );
                         if ($detection === null) {
-                            $bin_unclassified_counts[$bin_num]
-                                = ($bin_unclassified_counts[$bin_num] ?? 0) + 1;
+                            // Slot didn't match any detector — record it
+                            // under the special `unclassified` label so
+                            // bin-query --shape=unclassified can drill in.
+                            $label = 'unclassified';
+                            $confidence = 'low';
                         } else {
                             $label = $detection->label;
-                            if (!isset($bin_shape_counts[$bin_num][$label])) {
-                                $bin_shape_counts[$bin_num][$label] = [
-                                    'count' => 0,
-                                    'reachable_count' => 0,
-                                    'confidence' => $detection->confidence,
-                                ];
-                            }
-                            $bin_shape_counts[$bin_num][$label]['count']++;
-                            if (
-                                $reachable_set !== null
-                                && isset($reachable_set[$slot_addr])
-                            ) {
-                                $bin_shape_counts[$bin_num][$label]['reachable_count']++;
-                            }
-                            // Promote stored confidence if this slot earned a
-                            // higher one — same-label slots can earn different
-                            // confidences when one detector returns HIGH and
-                            // another MEDIUM for distinct content variants.
-                            $stored = $bin_shape_counts[$bin_num][$label]['confidence'];
-                            if (
-                                DetectorRegistry::confidenceRank($detection->confidence)
-                                > DetectorRegistry::confidenceRank($stored)
-                            ) {
-                                $bin_shape_counts[$bin_num][$label]['confidence']
-                                    = $detection->confidence;
-                            }
-                            // Sample address for drill-down — first N
-                            // encountered addresses are kept, rest dropped.
-                            $existing_samples = $bin_shape_addrs[$bin_num][$label] ?? [];
-                            if (count($existing_samples) < self::PER_SHAPE_SAMPLE_CAP) {
-                                $bin_shape_addrs[$bin_num][$label][] = $slot_addr;
-                            }
+                            $confidence = $detection->confidence;
+                        }
+
+                        if (!isset($bin_shape_counts[$bin_num][$label])) {
+                            $bin_shape_counts[$bin_num][$label] = [
+                                'count' => 0,
+                                'reachable_count' => 0,
+                                'confidence' => $confidence,
+                            ];
+                        }
+                        $bin_shape_counts[$bin_num][$label]['count']++;
+                        if (
+                            $reachable_set !== null
+                            && isset($reachable_set[$slot_addr])
+                        ) {
+                            $bin_shape_counts[$bin_num][$label]['reachable_count']++;
+                        }
+                        // Promote stored confidence if this slot earned a
+                        // higher one — same-label slots can earn different
+                        // confidences when one detector returns HIGH and
+                        // another MEDIUM for distinct content variants.
+                        $stored = $bin_shape_counts[$bin_num][$label]['confidence'];
+                        if (
+                            DetectorRegistry::confidenceRank($confidence)
+                            > DetectorRegistry::confidenceRank($stored)
+                        ) {
+                            $bin_shape_counts[$bin_num][$label]['confidence'] = $confidence;
+                        }
+                        // Sample address for drill-down — first N
+                        // encountered addresses are kept, rest dropped.
+                        $existing_samples = $bin_shape_addrs[$bin_num][$label] ?? [];
+                        if (count($existing_samples) < self::PER_SHAPE_SAMPLE_CAP) {
+                            $bin_shape_addrs[$bin_num][$label][] = $slot_addr;
                         }
                     }
                 }
@@ -294,7 +299,6 @@ final class ZendMmBinWalker
 
         ksort($histogram);
         ksort($bin_shape_counts);
-        ksort($bin_unclassified_counts);
         $periodic_groups = PeriodicityDetector::detect(
             $live_by_bin_by_chunk,
             detectors: $this->detectors,
@@ -311,7 +315,6 @@ final class ZendMmBinWalker
             walked_chunk_count: $walked_chunk_count,
             partial: $partial,
             bin_shape_counts: $bin_shape_counts,
-            bin_unclassified_counts: $bin_unclassified_counts,
             bin_shape_addrs: $bin_shape_addrs,
         );
     }

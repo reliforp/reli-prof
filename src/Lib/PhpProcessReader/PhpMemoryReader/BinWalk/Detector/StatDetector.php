@@ -62,6 +62,25 @@ final class StatDetector implements ShapeDetector
     private const S_IFMT = 0xF000;
 
     /**
+     * Exact S_IFMT values for the 7 POSIX file types. The mode field
+     * must mask down to *exactly* one of these — anything else is
+     * garbage. The validator's issue #88 retest landed on the +24
+     * candidate offset because the loose `mode & S_IFMT != 0` check
+     * accepted `0o177000` (= 0xfe00, which is actually `st_dev` read
+     * at the wrong offset). Strict membership rejects that and lets
+     * the +48 candidate (the real stat) win.
+     */
+    private const VALID_S_IFMT = [
+        0o100000, // S_IFREG  regular file
+        0o040000, // S_IFDIR  directory
+        0o020000, // S_IFCHR  character device
+        0o060000, // S_IFBLK  block device
+        0o010000, // S_IFIFO  FIFO
+        0o120000, // S_IFLNK  symlink
+        0o140000, // S_IFSOCK socket
+    ];
+
+    /**
      * Candidate offsets to scan. Includes natural boundaries (0, multiples
      * of 8) plus the ones the validator's traffic actually exhibited
      * (48 for 192 B uv_fs_t, 80 for 224 B uv_fs_t variants).
@@ -85,6 +104,7 @@ final class StatDetector implements ShapeDetector
         $fp_len = strlen($fingerprint);
 
         $best = null;
+        $best_axes = -1;
         foreach (self::OFFSETS as $offset) {
             if ($offset + self::STAT_SIZE > $bin_size) {
                 continue;
@@ -97,30 +117,37 @@ final class StatDetector implements ShapeDetector
                 // Below mode + uid + gid we can't even start scoring.
                 continue;
             }
-            $hit = $this->tryAtOffset($fingerprint, $offset, $visible);
-            if ($hit === null) {
+            $candidate = $this->tryAtOffset($fingerprint, $offset, $visible);
+            if ($candidate === null) {
                 continue;
             }
-            if (
-                $best === null
-                || $this->scoreOf($hit) > $this->scoreOf($best)
-            ) {
-                $best = $hit;
+            // Tiebreaker: when two offsets pass, the one that earned
+            // more validation axes wins. Without this, +24 and +48 can
+            // both look HIGH and the first-encountered one (+24) is
+            // taken; with tighter S_IFMT the +24 case usually rejects
+            // outright now, but keep the granular score so future
+            // similar shapes don't regress.
+            [$detection, $axes] = $candidate;
+            if ($axes > $best_axes) {
+                $best = $detection;
+                $best_axes = $axes;
             }
         }
         return $best;
     }
 
     /**
-     * @return ShapeDetection|null
+     * @return array{0: ShapeDetection, 1: int}|null Detection + axis
+     *     count that earned it (so the caller can rank multi-offset
+     *     matches granularly).
      */
-    private function tryAtOffset(string $fp, int $offset, int $visible): ?ShapeDetection
+    private function tryAtOffset(string $fp, int $offset, int $visible): ?array
     {
         // st_mode @ +24 (4), st_uid @ +28 (4), st_gid @ +32 (4)
         /** @var array{1: int} $m */
         $m = unpack('V', substr($fp, $offset + 24, 4));
         $mode = $m[1];
-        if (($mode & self::S_IFMT) === 0) {
+        if (!in_array($mode & self::S_IFMT, self::VALID_S_IFMT, true)) {
             return null;
         }
 
@@ -194,19 +221,17 @@ final class StatDetector implements ShapeDetector
             $size_label = sprintf(', size %d', $sz[1]);
         }
 
-        return new ShapeDetection(
-            label: sprintf(
-                'struct stat @+%d (mode 0o%o%s)',
-                $offset,
-                $mode,
-                $size_label,
+        return [
+            new ShapeDetection(
+                label: sprintf(
+                    'struct stat @+%d (mode 0o%o%s)',
+                    $offset,
+                    $mode,
+                    $size_label,
+                ),
+                confidence: $confidence,
             ),
-            confidence: $confidence,
-        );
-    }
-
-    private function scoreOf(ShapeDetection $d): int
-    {
-        return $d->confidence === ShapeDetection::CONFIDENCE_HIGH ? 2 : 1;
+            $axes,
+        ];
     }
 }
