@@ -1496,6 +1496,23 @@ typedef struct {
 	int socket;
 } php_netstream_data_t;
 
+// ext/standard/glob_wrapper.c — partial view of php_glob_stream_data starting
+// at offset 88 from the head of the real struct. The real struct begins with
+// glob_t (whose internals differ between glibc and musl) followed by
+//   size_t index;        // +72
+//   int    flags;        // +80 (+4 padding)
+// then the four fields below at +88. We rely on sizeof(glob_t) == 72 being
+// stable across glibc 2.10+ and musl 0.5+ on x86_64/aarch64; the reader
+// validates each (path, path_len) and (pattern, pattern_len) pair by
+// comparing strlen(*ptr) against the declared length and silently degrades
+// to label-only on any mismatch (other libc, future ABI break).
+typedef struct {
+	char *path;
+	size_t path_len;
+	char *pattern;
+	size_t pattern_len;
+} php_glob_stream_data_tail;
+
 // ext/pdo/php_pdo_driver.h
 typedef char pdo_error_type[6];
 

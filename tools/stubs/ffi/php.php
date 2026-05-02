@@ -396,6 +396,14 @@ class php_netstream_data_t extends CData
     public int $socket;
 }
 
+class php_glob_stream_data_tail extends CData
+{
+    public ?CPointer $path;
+    public int $path_len;
+    public ?CPointer $pattern;
+    public int $pattern_len;
+}
+
 class pdo_dbh_object_t extends CData
 {
     public ?CPointer $inner;

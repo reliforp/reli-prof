@@ -3013,14 +3013,20 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                             $found_unix_socket_with_fd = true;
                         }
                     }
-                    // glob:// streams: PHP's _php_stream_opendir does not
-                    // populate php_stream->orig_path, and the pattern lives
-                    // inside php_glob_stream_data after a libc-dependent
-                    // glob_t (size differs between glibc and musl). We
-                    // intentionally do not decode that struct, so the only
-                    // signal exposed for glob is the label itself.
+                    // glob:// streams: _php_stream_opendir does not populate
+                    // php_stream->orig_path, but reli reconstructs a synthetic
+                    // 'glob://<path>/<pattern>' from the (path, pattern) pair
+                    // that lives at the tail of php_glob_stream_data (after
+                    // the libc-internal glob_t header).
                     if ($label === 'glob') {
-                        $found_glob_with_pattern = true;
+                        if (
+                            is_string($orig_path)
+                            && str_starts_with($orig_path, 'glob://')
+                            && str_contains($orig_path, 'reli-glob-')
+                            && str_contains($orig_path, '*.txt')
+                        ) {
+                            $found_glob_with_pattern = true;
+                        }
                     }
                     if ($label === 'user-space') {
                         if (isset($value['stream_userspace_object'])) {
@@ -3047,7 +3053,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         );
         $this->assertTrue(
             $found_glob_with_pattern,
-            'glob:// stream should at least be tagged with stream_type_label=glob'
+            'glob:// stream should expose synthetic stream_orig_path with the pattern'
         );
         $this->assertTrue(
             $found_userspace_with_object,

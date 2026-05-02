@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\Job;
 
 use Reli\Lib\PhpInternals\Types\C\RawString;
+use Reli\Lib\PhpInternals\Types\Php\PhpGlobStreamDataTail;
 use Reli\Lib\PhpInternals\Types\Php\PhpNetstreamData;
 use Reli\Lib\PhpInternals\Types\Php\PhpStdioStreamData;
 use Reli\Lib\PhpInternals\Types\Php\PhpStream;
@@ -169,6 +170,8 @@ final class EmitResourceJob implements CollectorJob
                 || $label === 'udg_socket'
             ) {
                 $this->collectSocketStreamData($php_stream, $ctx, $resource_context);
+            } elseif ($label === 'glob') {
+                $this->collectGlobStreamData($php_stream, $ctx, $resource_context);
             }
         } catch (\Throwable) {
             return null;
@@ -326,6 +329,75 @@ final class EmitResourceJob implements CollectorJob
         ));
 
         $resource_context->stream_fd = $netstream_data->socket;
+    }
+
+    /**
+     * Decode the (path, pattern) pair stored at the tail of
+     * php_glob_stream_data.
+     *
+     * The struct begins with `glob_t` (libc-internal, layout differs between
+     * glibc and musl) followed by `size_t index; int flags;`. On 64-bit Linux
+     * this puts (path, path_len, pattern, pattern_len) at offset 88, because
+     * sizeof(glob_t) == 72 has been stable since glibc 2.10 (2009) and musl
+     * 0.5 (2011). _php_stream_opendir does not populate stream->orig_path for
+     * the glob wrapper, so this is the only place the pattern is recoverable.
+     *
+     * Each (ptr, len) pair is validated by checking strlen-vs-len consistency
+     * against the bytes actually mapped at the pointer; on any mismatch
+     * (other libc, future ABI break) the resource silently degrades to
+     * label-only.
+     */
+    private function collectGlobStreamData(
+        PhpStream $php_stream,
+        CollectorContext $ctx,
+        ResourceContext $resource_context,
+    ): void {
+        $abstract_address = $php_stream->abstract;
+        if ($abstract_address === 0) {
+            return;
+        }
+
+        $tail_size = $ctx->zend_type_reader->sizeOf('php_glob_stream_data_tail');
+        $tail = $ctx->dereferencer->deref(new Pointer(
+            PhpGlobStreamDataTail::class,
+            $abstract_address + 88,
+            $tail_size,
+        ));
+
+        $path = $this->validatedGlobString($ctx, $tail->path, $tail->path_len);
+        $pattern = $this->validatedGlobString($ctx, $tail->pattern, $tail->pattern_len);
+        if ($path === null || $pattern === null) {
+            return;
+        }
+
+        $resource_context->stream_orig_path = 'glob://' . $path . '/' . $pattern;
+    }
+
+    /**
+     * Read $len bytes at $address and return the string only when its
+     * length matches $len exactly (i.e. the bytes are NUL-free up to
+     * $len, with the byte at $len being NUL or end-of-buffer). Returns
+     * null on any inconsistency.
+     */
+    private function validatedGlobString(
+        CollectorContext $ctx,
+        int $address,
+        int $len,
+    ): ?string {
+        if ($address === 0 || $len <= 0 || $len > 4096) {
+            return null;
+        }
+        try {
+            $raw = (string)$ctx->dereferencer->deref(
+                new Pointer(RawString::class, $address, $len + 1),
+            );
+        } catch (\Throwable) {
+            return null;
+        }
+        if (strlen($raw) !== $len) {
+            return null;
+        }
+        return $raw;
     }
 
     private function extractUserspaceObjectZval(
