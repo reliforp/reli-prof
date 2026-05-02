@@ -312,6 +312,7 @@ final class MemoryLocationsCollector
         // Process "definition" branches before "usage" branches so the
         // canonical tree lives under the named globals/tables, not
         // buried inside a call frame.
+        $queue->push(new Collector\Job\EmitRegularListJob($eg->regular_list));
         $queue->push(new Collector\Job\EmitObjectsStoreJob($eg->objects_store));
         $queue->push(new Collector\Job\EmitCallFramesJob($eg));
         $queue->push(new Collector\Job\EmitModulesJob($bg_address));
