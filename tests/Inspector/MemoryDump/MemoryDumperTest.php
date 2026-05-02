@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Inspector\MemoryDump;
 
 use PHPUnit\Framework\Attributes\DataProviderExternal;
+use Reli\Lib\PhpProcessReader\MainExecutable\ProcExeReadlinkResolver;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
@@ -159,6 +160,7 @@ class MemoryDumperTest extends BaseTestCase
             ),
             $process_memory_map_creator,
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $tsrm_globals_resolver = new TsrmGlobalsResolver(
             $php_symbol_reader_creator,

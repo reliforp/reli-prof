@@ -27,7 +27,15 @@ final class NtFileEntry
 
     public function isInRange(UInt64 $address): bool
     {
+        // NT_FILE notes use [start, end) like /proc/<pid>/maps — end is
+        // exclusive. Treating it as inclusive misattributes the boundary
+        // VMA to the preceding entry when two libraries are mapped
+        // back-to-back (e.g. libtinfo ending exactly where libc begins),
+        // which makes findByNameRegex drop the lowest VMA of the second
+        // library and skews module_memory_map.getBaseAddress() by that
+        // VMA's size — symbol resolution then targets bytes one segment
+        // off in the wrong direction.
         return $address->toInt() >= $this->start->toInt()
-            and $address->toInt() <= $this->end->toInt();
+            and $address->toInt() < $this->end->toInt();
     }
 }

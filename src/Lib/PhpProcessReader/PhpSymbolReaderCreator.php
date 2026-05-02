@@ -19,12 +19,11 @@ use Reli\Lib\Elf\Process\ProcessModuleSymbolReader;
 use Reli\Lib\Elf\Process\ProcessModuleSymbolReaderCreator;
 use Reli\Lib\Elf\Process\ProcessSymbolReaderException;
 use Reli\Lib\Elf\Tls\TlsFinderException;
+use Reli\Lib\PhpProcessReader\MainExecutable\MainExecutablePathResolver;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
 use Reli\Lib\Process\MemoryMap\ProcessModuleMemoryMap;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
-
-use function readlink;
 
 final class PhpSymbolReaderCreator
 {
@@ -32,6 +31,7 @@ final class PhpSymbolReaderCreator
         private ProcessModuleSymbolReaderCreator $process_module_symbol_reader_creator,
         private ProcessMemoryMapCreatorInterface $process_memory_map_creator,
         private BinaryAnalysisCache $binary_analysis_cache,
+        private MainExecutablePathResolver $main_executable_path_resolver,
     ) {
     }
 
@@ -54,17 +54,20 @@ final class PhpSymbolReaderCreator
      */
     public function createForExecutable(int $pid): ?ProcessModuleSymbolReader
     {
-        $executable_path = readlink("/proc/{$pid}/exe");
-        if ($executable_path === false) {
+        $executable_path = $this->main_executable_path_resolver->resolve($pid);
+        if ($executable_path === null) {
             return null;
         }
-        $full_executable_path = "/proc/{$pid}/root{$executable_path}";
         $process_memory_map = $this->process_memory_map_creator->getProcessMemoryMap($pid);
+        // Pass binary_path = null so `ProcessModuleSymbolReaderCreator`
+        // routes the open through its injected `ProcessPathResolver`.
+        // Live: ContainerAwarePathResolver → /proc/<pid>/root<path>;
+        // coredump: MappedPathResolver → --dependency-root-mapped path.
         return $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
             $pid,
             $process_memory_map,
             '^' . preg_quote($executable_path) . '$',
-            $full_executable_path,
+            null,
         );
     }
 
@@ -91,24 +94,28 @@ final class PhpSymbolReaderCreator
 
         $root_link_map_address = null;
         if (!is_null($libpthread_symbol_reader)) {
-            // We use the executable path here only to obtain the
-            // root link-map address for TLS resolution (ZTS targets,
-            // libthread_db). NTS targets do not consult this — they
+            // The executable path is used here only to resolve the root
+            // link-map address for TLS resolution (ZTS targets,
+            // libthread_db). NTS targets don't consult this — they
             // resolve `executor_globals` via static symbol lookup —
-            // so a missing executable path is recoverable downstream
-            // for NTS even though it disables the TLS path. Make this
-            // step fail-soft so post-mortem core analysis (where
-            // /proc/<pid>/exe no longer exists) keeps progressing for
-            // the NTS case; ZTS readers will fail later when they try
-            // to walk the link map.
-            $executable_path = @readlink("/proc/{$pid}/exe");
-            if ($executable_path !== false) {
-                $full_executable_path = "/proc/{$pid}/root{$executable_path}";
+            // so a null path is recoverable downstream for NTS even
+            // though it disables the TLS path. ZTS targets *do* need
+            // it; the coredump path supplies the executable through
+            // {@see StaticMainExecutablePathResolver} fed from NT_FILE
+            // notes, which lets post-mortem ZTS analysis succeed even
+            // when /proc/<pid>/exe is gone.
+            $executable_path = $this->main_executable_path_resolver->resolve($pid);
+            if ($executable_path !== null) {
+                // Pass binary_path = null so the path goes through the
+                // injected ProcessPathResolver: live container case
+                // becomes /proc/<pid>/root<path>; coredump case becomes
+                // the --dependency-root-mapped path. The same shape
+                // works for both.
                 $main_executable_reader = $this->process_module_symbol_reader_creator->createModuleReaderByNameRegex(
                     $pid,
                     $process_memory_map,
-                    $executable_path,
-                    $full_executable_path,
+                    '^' . preg_quote($executable_path) . '$',
+                    null,
                     $libpthread_symbol_reader,
                 );
                 if (!is_null($main_executable_reader)) {

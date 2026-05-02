@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use Reli\Lib\PhpProcessReader\MainExecutable\ProcExeReadlinkResolver;
 use PHPUnit\Framework\Attributes\DataProviderExternal;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
@@ -161,6 +162,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -399,6 +401,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -572,6 +575,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -728,6 +732,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -900,6 +905,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -1069,6 +1075,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -1264,6 +1271,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -1396,6 +1404,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -1688,6 +1697,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -1865,6 +1875,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -2001,6 +2012,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -2154,6 +2166,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -2308,6 +2321,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -2499,6 +2513,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -2749,6 +2764,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -2954,6 +2970,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -3257,6 +3274,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();
@@ -3660,6 +3678,7 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             ),
             $process_memory_map_creator = ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader_for_finder = new MemoryReader();
         $integer_reader = new LittleEndianReader();

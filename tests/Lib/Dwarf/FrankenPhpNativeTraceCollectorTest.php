@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\Dwarf;
 
 use PHPUnit\Framework\Attributes\Group;
+use Reli\Lib\PhpProcessReader\MainExecutable\ProcExeReadlinkResolver;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Reli\BaseTestCase;
@@ -141,6 +142,7 @@ class FrankenPhpNativeTraceCollectorTest extends BaseTestCase
                     ),
                     $process_memory_map_creator,
                     $binary_analysis_cache,
+                    new ProcExeReadlinkResolver(),
                 );
                 $integer_reader = new LittleEndianReader();
                 $memory_reader_for_finder = new MemoryReader();

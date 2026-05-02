@@ -140,13 +140,17 @@ See `man 5 core` for the full bitmask.
 
 ## Limitations
 
-- **NTS targets only** today. For ZTS PHP 8.2+, `_tsrm_ls_cache` is
-  not in `.dynsym` on stripped binaries and is resolved via a
-  brute-force TLS scan on the live process. That scan cannot always
-  be reproduced against a core file, so ZTS post-mortem analysis is
-  currently best-effort. (See
-  `tests/Inspector/CoreDumpReader/CoreDumpReaderIntegrationTest.php`
-  for the current skip condition.)
+- **ZTS PHP 8.2+ stripped binaries**: `_tsrm_ls_cache` isn't in
+  `.dynsym`, so reli falls back to a brute-force TLS scan over the
+  thread's TLS block. Post-mortem this needs the saved core to
+  contain the TLS pages of a thread that has actually served a
+  request — an idle worker whose slot is still zero will not
+  validate. The integration test in
+  `CoreDumpReaderIntegrationTest.php` uses an `auto_prepend_file`
+  PID-writer that doesn't keep the worker on a request, so the ZTS
+  variants of that suite stay skipped; in production, take the core
+  while the target is mid-request (e.g. a `usleep`-tail script under
+  load) and ZTS post-mortem succeeds.
 - **Dependencies must be available**: the analyzer resolves symbols
   from the PHP binary and linked shared objects. If the analysis host
   doesn't have the same files at the paths the core references, use

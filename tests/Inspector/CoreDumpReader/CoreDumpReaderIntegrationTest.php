@@ -23,6 +23,7 @@ use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
+use Reli\Lib\System\Architecture;
 use Reli\TargetPhpVmProvider;
 
 #[Group('target-version')]
@@ -70,16 +71,18 @@ class CoreDumpReaderIntegrationTest extends BaseTestCase
     ): void {
         ini_set('memory_limit', '2G');
 
-        // ZTS PHP 8.2+: _tsrm_ls_cache is not in .dynsym (stripped binary) so
-        // PhpTsrmLsCacheFinder falls back to brute-force TLS scanning. However,
-        // with the auto_prepend_file mechanism used by runScriptViaContainer,
-        // the TLS block does not contain _tsrm_ls_cache at the expected location.
+        // ARM64 ZTS coredump: `CoreDumpThreadPointerRetriever` only knows
+        // how to read x86_64 `fs_base` from `NT_PRSTATUS`; AArch64
+        // `TPIDR_EL0` recovery is not implemented yet, so live attach
+        // works on AArch64 ZTS but post-mortem does not. Skip here until
+        // the AArch64 retriever lands; x86_64 ZTS is exercised on the
+        // primary CI runner.
         if (
             str_contains($docker_image_name, '-zts')
-            && $php_version >= 'v82'
+            && Architecture::detect() === Architecture::AARCH64
         ) {
             $this->markTestSkipped(
-                'ZTS PHP 8.2+ coredump: _tsrm_ls_cache not found in TLS block'
+                'AArch64 ZTS coredump: TPIDR_EL0 retrieval from NT_PRSTATUS not yet implemented'
             );
         }
 
@@ -191,13 +194,18 @@ class CoreDumpReaderIntegrationTest extends BaseTestCase
     ): void {
         ini_set('memory_limit', '2G');
 
-        // ZTS PHP 8.2+: same skip rationale as testReadFromCoreDump.
+        // ARM64 ZTS coredump: `CoreDumpThreadPointerRetriever` only knows
+        // how to read x86_64 `fs_base` from `NT_PRSTATUS`; AArch64
+        // `TPIDR_EL0` recovery is not implemented yet, so live attach
+        // works on AArch64 ZTS but post-mortem does not. Skip here until
+        // the AArch64 retriever lands; x86_64 ZTS is exercised on the
+        // primary CI runner.
         if (
             str_contains($docker_image_name, '-zts')
-            && $php_version >= 'v82'
+            && Architecture::detect() === Architecture::AARCH64
         ) {
             $this->markTestSkipped(
-                'ZTS PHP 8.2+ coredump: _tsrm_ls_cache not found in TLS block'
+                'AArch64 ZTS coredump: TPIDR_EL0 retrieval from NT_PRSTATUS not yet implemented'
             );
         }
 
