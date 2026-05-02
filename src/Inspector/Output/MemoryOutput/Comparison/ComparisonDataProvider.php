@@ -69,7 +69,8 @@ interface ComparisonDataProvider
      * @return array<int, array<string, array{
      *     count: int,
      *     reachable_count: int,
-     *     confidence: string
+     *     confidence: string,
+     *     sample_addrs: list<int>
      * }>>|null
      */
     public function loadBinShapeCounts(): ?array;

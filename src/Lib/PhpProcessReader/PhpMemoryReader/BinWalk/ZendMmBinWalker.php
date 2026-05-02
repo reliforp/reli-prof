@@ -37,20 +37,28 @@ final class ZendMmBinWalker
 {
     /**
      * Fingerprint length: prefix bytes captured per slot for shape grouping
-     * + detector input. 128 B is enough to reach struct stat's `st_mode`
-     * (offset 0x40 on Linux x86_64) — the discriminating field for a
-     * StatDetector. The previous 24 B window collapsed all-zeros leak
-     * shapes to a single bucket because the per-slot identity bytes
-     * (gc/h/len for zend_string, st_mode for stat, …) live past the
-     * fingerprint horizon.
+     * + detector input. 192 B reaches `struct stat`'s timespec fields when
+     * the stat is embedded at offset ≤ 48 inside a 192 B / 224 B slot —
+     * the leak shape validation surfaced for amphp/file issue #88.
+     * StatDetector and the tightened ZendStringDetector both rely on bytes
+     * past the previous 128 B horizon (NUL terminator + payload of short
+     * interned strings, st_atim / st_mtim / st_ctim of stat).
      */
-    private const FINGERPRINT_BYTES = 128;
+    private const FINGERPRINT_BYTES = 192;
 
     /** Per-page chunk page count (2 MiB / 4 KiB). */
     private const PAGES_PER_CHUNK = ZendMmChunk::SIZE / ZendMmChunk::PAGE_SIZE;
 
     /** Defensive cap on freelist length per bin (a chunk holds at most 512 8 B slots). */
     private const FREELIST_WALK_LIMIT = 200_000;
+
+    /**
+     * Cap on per-(bin, shape) sample addresses kept for the
+     * `inspector:memory:bin-query` drill-down. Persisted in the rmem
+     * summary so a user can ask "give me 16 sample addresses of
+     * Bucket(IS_STRING) in bin[3]" and pipe them through `memory:peek`.
+     */
+    public const PER_SHAPE_SAMPLE_CAP = 256;
 
     /** @var list<ShapeDetector> */
     private readonly array $detectors;
@@ -146,6 +154,16 @@ final class ZendMmBinWalker
 
         /** @var array<int, int> */
         $bin_unclassified_counts = [];
+
+        /**
+         * Per-(bin, label) sample addresses for `memory:bin-query`
+         * drill-down. Cap at PER_SHAPE_SAMPLE_CAP per group to bound
+         * the rmem summary size — a few hundred addresses is plenty
+         * for "give me one to peek at".
+         *
+         * @var array<int, array<string, list<int>>>
+         */
+        $bin_shape_addrs = [];
 
         foreach ($main_chunk->iterateChunks($dereferencer) as $chunk) {
             $walked_chunk_count++;
@@ -260,6 +278,12 @@ final class ZendMmBinWalker
                                 $bin_shape_counts[$bin_num][$label]['confidence']
                                     = $detection->confidence;
                             }
+                            // Sample address for drill-down — first N
+                            // encountered addresses are kept, rest dropped.
+                            $existing_samples = $bin_shape_addrs[$bin_num][$label] ?? [];
+                            if (count($existing_samples) < self::PER_SHAPE_SAMPLE_CAP) {
+                                $bin_shape_addrs[$bin_num][$label][] = $slot_addr;
+                            }
                         }
                     }
                 }
@@ -288,6 +312,7 @@ final class ZendMmBinWalker
             partial: $partial,
             bin_shape_counts: $bin_shape_counts,
             bin_unclassified_counts: $bin_unclassified_counts,
+            bin_shape_addrs: $bin_shape_addrs,
         );
     }
 

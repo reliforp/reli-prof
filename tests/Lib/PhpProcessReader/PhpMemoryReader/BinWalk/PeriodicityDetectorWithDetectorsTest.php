@@ -28,8 +28,15 @@ class PeriodicityDetectorWithDetectorsTest extends BaseTestCase
     {
         // 32 B bin (bin_num = 3), build a Bucket-like fingerprint with
         // IS_STRING (type byte 6) at offset 8.
-        $fp = pack('P', 0x1) . pack('CCCCV', 6, 0, 0, 0, 0) . pack('P', 0xdead);
-        $this->assertSame(24, strlen($fp));
+        // Plausible userspace pointer at +0..+7 so the tightened
+        // BucketDetector accepts it. Hash is non-zero so we skip the
+        // all-zero "Bucket(uninit?)" branch. Padded to 32 B so the
+        // key field at +24..+31 reads as 0 (NULL key, accepted).
+        $fp = pack('P', 0x00007ffe1234c000)
+            . pack('CCCCV', 6, 0, 0, 0, 0)
+            . pack('P', 0xdead)
+            . pack('P', 0);
+        $this->assertSame(32, strlen($fp));
 
         $bin_num = 3;
         $slots = [];
@@ -67,7 +74,14 @@ class PeriodicityDetectorWithDetectorsTest extends BaseTestCase
 
     public function testEmptyDetectorsListDisablesInference(): void
     {
-        $fp = pack('P', 0x1) . pack('CCCCV', 6, 0, 0, 0, 0) . pack('P', 0xdead);
+        // Plausible userspace pointer at +0..+7 so the tightened
+        // BucketDetector accepts it. Hash is non-zero so we skip the
+        // all-zero "Bucket(uninit?)" branch. Padded to 32 B so the
+        // key field at +24..+31 reads as 0 (NULL key, accepted).
+        $fp = pack('P', 0x00007ffe1234c000)
+            . pack('CCCCV', 6, 0, 0, 0, 0)
+            . pack('P', 0xdead)
+            . pack('P', 0);
         $bin_num = 3;
         $slots = [];
         for ($i = 0; $i < 100; $i++) {

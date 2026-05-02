@@ -134,12 +134,14 @@ final class ComparisonGenerator
      * @param array<int, array<string, array{
      *     count: int,
      *     reachable_count: int,
-     *     confidence: string
+     *     confidence: string,
+     *     sample_addrs: list<int>
      * }>>|null $baseline
      * @param array<int, array<string, array{
      *     count: int,
      *     reachable_count: int,
-     *     confidence: string
+     *     confidence: string,
+     *     sample_addrs: list<int>
      * }>>|null $target
      * @return list<BinShapeDelta>
      */
@@ -163,11 +165,13 @@ final class ComparisonGenerator
                     'count' => 0,
                     'reachable_count' => 0,
                     'confidence' => 'medium',
+                    'sample_addrs' => [],
                 ];
                 $t = $t_bin[$label] ?? [
                     'count' => 0,
                     'reachable_count' => 0,
                     'confidence' => 'medium',
+                    'sample_addrs' => [],
                 ];
                 $count_delta = $t['count'] - $b['count'];
                 if ($count_delta === 0) {

@@ -27,7 +27,8 @@ final class BinShapeCountsSnapshot
      * @return array<int, array<string, array{
      *     count: int,
      *     reachable_count: int,
-     *     confidence: string
+     *     confidence: string,
+     *     sample_addrs: list<int>
      * }>>|null
      * @psalm-suppress MixedAssignment, MixedArgument, MixedArrayAccess
      */
@@ -50,10 +51,19 @@ final class BinShapeCountsSnapshot
                     continue;
                 }
                 $label = (string)$shape['label'];
+                $sample_addrs = [];
+                if (isset($shape['sample_addrs']) && is_array($shape['sample_addrs'])) {
+                    foreach ($shape['sample_addrs'] as $addr) {
+                        if (is_int($addr) || is_string($addr)) {
+                            $sample_addrs[] = (int)$addr;
+                        }
+                    }
+                }
                 $by_label[$label] = [
                     'count' => (int)($shape['count'] ?? 0),
                     'reachable_count' => (int)($shape['reachable_count'] ?? 0),
                     'confidence' => (string)($shape['confidence'] ?? 'medium'),
+                    'sample_addrs' => $sample_addrs,
                 ];
             }
             $out[$bin_num] = $by_label;

@@ -43,6 +43,11 @@ final class BinWalkResult
      *     the periodic-group path skips because the bytes vary per slot.
      * @param array<int, int> $bin_unclassified_counts Per-bin slots no
      *     detector matched.
+     * @param array<int, array<string, list<int>>> $bin_shape_addrs
+     *     Per-(bin, label) sample addresses (capped at
+     *     {@see ZendMmBinWalker::PER_SHAPE_SAMPLE_CAP}). Persisted in the
+     *     rmem summary so `inspector:memory:bin-query` can return real
+     *     pointer-into-the-leak addresses for `memory:peek` follow-up.
      */
     public function __construct(
         public readonly array $small_bin_histogram,
@@ -55,6 +60,7 @@ final class BinWalkResult
         public readonly bool $partial,
         public readonly array $bin_shape_counts = [],
         public readonly array $bin_unclassified_counts = [],
+        public readonly array $bin_shape_addrs = [],
     ) {
     }
 
@@ -114,7 +120,7 @@ final class BinWalkResult
      *       {
      *         "bin_num": int,
      *         "shapes": [
-     *           {label, count, reachable_count, confidence}, …
+     *           {label, count, reachable_count, confidence, sample_addrs}, …
      *         ],
      *         "unclassified": int
      *       }, …
@@ -123,7 +129,9 @@ final class BinWalkResult
      *
      * Stored as a single JSON entry keyed `bin_shape_counts` so the
      * comparison provider can decode it without the rmem reader caring
-     * about the inner shape.
+     * about the inner shape. The sample_addrs list (capped per
+     * {@see ZendMmBinWalker::PER_SHAPE_SAMPLE_CAP}) is what backs the
+     * `inspector:memory:bin-query` drill-down.
      *
      * @return array{
      *     bin: list<array{
@@ -132,7 +140,8 @@ final class BinWalkResult
      *             label: string,
      *             count: int,
      *             reachable_count: int,
-     *             confidence: string
+     *             confidence: string,
+     *             sample_addrs: list<int>
      *         }>,
      *         unclassified: int
      *     }>
@@ -154,6 +163,7 @@ final class BinWalkResult
                     'count' => $row['count'],
                     'reachable_count' => $row['reachable_count'],
                     'confidence' => $row['confidence'],
+                    'sample_addrs' => $this->bin_shape_addrs[$bin_num][$label] ?? [],
                 ];
             }
             usort(

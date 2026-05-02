@@ -31,6 +31,7 @@ final class DetectorRegistry
         return [
             new BucketDetector(),
             new ZendStringDetector(),
+            new StatDetector(),
         ];
     }
 
