@@ -13,65 +13,62 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Php;
 
-use FFI\CData;
-use FFI\PhpInternals\php_stream;
+use FFI\PhpInternals\php_glob_stream_data_tail;
 use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class PhpStream implements CDataDereferencable
+final class PhpGlobStreamDataTail implements CDataDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
-    public int $ops;
+    public int $path;
     /** @psalm-suppress PropertyNotSetInConstructor */
-    public int $abstract;
+    public int $path_len;
     /** @psalm-suppress PropertyNotSetInConstructor */
-    public int $res;
+    public int $pattern;
     /** @psalm-suppress PropertyNotSetInConstructor */
-    public int $orig_path;
+    public int $pattern_len;
 
     /**
-     * @param CastedCData<php_stream> $casted_cdata
-     * @param Pointer<PhpStream> $pointer
+     * @param CastedCData<php_glob_stream_data_tail> $casted_cdata
+     * @param Pointer<PhpGlobStreamDataTail> $pointer
      */
     public function __construct(
         private CastedCData $casted_cdata,
         private Pointer $pointer,
     ) {
-        unset($this->ops);
-        unset($this->abstract);
-        unset($this->res);
-        unset($this->orig_path);
+        unset($this->path);
+        unset($this->path_len);
+        unset($this->pattern);
+        unset($this->pattern_len);
     }
 
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'ops' => $this->ops = FFIHelper::castPointerToInt(
-                $this->casted_cdata->casted->ops
+            'path' => $this->path = FFIHelper::castPointerToInt(
+                $this->casted_cdata->casted->path
             ),
-            'abstract' => $this->abstract = $this->casted_cdata->casted->abstract,
-            'res' => $this->res = FFIHelper::castPointerToInt(
-                $this->casted_cdata->casted->res
+            'path_len' => $this->path_len = $this->casted_cdata->casted->path_len,
+            'pattern' => $this->pattern = FFIHelper::castPointerToInt(
+                $this->casted_cdata->casted->pattern
             ),
-            'orig_path' => $this->orig_path = FFIHelper::castPointerToInt(
-                $this->casted_cdata->casted->orig_path
-            ),
+            'pattern_len' => $this->pattern_len = $this->casted_cdata->casted->pattern_len,
         };
     }
 
     #[\Override]
     public static function getCTypeName(): string
     {
-        return 'php_stream';
+        return 'php_glob_stream_data_tail';
     }
 
     #[\Override]
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
         /**
-         * @var CastedCData<php_stream> $casted_cdata
+         * @var CastedCData<php_glob_stream_data_tail> $casted_cdata
          * @var Pointer<self> $pointer
          */
         return new self($casted_cdata, $pointer);

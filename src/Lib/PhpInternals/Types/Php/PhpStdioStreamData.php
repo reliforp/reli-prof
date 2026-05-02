@@ -13,50 +13,37 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpInternals\Types\Php;
 
-use FFI\CData;
-use FFI\PhpInternals\php_stream;
+use FFI\PhpInternals\php_stdio_stream_data;
 use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\Process\Pointer\CDataDereferencable;
 use Reli\Lib\Process\Pointer\Pointer;
 
-final class PhpStream implements CDataDereferencable
+final class PhpStdioStreamData implements CDataDereferencable
 {
     /** @psalm-suppress PropertyNotSetInConstructor */
-    public int $ops;
+    public int $fd;
     /** @psalm-suppress PropertyNotSetInConstructor */
-    public int $abstract;
-    /** @psalm-suppress PropertyNotSetInConstructor */
-    public int $res;
-    /** @psalm-suppress PropertyNotSetInConstructor */
-    public int $orig_path;
+    public int $temp_name;
 
     /**
-     * @param CastedCData<php_stream> $casted_cdata
-     * @param Pointer<PhpStream> $pointer
+     * @param CastedCData<php_stdio_stream_data> $casted_cdata
+     * @param Pointer<PhpStdioStreamData> $pointer
      */
     public function __construct(
         private CastedCData $casted_cdata,
         private Pointer $pointer,
     ) {
-        unset($this->ops);
-        unset($this->abstract);
-        unset($this->res);
-        unset($this->orig_path);
+        unset($this->fd);
+        unset($this->temp_name);
     }
 
     public function __get(string $field_name): mixed
     {
         return match ($field_name) {
-            'ops' => $this->ops = FFIHelper::castPointerToInt(
-                $this->casted_cdata->casted->ops
-            ),
-            'abstract' => $this->abstract = $this->casted_cdata->casted->abstract,
-            'res' => $this->res = FFIHelper::castPointerToInt(
-                $this->casted_cdata->casted->res
-            ),
-            'orig_path' => $this->orig_path = FFIHelper::castPointerToInt(
-                $this->casted_cdata->casted->orig_path
+            'fd' => $this->fd = $this->casted_cdata->casted->fd,
+            'temp_name' => $this->temp_name = FFIHelper::castPointerToInt(
+                $this->casted_cdata->casted->temp_name
             ),
         };
     }
@@ -64,14 +51,14 @@ final class PhpStream implements CDataDereferencable
     #[\Override]
     public static function getCTypeName(): string
     {
-        return 'php_stream';
+        return 'php_stdio_stream_data';
     }
 
     #[\Override]
     public static function fromCastedCData(CastedCData $casted_cdata, Pointer $pointer): static
     {
         /**
-         * @var CastedCData<php_stream> $casted_cdata
+         * @var CastedCData<php_stdio_stream_data> $casted_cdata
          * @var Pointer<self> $pointer
          */
         return new self($casted_cdata, $pointer);

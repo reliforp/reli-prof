@@ -20,6 +20,8 @@ final class ResourceContext implements ReferenceContext
     use ReferenceContextDefault;
 
     public ?string $stream_type_label = null;
+    public ?int $stream_fd = null;
+    public ?string $stream_orig_path = null;
 
     public function __construct(
         public ZendResourceMemoryLocation $memory_location,
@@ -38,6 +40,12 @@ final class ResourceContext implements ReferenceContext
         $contexts = [];
         if ($this->stream_type_label !== null) {
             $contexts['stream_type_label'] = $this->stream_type_label;
+        }
+        if ($this->stream_fd !== null) {
+            $contexts['stream_fd'] = $this->stream_fd;
+        }
+        if ($this->stream_orig_path !== null) {
+            $contexts['stream_orig_path'] = $this->stream_orig_path;
         }
         return $contexts;
     }
