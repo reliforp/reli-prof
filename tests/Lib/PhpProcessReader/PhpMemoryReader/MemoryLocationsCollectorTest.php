@@ -88,6 +88,11 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         yield from TargetPhpVmProvider::from(ZendTypeReader::V80);
     }
 
+    public static function provideFromV70()
+    {
+        yield from TargetPhpVmProvider::from(ZendTypeReader::V70);
+    }
+
     #[DataProvider('provideFromV80')]
     public function testCollectAllFromV80(string $php_version, string $docker_image_name): void
     {
@@ -2827,9 +2832,12 @@ class MemoryLocationsCollectorTest extends BaseTestCase
     /**
      * Per-label child decoders attached to the resource (STDIO temp_name,
      * userspace object zval, socket fd, glob orig_path) should surface on
-     * the ResourceContext as either child links or scalar metadata.
+     * the ResourceContext as either child links or scalar metadata. Target
+     * script is kept PHP 7.0+ compatible so it can run against every
+     * supported PHP version (no typed properties, no first-class callable
+     * syntax).
      */
-    #[DataProvider('provideFromV80')]
+    #[DataProvider('provideFromV70')]
     public function testStreamChildDecodersExposeFdOrigPathAndUserspaceObject(
         string $php_version,
         string $docker_image_name,
@@ -2857,8 +2865,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
 
             class ReliTestStream {
                 public $context;
-                public string $marker = 'RELI_USERSPACE_MARKER';
-                private bool $eof = false;
+                public $marker = 'RELI_USERSPACE_MARKER';
+                private $eof = false;
                 public function stream_open($path, $mode, $options, &$opened_path) { return true; }
                 public function stream_eof() { return $this->eof; }
                 public function stream_read($count) { $this->eof = true; return ''; }

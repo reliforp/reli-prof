@@ -1190,6 +1190,9 @@ typedef struct _php_stream_ops {
 	uintptr_t set_option;
 } php_stream_ops;
 
+// PHP 7.0 layout (no bitfield packing yet — fgetss_state, is_persistent,
+// in_free, fclose_stdiocast and __exposed are full ints; flags / eof live
+// after orig_path, not before res). Bitfield packing was introduced in 7.2.
 struct _php_stream {
 	const php_stream_ops *ops;
 	uintptr_t abstract;
@@ -1202,14 +1205,18 @@ struct _php_stream {
 	uintptr_t wrapper;
 	uintptr_t wrapperthis;
 	zval wrapperdata;
-	uint8_t flags_bitfield;
-	uint8_t fgetss_state;
+	int32_t fgetss_state;
+	int32_t is_persistent;
 	char mode[16];
-	uint32_t flags;
 	zend_resource *res;
+	int32_t in_free;
+	int32_t fclose_stdiocast;
 	uintptr_t stdiocast;
+	int32_t exposed;
 	char *orig_path;
 	zend_resource *ctx;
+	int32_t flags;
+	int32_t eof;
 	zend_off_t position;
 	unsigned char *readbuf;
 	size_t readbuflen;
