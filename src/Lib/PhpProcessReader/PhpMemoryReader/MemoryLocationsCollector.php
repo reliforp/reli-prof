@@ -61,9 +61,9 @@ final class MemoryLocationsCollector
         private MemoryReaderInterface $memory_reader,
         private ZendTypeReaderCreator $zend_type_reader_creator,
         private PhpZendMemoryManagerChunkFinder $chunk_finder,
-        private ?ProcessMemoryMapCreatorInterface $process_memory_map_creator = null,
-        private ?BinaryAnalysisCache $binary_analysis_cache = null,
-        private ?ProcessPathResolver $process_path_resolver = null,
+        private ProcessMemoryMapCreatorInterface $process_memory_map_creator,
+        private BinaryAnalysisCache $binary_analysis_cache,
+        private ProcessPathResolver $process_path_resolver,
     ) {
     }
 
@@ -396,21 +396,19 @@ final class MemoryLocationsCollector
         // Both sources are best-effort; bin walker failures must not
         // abort the analyze run.
         $process_memory_map = null;
-        if ($this->process_memory_map_creator !== null) {
-            try {
-                $process_memory_map = $this->process_memory_map_creator
-                    ->getProcessMemoryMap($pid);
-            } catch (\Throwable $e) {
-                Log::debug('process memory map fetch failed', ['exception' => $e]);
-            }
+        try {
+            $process_memory_map = $this->process_memory_map_creator
+                ->getProcessMemoryMap($pid);
+        } catch (\Throwable $e) {
+            Log::debug('process memory map fetch failed', ['exception' => $e]);
         }
-        // Build a symbol resolver only when /proc/<pid>/exe is reachable
-        // (i.e., a live target). For rdump-driven analyze the pid is the
-        // original target's pid which is meaningless on the analyzing
-        // host; without an accessible binary on disk we'd just thrash
-        // through file-not-found per slot. The module-level resolver
-        // (FunctionPointerDetector falls back to module names) still
-        // works in that case.
+        // Build a symbol resolver only when the process memory map is
+        // available AND at least one named module is reachable through
+        // the process path resolver. Both live (`/proc/<pid>/root`) and
+        // offline (`--dependency-root` MappedPathResolver) paths land
+        // here uniformly; the only reason to bail is "rdump from
+        // different host without --dependency-root" — module-level
+        // resolution still works in that case.
         $symbol_resolver = $this->buildSymbolResolver($pid, $process_memory_map);
         $bin_walk_result = null;
         try {
@@ -483,9 +481,6 @@ final class MemoryLocationsCollector
         if ($process_memory_map === null) {
             return null;
         }
-        if ($this->process_path_resolver === null) {
-            return null;
-        }
         $process_root = $this->probeProcessRoot($pid);
         if (!$this->hasReachableModule($process_memory_map, $process_root)) {
             return null;
@@ -513,7 +508,6 @@ final class MemoryLocationsCollector
      */
     private function probeProcessRoot(int $pid): string
     {
-        assert($this->process_path_resolver !== null);
         $sentinel = '/__reli_probe__';
         $resolved = $this->process_path_resolver->resolve($pid, $sentinel);
         if (str_ends_with($resolved, $sentinel)) {

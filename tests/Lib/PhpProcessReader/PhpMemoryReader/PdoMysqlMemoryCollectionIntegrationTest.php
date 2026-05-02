@@ -330,6 +330,9 @@ class PdoMysqlMemoryCollectionIntegrationTest extends BaseTestCase
                 $type_reader_creator,
                 $php_globals_finder,
             ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
         );
         $tmp_path = tempnam(sys_get_temp_dir(), 'reli_test_mysql_') . '.sqlite3';
         $driver = new \Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver($tmp_path);
