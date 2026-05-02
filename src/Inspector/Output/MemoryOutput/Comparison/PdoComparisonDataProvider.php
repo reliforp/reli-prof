@@ -104,6 +104,23 @@ final class PdoComparisonDataProvider implements ComparisonDataProvider
         return BinHistogramSnapshot::decode($value);
     }
 
+    /**
+     * @psalm-suppress MixedAssignment
+     */
+    #[\Override]
+    public function loadRegionMap(): ?array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT value FROM summary WHERE run_id = :run_id AND key = 'region_map'"
+        );
+        $stmt->execute([':run_id' => $this->run_id]);
+        $value = $stmt->fetchColumn();
+        if (!is_string($value) || $value === '') {
+            return null;
+        }
+        return RegionMapSnapshot::decode($value);
+    }
+
     #[\Override]
     public function generateReport(bool $full_analysis, ?bool $ffi_csr): ReportResult
     {

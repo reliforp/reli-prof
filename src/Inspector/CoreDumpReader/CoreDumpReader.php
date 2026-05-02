@@ -277,6 +277,7 @@ final class CoreDumpReader
                 ]
                 : []
             )
+            + ['region_map' => $collected_memories->getRegionMap()->toSummaryArray()]
             + [
                 'heap_memory_analyzed_percentage' =>
                     (float)$summary_base['zend_mm_heap_usage']

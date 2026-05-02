@@ -241,6 +241,7 @@ final class MemoryDumpReader
                 ]
                 : []
             )
+            + ['region_map' => $collected_memories->getRegionMap()->toSummaryArray()]
             + ($rss_bytes !== null ? ['rss' => $rss_bytes] : [])
             + [
                 'heap_memory_analyzed_percentage' =>

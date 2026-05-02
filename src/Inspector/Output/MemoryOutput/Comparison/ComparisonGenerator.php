@@ -92,6 +92,11 @@ final class ComparisonGenerator
             $target->loadBinHistogramSnapshot(),
         );
 
+        $region_deltas = $this->compareRegionMap(
+            $baseline->loadRegionMap(),
+            $target->loadRegionMap(),
+        );
+
         $unaccounted = $this->detectUnaccountedDelta(
             $summary_deltas,
             $type_deltas,
@@ -108,7 +113,106 @@ final class ComparisonGenerator
             findings_diff: $findings_diff,
             bin_deltas: $bin_deltas,
             unaccounted_finding: $unaccounted,
+            region_deltas: $region_deltas,
         );
+    }
+
+    /**
+     * Diff two region-map snapshots into Added / Grown / Shrunk / Removed
+     * rows. The snapshot is persisted by analyze (see
+     * {@see \Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionMap}) so this
+     * works on the rmem-only workflow without holding both rdumps.
+     *
+     * Identity key is `(kind, address)` rather than address alone — a
+     * vm_stack and a chunk that happen to start at the same address are
+     * still semantically distinct, and the chunk pool re-mmaps freed
+     * chunks at fresh addresses anyway, so we don't need to track size
+     * mutations across kinds.
+     *
+     * @param list<array{kind: string, address: int, size: int}>|null $baseline
+     * @param list<array{kind: string, address: int, size: int}>|null $target
+     * @return list<RegionDelta>
+     */
+    private function compareRegionMap(?array $baseline, ?array $target): array
+    {
+        if ($baseline === null && $target === null) {
+            return [];
+        }
+        $baseline ??= [];
+        $target ??= [];
+
+        /** @var array<string, array{kind: string, address: int, size: int}> $b_index */
+        $b_index = [];
+        foreach ($baseline as $row) {
+            $b_index[$row['kind'] . ':' . $row['address']] = $row;
+        }
+        /** @var array<string, array{kind: string, address: int, size: int}> $t_index */
+        $t_index = [];
+        foreach ($target as $row) {
+            $t_index[$row['kind'] . ':' . $row['address']] = $row;
+        }
+
+        $deltas = [];
+        foreach ($t_index as $k => $t_row) {
+            $b_row = $b_index[$k] ?? null;
+            if ($b_row === null) {
+                $deltas[] = new RegionDelta(
+                    kind: $t_row['kind'],
+                    address: $t_row['address'],
+                    baseline_size: 0,
+                    target_size: $t_row['size'],
+                    size_delta: $t_row['size'],
+                    change: RegionDelta::CHANGE_ADDED,
+                );
+                continue;
+            }
+            $size_delta = $t_row['size'] - $b_row['size'];
+            if ($size_delta > 0) {
+                $deltas[] = new RegionDelta(
+                    kind: $t_row['kind'],
+                    address: $t_row['address'],
+                    baseline_size: $b_row['size'],
+                    target_size: $t_row['size'],
+                    size_delta: $size_delta,
+                    change: RegionDelta::CHANGE_GROWN,
+                );
+            } elseif ($size_delta < 0) {
+                $deltas[] = new RegionDelta(
+                    kind: $t_row['kind'],
+                    address: $t_row['address'],
+                    baseline_size: $b_row['size'],
+                    target_size: $t_row['size'],
+                    size_delta: $size_delta,
+                    change: RegionDelta::CHANGE_SHRUNK,
+                );
+            }
+            // size_delta === 0 → no row emitted (region unchanged).
+        }
+        foreach ($b_index as $k => $b_row) {
+            if (isset($t_index[$k])) {
+                continue;
+            }
+            $deltas[] = new RegionDelta(
+                kind: $b_row['kind'],
+                address: $b_row['address'],
+                baseline_size: $b_row['size'],
+                target_size: 0,
+                size_delta: -$b_row['size'],
+                change: RegionDelta::CHANGE_REMOVED,
+            );
+        }
+
+        // Sort by absolute size delta — biggest movers first; stable
+        // tie-break on address keeps output deterministic.
+        usort(
+            $deltas,
+            static function (RegionDelta $a, RegionDelta $b): int {
+                $cmp = abs($b->size_delta) <=> abs($a->size_delta);
+                return $cmp !== 0 ? $cmp : ($a->address <=> $b->address);
+            },
+        );
+
+        return $deltas;
     }
 
     /**

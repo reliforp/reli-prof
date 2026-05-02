@@ -55,5 +55,13 @@ interface ComparisonDataProvider
      */
     public function loadBinHistogramSnapshot(): ?array;
 
+    /**
+     * The address-range snapshot the analyze pipeline persisted via
+     * {@see \Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionMap}.
+     *
+     * @return list<array{kind: string, address: int, size: int}>|null
+     */
+    public function loadRegionMap(): ?array;
+
     public function generateReport(bool $full_analysis, ?bool $ffi_csr): ReportResult;
 }

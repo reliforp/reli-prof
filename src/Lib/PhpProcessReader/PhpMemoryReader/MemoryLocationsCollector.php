@@ -370,6 +370,10 @@ final class MemoryLocationsCollector
         // per-bin live-allocation histogram and any periodic same-shape
         // groups. Foundation for the orphan-allocation analysis path
         // (see docs/internals/design-orphan-allocation-analysis.md).
+        // The region map snapshot (B.2) is built unconditionally — it's
+        // a couple of hundred entries even on heavy daemons, so the
+        // cost is negligible and lets the comparison path emit
+        // "+728 KiB at 0x..." callouts without round-tripping the rdump.
         //
         // Runs AFTER the DFS so we can hand the root walker's
         // `address_map` to the bin walker as the reachability filter

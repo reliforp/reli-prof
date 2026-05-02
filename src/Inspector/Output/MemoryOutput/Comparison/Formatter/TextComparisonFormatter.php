@@ -16,6 +16,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Comparison\Formatter;
 use Reli\Inspector\Output\MemoryOutput\Comparison\BinDelta;
 use Reli\Inspector\Output\MemoryOutput\Comparison\ClassDelta;
 use Reli\Inspector\Output\MemoryOutput\Comparison\ComparisonResult;
+use Reli\Inspector\Output\MemoryOutput\Comparison\RegionDelta;
 use Reli\Inspector\Output\MemoryOutput\Comparison\SummaryDelta;
 use Reli\Inspector\Output\MemoryOutput\Comparison\TypeDelta;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
@@ -46,6 +47,12 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
 
         // Class deltas
         $this->formatClassDeltas($lines, $result);
+
+        // Region map delta (B.2) — Added / Grown / Shrunk / Removed
+        // groups of address ranges. Sits above the bin delta because
+        // a "+728 KiB at 0x..." callout points the user at the rough
+        // location before the bin histogram tells them what's inside.
+        $this->formatRegionDeltas($lines, $result->region_deltas);
 
         // ZendMM bin histogram delta — sourced from the bin walker
         // (analyze-time) and decoded from the rmem summary section.
@@ -289,6 +296,81 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
             }
             $lines[] = '';
         }
+    }
+
+    /**
+     * @param list<string> $lines
+     * @param list<RegionDelta> $deltas
+     */
+    private function formatRegionDeltas(array &$lines, array $deltas): void
+    {
+        if ($deltas === []) {
+            return;
+        }
+
+        $lines[] = '=== Region Map Delta ===';
+        $lines[] = '';
+
+        $by_change = [
+            RegionDelta::CHANGE_ADDED => [],
+            RegionDelta::CHANGE_GROWN => [],
+            RegionDelta::CHANGE_SHRUNK => [],
+            RegionDelta::CHANGE_REMOVED => [],
+        ];
+        foreach ($deltas as $rd) {
+            $by_change[$rd->change][] = $rd;
+        }
+
+        foreach (
+            [
+                RegionDelta::CHANGE_ADDED => 'Added',
+                RegionDelta::CHANGE_GROWN => 'Grown',
+                RegionDelta::CHANGE_SHRUNK => 'Shrunk',
+                RegionDelta::CHANGE_REMOVED => 'Removed',
+            ] as $change => $label
+        ) {
+            $rows = array_slice($by_change[$change], 0, 20);
+            if ($rows === []) {
+                continue;
+            }
+            $lines[] = "  {$label}:";
+            foreach ($rows as $rd) {
+                if ($change === RegionDelta::CHANGE_ADDED) {
+                    $lines[] = sprintf(
+                        '    + %s [%s] at 0x%012x',
+                        SizeFormatter::format($rd->target_size),
+                        $rd->kind,
+                        $rd->address,
+                    );
+                } elseif ($change === RegionDelta::CHANGE_REMOVED) {
+                    $lines[] = sprintf(
+                        '    - %s [%s] at 0x%012x',
+                        SizeFormatter::format($rd->baseline_size),
+                        $rd->kind,
+                        $rd->address,
+                    );
+                } else {
+                    $sign = $rd->size_delta >= 0 ? '+' : '-';
+                    $lines[] = sprintf(
+                        '    %s %s [%s] at 0x%012x  (%s → %s)',
+                        $sign,
+                        SizeFormatter::format(abs($rd->size_delta)),
+                        $rd->kind,
+                        $rd->address,
+                        SizeFormatter::format($rd->baseline_size),
+                        SizeFormatter::format($rd->target_size),
+                    );
+                }
+            }
+            if (count($by_change[$change]) > 20) {
+                $lines[] = sprintf(
+                    '    … %d more %s',
+                    count($by_change[$change]) - 20,
+                    $label,
+                );
+            }
+        }
+        $lines[] = '';
     }
 
     /**
