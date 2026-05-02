@@ -332,20 +332,32 @@ final class EmitResourceJob implements CollectorJob
     }
 
     /**
-     * Decode the (path, pattern) pair stored at the tail of
-     * php_glob_stream_data.
+     * Decode the (path, pattern) pair stored at the tail of the glob
+     * stream's abstract data.
      *
-     * The struct begins with `glob_t` (libc-internal, layout differs between
-     * glibc and musl) followed by `size_t index; int flags;`. On 64-bit Linux
-     * this puts (path, path_len, pattern, pattern_len) at offset 88, because
-     * sizeof(glob_t) == 72 has been stable since glibc 2.10 (2009) and musl
-     * 0.5 (2011). _php_stream_opendir does not populate stream->orig_path for
-     * the glob wrapper, so this is the only place the pattern is recoverable.
+     * The struct begins with a glob_t-shaped header followed by
+     * `size_t index; int flags;` (+4 padding) and then the four
+     * (path, path_len, pattern, pattern_len) fields we care about. The
+     * header size depends on which glob implementation PHP was built
+     * against, and we probe both known offsets:
      *
-     * Each (ptr, len) pair is validated by checking strlen-vs-len consistency
-     * against the bytes actually mapped at the pointer; on any mismatch
-     * (other libc, future ABI break) the resource silently degrades to
-     * label-only.
+     *   - offset 88: PHP 7.0 .. 8.4 (and PHP 8.5 built with
+     *     --with-system-glob), where the header is libc's `glob_t` and
+     *     `sizeof(glob_t) == 72` on 64-bit Linux for both glibc 2.10+
+     *     and musl 0.5+.
+     *   - offset 112: PHP 8.5 default build, where the header is the
+     *     bundled `php_glob_t` struct from main/php_glob.h
+     *     (`sizeof(php_glob_t) == 96`, with extra `gl_matchc` and
+     *     `gl_statv` fields plus an `gl_errfunc` pointer not present
+     *     in libc's glob_t).
+     *
+     * _php_stream_opendir does not populate stream->orig_path for the
+     * glob wrapper, so this is the only place the pattern is recoverable.
+     *
+     * Each (ptr, len) pair is validated by checking strlen-vs-len
+     * consistency against the bytes actually mapped at the pointer; on
+     * any mismatch the resource silently degrades to label-only — same
+     * best-effort posture as the rest of tryCollectStreamData.
      */
     private function collectGlobStreamData(
         PhpStream $php_stream,
@@ -357,20 +369,34 @@ final class EmitResourceJob implements CollectorJob
             return;
         }
 
-        $tail_size = $ctx->zend_type_reader->sizeOf('php_glob_stream_data_tail');
-        $tail = $ctx->dereferencer->deref(new Pointer(
-            PhpGlobStreamDataTail::class,
-            $abstract_address + 88,
-            $tail_size,
-        ));
+        foreach ([88, 112] as $tail_offset) {
+            $synthetic_uri = $this->tryDecodeGlobTail($ctx, $abstract_address + $tail_offset);
+            if ($synthetic_uri !== null) {
+                $resource_context->stream_orig_path = $synthetic_uri;
+                return;
+            }
+        }
+    }
+
+    private function tryDecodeGlobTail(CollectorContext $ctx, int $tail_address): ?string
+    {
+        try {
+            $tail = $ctx->dereferencer->deref(new Pointer(
+                PhpGlobStreamDataTail::class,
+                $tail_address,
+                $ctx->zend_type_reader->sizeOf('php_glob_stream_data_tail'),
+            ));
+        } catch (\Throwable) {
+            return null;
+        }
 
         $path = $this->validatedGlobString($ctx, $tail->path, $tail->path_len);
         $pattern = $this->validatedGlobString($ctx, $tail->pattern, $tail->pattern_len);
         if ($path === null || $pattern === null) {
-            return;
+            return null;
         }
 
-        $resource_context->stream_orig_path = 'glob://' . $path . '/' . $pattern;
+        return 'glob://' . $path . '/' . $pattern;
     }
 
     /**
