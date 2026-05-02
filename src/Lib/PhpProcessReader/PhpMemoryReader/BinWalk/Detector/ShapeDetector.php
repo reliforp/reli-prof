@@ -36,9 +36,19 @@ interface ShapeDetector
     public function name(): string;
 
     /**
-     * Inspect the slot's first-24-byte fingerprint and bin size; return
+     * Inspect the slot's first-N-byte fingerprint and bin size; return
      * a labelled detection or null when the bytes don't match the
      * detector's expected shape.
+     *
+     * `$context` carries side-channel data (e.g. a module resolver) for
+     * detectors that need more than the slot bytes — most detectors
+     * ignore it. Keep accepting `null` so plain-bytes-only call sites
+     * (tests, the periodicity grouping path) don't have to construct
+     * a context.
      */
-    public function detect(string $fingerprint, int $bin_size): ?ShapeDetection;
+    public function detect(
+        string $fingerprint,
+        int $bin_size,
+        ?DetectorContext $context = null,
+    ): ?ShapeDetection;
 }

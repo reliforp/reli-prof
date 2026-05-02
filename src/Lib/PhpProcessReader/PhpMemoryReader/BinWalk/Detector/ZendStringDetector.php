@@ -62,8 +62,11 @@ final class ZendStringDetector implements ShapeDetector
     }
 
     #[\Override]
-    public function detect(string $fingerprint, int $bin_size): ?ShapeDetection
-    {
+    public function detect(
+        string $fingerprint,
+        int $bin_size,
+        ?DetectorContext $context = null,
+    ): ?ShapeDetection {
         $fp_len = strlen($fingerprint);
         if ($bin_size < self::MIN_BIN || $fp_len < 24) {
             return null;

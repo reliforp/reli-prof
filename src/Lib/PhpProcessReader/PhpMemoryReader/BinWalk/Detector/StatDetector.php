@@ -112,8 +112,11 @@ final class StatDetector implements ShapeDetector
     }
 
     #[\Override]
-    public function detect(string $fingerprint, int $bin_size): ?ShapeDetection
-    {
+    public function detect(
+        string $fingerprint,
+        int $bin_size,
+        ?DetectorContext $context = null,
+    ): ?ShapeDetection {
         // Must fit a struct stat somewhere — even with offset 0 we need
         // the full 144 B.
         if ($bin_size < self::STAT_SIZE) {

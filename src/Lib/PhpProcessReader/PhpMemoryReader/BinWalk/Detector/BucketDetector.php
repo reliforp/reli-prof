@@ -66,8 +66,11 @@ final class BucketDetector implements ShapeDetector
     }
 
     #[\Override]
-    public function detect(string $fingerprint, int $bin_size): ?ShapeDetection
-    {
+    public function detect(
+        string $fingerprint,
+        int $bin_size,
+        ?DetectorContext $context = null,
+    ): ?ShapeDetection {
         if ($bin_size !== 32 || strlen($fingerprint) < 24) {
             return null;
         }

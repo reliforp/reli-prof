@@ -38,6 +38,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\Pointer\Dereferencer;
 use Reli\Lib\Process\Pointer\Pointer;
@@ -54,6 +55,7 @@ final class MemoryLocationsCollector
         private MemoryReaderInterface $memory_reader,
         private ZendTypeReaderCreator $zend_type_reader_creator,
         private PhpZendMemoryManagerChunkFinder $chunk_finder,
+        private ?ProcessMemoryMapCreatorInterface $process_memory_map_creator = null,
     ) {
     }
 
@@ -379,7 +381,21 @@ final class MemoryLocationsCollector
         // `address_map` to the bin walker as the reachability filter
         // (design's "negative-evidence rule"). Without it, periodic
         // groups can't tell normal claimed data from orphan leaks.
-        // Non-fatal — a failure here must not abort the analyze run.
+        //
+        // The process memory map (when available) lets
+        // FunctionPointerDetector resolve `.text` pointers to module
+        // names — the validator's "is this libuv or libphp?" question.
+        // Both sources are best-effort; bin walker failures must not
+        // abort the analyze run.
+        $process_memory_map = null;
+        if ($this->process_memory_map_creator !== null) {
+            try {
+                $process_memory_map = $this->process_memory_map_creator
+                    ->getProcessMemoryMap($pid);
+            } catch (\Throwable $e) {
+                Log::debug('process memory map fetch failed', ['exception' => $e]);
+            }
+        }
         $bin_walk_result = null;
         try {
             $bin_walk_result = (new ZendMmBinWalker($this->memory_reader))->walk(
@@ -387,6 +403,7 @@ final class MemoryLocationsCollector
                 $zend_mm_main_chunk,
                 $dereferencer,
                 $ctx->address_map,
+                $process_memory_map,
             );
         } catch (\Throwable $e) {
             Log::debug('ZendMmBinWalker failed', ['exception' => $e]);

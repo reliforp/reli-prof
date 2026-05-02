@@ -18,8 +18,12 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendMmChunk;
 use Reli\Lib\PhpInternals\Types\Zend\ZendMmPageInfoFree;
 use Reli\Lib\PhpInternals\Types\Zend\ZendMmPageInfoLarge;
 use Reli\Lib\PhpInternals\Types\Zend\ZendMmPageInfoSmall;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\DetectorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\DetectorRegistry;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ModuleResolverInterface;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ProcessMemoryMapModuleResolver;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ShapeDetector;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\Pointer\Dereferencer;
@@ -78,13 +82,23 @@ final class ZendMmBinWalker
      *     verdict (orphan / reachable / mixed) — the design's negative-
      *     evidence rule. When null, reachability stays unknown and
      *     downstream callers fall back to the pre-filter behaviour.
+     * @param ProcessMemoryMap|null $memory_map Optional process memory map
+     *     of the target. When supplied, FunctionPointerDetector resolves
+     *     `.text` pointers to module names — without it the per-slot scan
+     *     can still classify shapes that don't depend on module info.
      */
     public function walk(
         int $pid,
         ZendMmChunk $main_chunk,
         Dereferencer $dereferencer,
         ?array $reachable_set = null,
+        ?ProcessMemoryMap $memory_map = null,
     ): BinWalkResult {
+        $context = new DetectorContext(
+            module_resolver: $memory_map !== null
+                ? new ProcessMemoryMapModuleResolver($memory_map)
+                : null,
+        );
         $heap = $main_chunk->heap_slot;
         $free_heads = $heap->getFreeSlotHeads();
 
@@ -247,6 +261,7 @@ final class ZendMmBinWalker
                             $this->detectors,
                             $fp,
                             $bin_size,
+                            $context,
                         );
                         if ($detection === null) {
                             // Slot didn't match any detector — record it
@@ -303,6 +318,7 @@ final class ZendMmBinWalker
             $live_by_bin_by_chunk,
             detectors: $this->detectors,
             reachable_set: $reachable_set,
+            context: $context,
         );
 
         return new BinWalkResult(

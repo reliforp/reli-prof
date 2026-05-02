@@ -73,8 +73,11 @@ final class OpArrayDetector implements ShapeDetector
     }
 
     #[\Override]
-    public function detect(string $fingerprint, int $bin_size): ?ShapeDetection
-    {
+    public function detect(
+        string $fingerprint,
+        int $bin_size,
+        ?DetectorContext $context = null,
+    ): ?ShapeDetection {
         if ($bin_size < self::STRIDE * self::MIN_HITS) {
             return null;
         }

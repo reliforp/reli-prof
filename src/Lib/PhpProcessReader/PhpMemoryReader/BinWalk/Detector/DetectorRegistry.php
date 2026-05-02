@@ -29,6 +29,11 @@ final class DetectorRegistry
     public static function defaults(): array
     {
         return [
+            // FunctionPointerDetector first so module-resolved labels
+            // ("func_ptr (libuv.so.1)") win tie-breaks over the
+            // pattern-only OpArrayDetector ("func_ptr_array(N × 32 B)")
+            // when both would match.
+            new FunctionPointerDetector(),
             new BucketDetector(),
             new ZendStringDetector(),
             new StatDetector(),
@@ -42,16 +47,20 @@ final class DetectorRegistry
      * (HIGH > MEDIUM > LOW), then first-registered wins on tie. Detectors
      * that return null are skipped.
      *
+     * `$context` is forwarded to every detector — those that don't need
+     * it ignore the parameter via their default-null arg.
+     *
      * @param list<ShapeDetector> $detectors
      */
     public static function pickBest(
         array $detectors,
         string $bytes,
         int $bin_size,
+        ?DetectorContext $context = null,
     ): ?ShapeDetection {
         $best = null;
         foreach ($detectors as $d) {
-            $hit = $d->detect($bytes, $bin_size);
+            $hit = $d->detect($bytes, $bin_size, $context);
             if ($hit === null) {
                 continue;
             }

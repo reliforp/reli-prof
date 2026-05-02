@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk;
 
 use Reli\Lib\PhpInternals\Types\Zend\ZendMmBinsInfo;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\DetectorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\DetectorRegistry;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ShapeDetection;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ShapeDetector;
@@ -59,6 +60,7 @@ final class PeriodicityDetector
         int $threshold = self::PERIODIC_THRESHOLD,
         ?array $detectors = null,
         ?array $reachable_set = null,
+        ?DetectorContext $context = null,
     ): array {
         if ($detectors === null) {
             $detectors = DetectorRegistry::defaults();
@@ -81,7 +83,7 @@ final class PeriodicityDetector
                     if ($stride === 0) {
                         continue;
                     }
-                    $detection = DetectorRegistry::pickBest($detectors, $fp, $bin_size);
+                    $detection = DetectorRegistry::pickBest($detectors, $fp, $bin_size, $context);
                     $samples = self::sampleAddresses($addrs);
                     $verdict = self::classifyReachability($samples, $reachable_set);
                     $reachable_count = $verdict[0];

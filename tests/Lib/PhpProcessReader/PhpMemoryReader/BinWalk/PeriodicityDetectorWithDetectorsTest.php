@@ -107,8 +107,11 @@ class PeriodicityDetectorWithDetectorsTest extends BaseTestCase
                 return 'low';
             }
 
-            public function detect(string $fingerprint, int $bin_size): ?ShapeDetection
-            {
+            public function detect(
+                string $fingerprint,
+                int $bin_size,
+                ?\Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\DetectorContext $context = null,
+            ): ?ShapeDetection {
                 return new ShapeDetection('low_match', ShapeDetection::CONFIDENCE_LOW);
             }
         };
@@ -118,8 +121,11 @@ class PeriodicityDetectorWithDetectorsTest extends BaseTestCase
                 return 'high';
             }
 
-            public function detect(string $fingerprint, int $bin_size): ?ShapeDetection
-            {
+            public function detect(
+                string $fingerprint,
+                int $bin_size,
+                ?\Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\DetectorContext $context = null,
+            ): ?ShapeDetection {
                 return new ShapeDetection('high_match', ShapeDetection::CONFIDENCE_HIGH);
             }
         };
