@@ -39,6 +39,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 use Reli\Lib\Dwarf\NativeSymbolResolver;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
+use Reli\Lib\File\PathResolver\ProcessPathResolver;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\NativeSymbolResolverAdapter;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\SymbolResolverInterface;
 use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
@@ -62,6 +63,7 @@ final class MemoryLocationsCollector
         private PhpZendMemoryManagerChunkFinder $chunk_finder,
         private ?ProcessMemoryMapCreatorInterface $process_memory_map_creator = null,
         private ?BinaryAnalysisCache $binary_analysis_cache = null,
+        private ?ProcessPathResolver $process_path_resolver = null,
     ) {
     }
 
@@ -449,17 +451,30 @@ final class MemoryLocationsCollector
     }
 
     /**
-     * Build the symbol resolver used by FunctionPointerDetector when
-     * available. Returns null when:
+     * Build the symbol resolver used by FunctionPointerDetector.
      *
-     * - The memory map isn't available (no module identification)
-     * - /proc/{pid}/exe isn't accessible (rdump-driven analyze, where
-     *   the target's binaries aren't laid out on the analyzing host)
-     * - NativeSymbolResolver instantiation throws for any reason
+     * Routes through the autowired {@see ProcessPathResolver}, the same
+     * primitive {@see \Reli\Inspector\MemoryDump\DumpFileMemoryReader}
+     * uses to look up paths recorded inside an rdump. Three cases shake
+     * out from the same code path:
      *
-     * The "resolver per analyze" lifetime is fine: NativeSymbolResolver
-     * caches per-binary results internally, and the analyze pass
-     * touches each binary once.
+     *  - Live target: the default
+     *    {@see \Reli\Lib\File\PathResolver\ContainerAwarePathResolver}
+     *    maps `/<path>` to `/proc/{pid}/root/<path>` (kernel-provided
+     *    chroot view, follows mount namespaces correctly).
+     *  - Offline rdump with `--dependency-root <dir>`:
+     *    {@see \Reli\Lib\File\PathResolver\MappedPathResolver} (set up
+     *    by MemoryDumpReaderFactory) maps `/<path>` to `<dir>/<path>`,
+     *    matching the coredump-reader convention.
+     *  - Offline rdump without `--dependency-root`: same MappedPathResolver
+     *    with no mappings, so `/<path>` resolves unchanged — the typical
+     *    "analyzing on the same machine where the binaries live"
+     *    workflow falls into this branch automatically.
+     *
+     * Returns null when the path resolver can't surface any binary
+     * (e.g. analyzing an rdump from a different host without
+     * `--dependency-root`) so the per-slot scan doesn't thrash through
+     * file-not-found syscalls.
      */
     private function buildSymbolResolver(
         int $pid,
@@ -468,8 +483,11 @@ final class MemoryLocationsCollector
         if ($process_memory_map === null) {
             return null;
         }
-        $process_root = "/proc/{$pid}/root";
-        if (!@is_readable("/proc/{$pid}/exe")) {
+        if ($this->process_path_resolver === null) {
+            return null;
+        }
+        $process_root = $this->probeProcessRoot($pid);
+        if (!$this->hasReachableModule($process_memory_map, $process_root)) {
             return null;
         }
         try {
@@ -483,6 +501,56 @@ final class MemoryLocationsCollector
             Log::debug('symbol resolver build failed', ['exception' => $e]);
             return null;
         }
+    }
+
+    /**
+     * Derive the binary-lookup prefix the way NativeSymbolResolver
+     * expects (a string concatenated to a leading `/<path>`). Probes
+     * the {@see ProcessPathResolver} with a sentinel and strips the
+     * sentinel back off — works uniformly for the live
+     * `/proc/<pid>/root` resolver and the offline MappedPathResolver
+     * with `[/ => --dependency-root]`.
+     */
+    private function probeProcessRoot(int $pid): string
+    {
+        assert($this->process_path_resolver !== null);
+        $sentinel = '/__reli_probe__';
+        $resolved = $this->process_path_resolver->resolve($pid, $sentinel);
+        if (str_ends_with($resolved, $sentinel)) {
+            return substr($resolved, 0, -strlen($sentinel));
+        }
+        return '';
+    }
+
+    /**
+     * Cheap check: is at least one named module from the memory map
+     * actually readable through the chosen `process_root`? When false,
+     * the symbol resolver would just thrash through file-not-found
+     * per slot — better to bail and let FunctionPointerDetector fall
+     * back to module-level labels.
+     */
+    private function hasReachableModule(
+        ProcessMemoryMap $process_memory_map,
+        string $process_root,
+    ): bool {
+        $candidates = $process_memory_map->findByNameRegex('\\.so\\b|/(php|php-fpm|frankenphp|httpd|apache2)$');
+        if ($candidates === []) {
+            // No real-binary mappings (e.g. CLI with statically linked
+            // PHP). We can still try with the executable mapping as a
+            // fallback — those always exist for any live process.
+            $candidates = $process_memory_map->findByNameRegex('^/');
+        }
+        foreach (array_slice($candidates, 0, 4) as $area) {
+            $name = $area->name;
+            if ($name === '' || $name[0] === '[') {
+                continue;
+            }
+            $path = $process_root . $name;
+            if (@is_readable($path)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private function collectRealCallStackOnMemoryLimitViolation(
