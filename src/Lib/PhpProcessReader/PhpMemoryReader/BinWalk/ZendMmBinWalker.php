@@ -111,6 +111,28 @@ final class ZendMmBinWalker
         $heap = $main_chunk->heap_slot;
         $free_heads = $heap->getFreeSlotHeads();
 
+        // The heap is supposed to be eagerly loaded by the caller so
+        // every bin's free-list head is readable. If we got an empty
+        // list it means the heap landed on the lazy-CData path
+        // somewhere upstream — treating that as "no free slots" would
+        // mark every freed slot as live and run the per-slot detector
+        // pipeline against garbage bytes, producing dramatic false
+        // positives. Bail with an empty histogram + `partial = true`
+        // so report / compare can show the bin walker didn't run
+        // rather than silently lying.
+        if (count($free_heads) !== 30) {
+            return new BinWalkResult(
+                small_bin_histogram: [],
+                large_run_count: 0,
+                large_run_bytes: 0,
+                live_small_slot_count: 0,
+                live_small_slot_bytes: 0,
+                periodic_groups: [],
+                walked_chunk_count: 0,
+                partial: true,
+            );
+        }
+
         // free_set[bin_num] => map<int $address, true>
         /** @var array<int, array<int, true>> $free_set */
         $free_set = [];

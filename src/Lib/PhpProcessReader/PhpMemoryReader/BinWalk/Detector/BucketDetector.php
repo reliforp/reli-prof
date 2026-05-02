@@ -56,8 +56,16 @@ final class BucketDetector implements ShapeDetector
     /**
      * zval type bytes that store a pointer at +0..+7. For these, an
      * all-zero or otherwise-bogus value is a strong rejection signal.
+     *
+     * Bytes 6..10 are stable across all supported PHP versions
+     * (IS_STRING / IS_ARRAY / IS_OBJECT / IS_RESOURCE / IS_REFERENCE).
+     * We additionally include 11..15 because every internal type that
+     * lands in this range across PHP 7.3 → 8.x is also pointer-typed
+     * (IS_CONSTANT_AST / IS_INDIRECT / IS_PTR / IS_ALIAS_PTR) — the
+     * specific name varies but "value field is a pointer" doesn't, so
+     * the zero-value rejection is correct on every version.
      */
-    private const POINTER_ZVAL_TYPES = [6, 7, 8, 9, 10, 11, 13, 14, 15];
+    private const POINTER_ZVAL_TYPES = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
     #[\Override]
     public function name(): string
@@ -125,6 +133,15 @@ final class BucketDetector implements ShapeDetector
             return null;
         }
 
+        // Type bytes 0..10 are stable across every supported PHP
+        // (V70 → V85). Bytes ≥ 11 differ per PHP version (e.g. PHP 8.x
+        // has IS_INDIRECT=12 / IS_PTR=13 / IS_ALIAS_PTR=14, while
+        // V73/V74 have IS_INDIRECT=13 / IS_PTR=14 / IS_ALIAS_PTR=15)
+        // — see {@see \Reli\Lib\PhpInternals\Types\Zend\V73\ZvalU1}
+        // and friends. Without a PHP-version-aware DetectorContext we
+        // can't pick the right label, so labels for 11+ stay as the
+        // raw `zval_type=N` digit. Misnaming an internal type is worse
+        // than admitting "bytes don't fit a stable label".
         $type_label = match ($type_byte) {
             0 => 'IS_UNDEF',
             1 => 'IS_NULL',
@@ -137,10 +154,6 @@ final class BucketDetector implements ShapeDetector
             8 => 'IS_OBJECT',
             9 => 'IS_RESOURCE',
             10 => 'IS_REFERENCE',
-            11 => 'IS_CONSTANT_AST',
-            13 => 'IS_INDIRECT',
-            14 => 'IS_PTR',
-            15 => 'IS_ALIAS_PTR',
             default => sprintf('zval_type=%d', $type_byte),
         };
 

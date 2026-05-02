@@ -46,13 +46,27 @@ final class PeriodicityDetector
      * @param list<ShapeDetector>|null $detectors When null, the built-in
      *     PHP-shape detectors are used. Pass an empty list to disable
      *     detection entirely (tests / future opt-out).
-     * @param array<int, mixed>|null $reachable_set When set, the keys of
-     *     this map are addresses claimed by the root walker; each group's
-     *     samples are probed and the result attached as
-     *     {@see PeriodicGroup::$reachability}. The design's negative-
-     *     evidence rule (C, "ReachabilityFilter"): groups whose samples
-     *     are all reachable were matched by accident and downstream
-     *     callers should suppress them as leak signals.
+     * @param array<int, mixed>|null $reachable_set When set, the keys
+     *     of this map are addresses the root walker emitted as
+     *     graph nodes (in practice this is `$ctx->address_map`).
+     *
+     *     Note this is NOT a true "is-reachable" oracle — slot start
+     *     and root-graph node address only coincide for shapes where
+     *     the slot IS the node (zend_string, zend_object headers).
+     *     For shapes where the slot is a containing struct and the
+     *     root graph addresses an inner pointer, the lookup misses
+     *     even though the slot is logically reachable.
+     *
+     *     Result: `reachable_count` is **undercount-biased** — it's
+     *     a "root-node-address-matched count", not a true reachable
+     *     count. The ORPHAN verdict still has high specificity (a
+     *     slot whose address never matches any root node really is
+     *     unrooted) but the REACHABLE verdict only tells you "the
+     *     root walker pinned exactly this address", not "this slot
+     *     is held by something the root walker reached."
+     *
+     *     A future enhancement could swap in a MemoryLocations range-
+     *     overlap probe for true reachability; tracked separately.
      * @return list<PeriodicGroup>
      */
     public static function detect(

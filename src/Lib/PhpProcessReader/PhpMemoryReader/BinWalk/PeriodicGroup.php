@@ -33,6 +33,17 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ShapeDetection;
  * PHP-claimed data that the detectors matched by accident; a group with
  * `reachability = ORPHAN` is the leak signal and gets promoted to HIGH
  * confidence in the report.
+ *
+ * Caveat: the verdict is computed by checking slot-start addresses
+ * against the root walker's `address_map` keys (see
+ * {@see PeriodicityDetector::detect}'s `$reachable_set` parameter
+ * docblock). That comparison is exact for shapes where the slot IS
+ * the graph node (zend_string, zend_object) and undercount-biased
+ * for shapes where the slot is a containing struct addressed by an
+ * inner pointer. So `REACHABLE` means "slot start matched a known
+ * node address"; `ORPHAN` is "no slot address matched any node",
+ * which is still a strong leak signal but doesn't preclude a
+ * pointer-into-the-middle being held somewhere.
  */
 final class PeriodicGroup
 {

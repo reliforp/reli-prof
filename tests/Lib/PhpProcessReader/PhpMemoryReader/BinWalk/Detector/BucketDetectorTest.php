@@ -101,17 +101,21 @@ class BucketDetectorTest extends BaseTestCase
         $this->assertSame('Bucket(uninit?)', $hit->label);
     }
 
-    public function testSymbolicatesIndirectAndPtr(): void
+    public function testInternalTypesKeepGenericLabel(): void
     {
+        // Bytes 11..15 are version-dependent in PHP source — without a
+        // PHP-version-aware DetectorContext we can't pick a symbolic
+        // name (IS_INDIRECT lives at byte 12 in PHP 8.x, byte 13 in
+        // 7.3/7.4, byte 15 in 7.0). The detector falls back to the
+        // raw `zval_type=N` digit instead of guessing the label.
         $detector = new BucketDetector();
-        $hit_indirect = $detector->detect($this->fp(13), 32);
-        $this->assertNotNull($hit_indirect);
-        $this->assertStringContainsString('IS_INDIRECT', $hit_indirect->label);
-        $hit_ptr = $detector->detect($this->fp(14), 32);
-        $this->assertNotNull($hit_ptr);
-        $this->assertStringContainsString('IS_PTR', $hit_ptr->label);
-        $hit_alias = $detector->detect($this->fp(15), 32);
-        $this->assertNotNull($hit_alias);
-        $this->assertStringContainsString('IS_ALIAS_PTR', $hit_alias->label);
+        foreach ([11, 12, 13, 14, 15] as $type_byte) {
+            $hit = $detector->detect($this->fp($type_byte), 32);
+            $this->assertNotNull($hit);
+            $this->assertStringContainsString(
+                "zval_type={$type_byte}",
+                $hit->label,
+            );
+        }
     }
 }
