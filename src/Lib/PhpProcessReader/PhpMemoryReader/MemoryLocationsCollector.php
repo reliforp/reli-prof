@@ -160,21 +160,6 @@ final class MemoryLocationsCollector
             }
             $walked_chunk_count++;
         }
-        // Walk the small-bin freelists + chunk page maps to recover the
-        // per-bin live-allocation histogram and any periodic same-shape
-        // groups. This is the foundation for the orphan-allocation
-        // analysis path (see docs/internals/design-orphan-allocation-analysis.md).
-        // Non-fatal — a failure here must not abort the analyze run.
-        $bin_walk_result = null;
-        try {
-            $bin_walk_result = (new ZendMmBinWalker($this->memory_reader))->walk(
-                $pid,
-                $zend_mm_main_chunk,
-                $dereferencer,
-            );
-        } catch (\Throwable $e) {
-            Log::debug('ZendMmBinWalker failed', ['exception' => $e]);
-        }
 
         $huge_memory_locations = new MemoryLocations();
         $huge_total_bytes = 0;
@@ -379,6 +364,28 @@ final class MemoryLocationsCollector
                 $eg,
                 $ctx,
             );
+        }
+
+        // Walk the small-bin freelists + chunk page maps to recover the
+        // per-bin live-allocation histogram and any periodic same-shape
+        // groups. Foundation for the orphan-allocation analysis path
+        // (see docs/internals/design-orphan-allocation-analysis.md).
+        //
+        // Runs AFTER the DFS so we can hand the root walker's
+        // `address_map` to the bin walker as the reachability filter
+        // (design's "negative-evidence rule"). Without it, periodic
+        // groups can't tell normal claimed data from orphan leaks.
+        // Non-fatal — a failure here must not abort the analyze run.
+        $bin_walk_result = null;
+        try {
+            $bin_walk_result = (new ZendMmBinWalker($this->memory_reader))->walk(
+                $pid,
+                $zend_mm_main_chunk,
+                $dereferencer,
+                $ctx->address_map,
+            );
+        } catch (\Throwable $e) {
+            Log::debug('ZendMmBinWalker failed', ['exception' => $e]);
         }
 
         $context_pools->clear();

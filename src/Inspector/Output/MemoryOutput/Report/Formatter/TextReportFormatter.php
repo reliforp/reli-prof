@@ -65,10 +65,15 @@ final class TextReportFormatter implements ReportFormatterInterface
             } elseif (
                 $finding->kind === 'bin_periodic_group'
                 || $finding->kind === 'bin_periodic_hotspot'
+                || $finding->kind === 'bin_periodic_orphan'
+                || $finding->kind === 'bin_periodic_reachable'
             ) {
                 // Hotspots also fall into the actionable section so the
                 // user gets the leak signal up top; the bin-level table
                 // below repeats them with stride/fingerprint detail.
+                // Reachable groups stay in the table for transparency
+                // (so the user sees what reli's root walker already
+                // claimed) but never go into the actionable section.
                 $bin_periodic_groups[] = $finding;
                 if ($finding->kind === 'bin_periodic_hotspot') {
                     $actionable[] = $finding;
@@ -317,22 +322,30 @@ final class TextReportFormatter implements ReportFormatterInterface
             $lines[] = '=== ZendMM Periodic Groups ===';
             $lines[] = '';
             $lines[] = sprintf(
-                '  %8s %10s %8s  %-14s  %-32s %s',
+                '   %8s %10s %8s  %-14s  %-9s %-32s %s',
                 'BinSize',
                 'Count',
                 'Stride',
                 'Sample addr',
+                'Reach',
                 'Inferred shape',
                 'Fingerprint',
             );
-            $lines[] = '  ' . str_repeat('-', 96);
+            $lines[] = '  ' . str_repeat('-', 105);
 
             // Already sorted by count desc inside the bin walker but
             // re-sort here to be defensive (findings may have been
-            // reshuffled by parallel passes).
+            // reshuffled by parallel passes). Hotspot rows float above
+            // non-hotspot rows of the same count so the leak signal
+            // lands first.
             usort(
                 $bin_periodic_groups,
                 static function (Finding $a, Finding $b): int {
+                    $a_rank = self::periodicGroupKindRank($a->kind);
+                    $b_rank = self::periodicGroupKindRank($b->kind);
+                    if ($a_rank !== $b_rank) {
+                        return $a_rank <=> $b_rank;
+                    }
                     /** @var int $ac */
                     $ac = $a->facts['count'] ?? 0;
                     /** @var int $bc */
@@ -356,23 +369,36 @@ final class TextReportFormatter implements ReportFormatterInterface
                 /** @var string $shape */
                 $shape = $facts['inferred_shape'] ?? '';
                 /** @var string $confidence */
-                $confidence = $facts['inferred_confidence'] ?? '';
+                $confidence = $facts['effective_confidence']
+                    ?? $facts['inferred_confidence']
+                    ?? '';
+                /** @var string $reach */
+                $reach = $facts['reachability'] ?? '';
                 $shape_cell = $shape !== ''
                     ? sprintf('%s [%s]', $shape, strtoupper($confidence))
                     : '—';
-                $tag = $finding->kind === 'bin_periodic_hotspot' ? '*' : ' ';
+                $reach_cell = $reach !== '' ? $reach : '—';
+                $tag = match ($finding->kind) {
+                    'bin_periodic_hotspot'
+                        => $finding->severity === FindingSeverity::High ? '**' : '* ',
+                    'bin_periodic_orphan' => 'o ',
+                    'bin_periodic_reachable' => '= ',
+                    default => '  ',
+                };
                 $lines[] = sprintf(
-                    ' %s%8s %10s %8d  0x%012x  %-32s %s',
+                    ' %s%8s %10s %8d  0x%012x  %-9s %-32s %s',
                     $tag,
                     SizeFormatter::format($bin_size),
                     number_format($count),
                     $stride,
                     $sample,
+                    $reach_cell,
                     strlen($shape_cell) > 32 ? substr($shape_cell, 0, 31) . '…' : $shape_cell,
                     substr($fp, 0, 16),
                 );
             }
-            $lines[] = '  (* = hotspot: dominates its bin)';
+            $lines[] = '  (** = orphan hotspot, * = hotspot, o = orphan group,'
+                . ' = = reachable / claimed by PHP roots)';
             $lines[] = '';
         }
 
@@ -616,6 +642,22 @@ final class TextReportFormatter implements ReportFormatterInterface
             FindingSeverity::Medium => 2,
             FindingSeverity::Low => 3,
             FindingSeverity::Info => 4,
+        };
+    }
+
+    /**
+     * Sort key for the ZendMM Periodic Groups table: hotspots first
+     * (orphan-promoted ahead of plain), then orphan-only groups, then
+     * unclassified, then reachable-only at the bottom (lowest signal).
+     */
+    private static function periodicGroupKindRank(string $kind): int
+    {
+        return match ($kind) {
+            'bin_periodic_hotspot' => 0,
+            'bin_periodic_orphan' => 1,
+            'bin_periodic_group' => 2,
+            'bin_periodic_reachable' => 3,
+            default => 4,
         };
     }
 

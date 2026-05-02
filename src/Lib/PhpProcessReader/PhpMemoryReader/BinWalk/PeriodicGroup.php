@@ -27,9 +27,26 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ShapeDetection;
  * known structure it attaches a {@see ShapeDetection} to label the
  * group; downstream renderers can show "Bucket(zval IS_STRING)" or
  * "zend_string(len=11)" instead of bare hex.
+ *
+ * Reachability is the design's negative-evidence rule (orphan-allocation
+ * doc, section C). A group with `reachability = REACHABLE` is normal
+ * PHP-claimed data that the detectors matched by accident; a group with
+ * `reachability = ORPHAN` is the leak signal and gets promoted to HIGH
+ * confidence in the report.
  */
 final class PeriodicGroup
 {
+    public const REACHABILITY_ORPHAN = 'orphan';
+    public const REACHABILITY_REACHABLE = 'reachable';
+    public const REACHABILITY_MIXED = 'mixed';
+
+    /**
+     * @param list<int> $sample_addrs Up to 16 addresses sampled from the
+     *     group (head + tail of the sorted address list). Lets a later
+     *     reachability annotator probe membership without having kept the
+     *     full address list around. Always includes {@see $sample_addr}
+     *     as the first entry.
+     */
     public function __construct(
         public readonly int $bin_num,
         public readonly int $bin_size,
@@ -38,6 +55,27 @@ final class PeriodicGroup
         public readonly string $fingerprint_hex,
         public readonly int $sample_addr,
         public readonly ?ShapeDetection $detection = null,
+        public readonly array $sample_addrs = [],
+        public readonly ?string $reachability = null,
+        public readonly int $reachable_samples = 0,
+        public readonly int $sampled_count = 0,
     ) {
+    }
+
+    /**
+     * Promote/demote shape detection confidence using the reachability
+     * verdict. An ORPHAN group with a MED detection earns HIGH; a
+     * REACHABLE group earns nothing extra (the design's negative-evidence
+     * rule says these are coincidental matches).
+     */
+    public function effectiveConfidence(): ?string
+    {
+        if ($this->detection === null) {
+            return null;
+        }
+        if ($this->reachability === self::REACHABILITY_ORPHAN) {
+            return ShapeDetection::CONFIDENCE_HIGH;
+        }
+        return $this->detection->confidence;
     }
 }

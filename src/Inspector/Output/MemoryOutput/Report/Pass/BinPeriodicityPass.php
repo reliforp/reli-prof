@@ -17,6 +17,7 @@ use PhpCast\Cast;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\PeriodicGroup;
 
 /**
  * Surface periodic same-shape allocation runs detected by the bin walker.
@@ -87,6 +88,12 @@ final class BinPeriodicityPass implements PassInterface
             $inferred_confidence = isset($g['inferred_confidence'])
                 ? (string)$g['inferred_confidence']
                 : '';
+            $effective_confidence = isset($g['effective_confidence'])
+                ? (string)$g['effective_confidence']
+                : $inferred_confidence;
+            $reachability = isset($g['reachability']) ? (string)$g['reachability'] : '';
+            $reachable_samples = (int)($g['reachable_samples'] ?? 0);
+            $sampled_count = (int)($g['sampled_count'] ?? 0);
             if ($count <= 0 || $bin_size <= 0) {
                 continue;
             }
@@ -94,6 +101,17 @@ final class BinPeriodicityPass implements PassInterface
             $bin_total = $bin_counts[$bin_num] ?? 0;
             $is_hotspot = $bin_total > 0
                 && Cast::toFloat($count) / Cast::toFloat($bin_total) >= self::HOTSPOT_FRACTION;
+
+            // Apply the design's negative-evidence rule: a group whose
+            // sampled addresses are all reachable from PHP roots was
+            // matched by accident, not because it's a leak. Demote it
+            // out of the hotspot bucket so the user's eye lands on the
+            // real signals.
+            $is_orphan = $reachability === PeriodicGroup::REACHABILITY_ORPHAN;
+            $is_reachable = $reachability === PeriodicGroup::REACHABILITY_REACHABLE;
+            if ($is_reachable) {
+                $is_hotspot = false;
+            }
 
             // Inferred shape, when present, leads the summary text — it's
             // the bit a human reader actually wants ("16,000 Buckets")
@@ -114,15 +132,62 @@ final class BinPeriodicityPass implements PassInterface
             if ($inferred_shape !== '') {
                 $facts['inferred_shape'] = $inferred_shape;
                 $facts['inferred_confidence'] = $inferred_confidence;
+                $facts['effective_confidence'] = $effective_confidence;
+            }
+            if ($reachability !== '') {
+                $facts['reachability'] = $reachability;
+                $facts['reachable_samples'] = $reachable_samples;
+                $facts['sampled_count'] = $sampled_count;
             }
 
+            // Kind selection encodes both the hotspot heuristic and the
+            // reachability verdict. `bin_periodic_reachable` is the only
+            // ranking-style kind among them — it has no leak signal so
+            // the comparison filter (RANKING_KINDS in ComparisonGenerator)
+            // already treats it as info.
+            if ($is_reachable) {
+                $kind = 'bin_periodic_reachable';
+                $severity = FindingSeverity::Info;
+            } elseif ($is_hotspot && $is_orphan) {
+                $kind = 'bin_periodic_hotspot';
+                // Orphan + hotspot = the strongest leak signal we have.
+                $severity = FindingSeverity::High;
+            } elseif ($is_hotspot) {
+                $kind = 'bin_periodic_hotspot';
+                $severity = FindingSeverity::Medium;
+            } elseif ($is_orphan) {
+                $kind = 'bin_periodic_orphan';
+                $severity = FindingSeverity::Info;
+            } else {
+                $kind = 'bin_periodic_group';
+                $severity = FindingSeverity::Info;
+            }
+
+            // Confidence on the Finding itself reflects the detector's
+            // post-reachability promotion: orphan + detector match → HIGH.
+            $finding_confidence = match ($effective_confidence) {
+                'high' => FindingConfidence::High,
+                'low' => FindingConfidence::Low,
+                default => FindingConfidence::Medium,
+            };
+
+            $reachability_suffix = match ($reachability) {
+                PeriodicGroup::REACHABILITY_ORPHAN
+                    => sprintf(' [orphan: 0/%d samples reachable]', $sampled_count),
+                PeriodicGroup::REACHABILITY_REACHABLE
+                    => sprintf(' [reachable: %d/%d samples reachable]', $reachable_samples, $sampled_count),
+                PeriodicGroup::REACHABILITY_MIXED
+                    => sprintf(' [mixed: %d/%d samples reachable]', $reachable_samples, $sampled_count),
+                default => '',
+            };
+
             $findings[] = new Finding(
-                kind: $is_hotspot ? 'bin_periodic_hotspot' : 'bin_periodic_group',
-                severity: $is_hotspot ? FindingSeverity::Medium : FindingSeverity::Info,
-                confidence: FindingConfidence::Medium,
+                kind: $kind,
+                severity: $severity,
+                confidence: $finding_confidence,
                 summary: sprintf(
                     '%sbin[%d B]: %s same-shape live slots, stride %d B%s'
-                    . ' (sample 0x%x, fp %s%s)',
+                    . ' (sample 0x%x, fp %s%s)%s',
                     $shape_prefix,
                     $bin_size,
                     number_format($count),
@@ -136,9 +201,10 @@ final class BinPeriodicityPass implements PassInterface
                     $sample_addr,
                     substr($fp, 0, 16),
                     strlen($fp) > 16 ? '…' : '',
+                    $reachability_suffix,
                 ),
                 facts: $facts,
-                hypothesis: $is_hotspot
+                hypothesis: $kind === 'bin_periodic_hotspot'
                     ? 'Likely orphan / C-extension emalloc — many same-shape allocations'
                         . ' dominate this bin without a typed PHP root.'
                     : '',

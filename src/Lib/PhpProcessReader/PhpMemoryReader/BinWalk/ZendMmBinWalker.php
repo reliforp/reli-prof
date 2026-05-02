@@ -47,10 +47,19 @@ final class ZendMmBinWalker
     ) {
     }
 
+    /**
+     * @param array<int, mixed>|null $reachable_set Optional address→nodeId
+     *     map (the keys are what matters) recovered from the root walker's
+     *     `address_map`. When supplied, periodic groups gain a reachability
+     *     verdict (orphan / reachable / mixed) — the design's negative-
+     *     evidence rule. When null, reachability stays unknown and
+     *     downstream callers fall back to the pre-filter behaviour.
+     */
     public function walk(
         int $pid,
         ZendMmChunk $main_chunk,
         Dereferencer $dereferencer,
+        ?array $reachable_set = null,
     ): BinWalkResult {
         $heap = $main_chunk->heap_slot;
         $free_heads = $heap->getFreeSlotHeads();
@@ -184,7 +193,10 @@ final class ZendMmBinWalker
         }
 
         ksort($histogram);
-        $periodic_groups = PeriodicityDetector::detect($live_by_bin_by_chunk);
+        $periodic_groups = PeriodicityDetector::detect(
+            $live_by_bin_by_chunk,
+            reachable_set: $reachable_set,
+        );
 
         return new BinWalkResult(
             small_bin_histogram: $histogram,

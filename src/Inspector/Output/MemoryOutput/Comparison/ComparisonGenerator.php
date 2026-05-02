@@ -50,6 +50,8 @@ final class ComparisonGenerator
         'bin_histogram_overview',
         'bin_histogram_entry',
         'bin_periodic_group',
+        'bin_periodic_orphan',
+        'bin_periodic_reachable',
     ];
 
     public function compare(

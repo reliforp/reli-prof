@@ -110,4 +110,107 @@ class PeriodicityDetectorTest extends BaseTestCase
         $addrs = [0, 32, 64, 96, 128, 192, 224, 256];
         $this->assertSame(32, PeriodicityDetector::modeStride($addrs));
     }
+
+    public function testReachabilityNullByDefault(): void
+    {
+        $bin = 3;
+        $slots = [];
+        for ($i = 0; $i < 50; $i++) {
+            $slots[] = ['addr' => 0x1000 + $i * 32, 'fp' => 'A'];
+        }
+        $groups = PeriodicityDetector::detect(
+            [$bin => [0x1000 => $slots]],
+            threshold: 32,
+        );
+        $this->assertCount(1, $groups);
+        $this->assertNull($groups[0]->reachability);
+        $this->assertSame(0, $groups[0]->reachable_samples);
+    }
+
+    public function testReachabilityOrphanWhenNoSampleClaimed(): void
+    {
+        $bin = 3;
+        $slots = [];
+        for ($i = 0; $i < 50; $i++) {
+            $slots[] = ['addr' => 0x1000 + $i * 32, 'fp' => 'A'];
+        }
+        $groups = PeriodicityDetector::detect(
+            [$bin => [0x1000 => $slots]],
+            threshold: 32,
+            reachable_set: [],
+        );
+        $this->assertCount(1, $groups);
+        $this->assertSame(PeriodicGroup::REACHABILITY_ORPHAN, $groups[0]->reachability);
+        $this->assertSame(0, $groups[0]->reachable_samples);
+        $this->assertGreaterThan(0, $groups[0]->sampled_count);
+    }
+
+    public function testReachabilityReachableWhenAllSamplesClaimed(): void
+    {
+        $bin = 3;
+        $slots = [];
+        $reachable = [];
+        for ($i = 0; $i < 50; $i++) {
+            $addr = 0x1000 + $i * 32;
+            $slots[] = ['addr' => $addr, 'fp' => 'A'];
+            $reachable[$addr] = 1;
+        }
+        $groups = PeriodicityDetector::detect(
+            [$bin => [0x1000 => $slots]],
+            threshold: 32,
+            reachable_set: $reachable,
+        );
+        $this->assertCount(1, $groups);
+        $this->assertSame(PeriodicGroup::REACHABILITY_REACHABLE, $groups[0]->reachability);
+        $this->assertSame($groups[0]->sampled_count, $groups[0]->reachable_samples);
+    }
+
+    public function testReachabilityMixedWhenSomeSamplesClaimed(): void
+    {
+        $bin = 3;
+        $slots = [];
+        $reachable = [];
+        for ($i = 0; $i < 50; $i++) {
+            $addr = 0x1000 + $i * 32;
+            $slots[] = ['addr' => $addr, 'fp' => 'A'];
+            // Claim every other slot — guaranteed to hit head + tail
+            // samples, so the verdict must be MIXED.
+            if ($i % 2 === 0) {
+                $reachable[$addr] = 1;
+            }
+        }
+        $groups = PeriodicityDetector::detect(
+            [$bin => [0x1000 => $slots]],
+            threshold: 32,
+            reachable_set: $reachable,
+        );
+        $this->assertCount(1, $groups);
+        $this->assertSame(PeriodicGroup::REACHABILITY_MIXED, $groups[0]->reachability);
+    }
+
+    public function testSampleAddrsCappedAtMaxSamples(): void
+    {
+        $bin = 3;
+        $slots = [];
+        for ($i = 0; $i < 200; $i++) {
+            $slots[] = ['addr' => 0x10000 + $i * 32, 'fp' => 'A'];
+        }
+        $groups = PeriodicityDetector::detect(
+            [$bin => [0x10000 => $slots]],
+            threshold: 32,
+        );
+        $this->assertCount(1, $groups);
+        $this->assertLessThanOrEqual(
+            PeriodicityDetector::MAX_SAMPLES,
+            count($groups[0]->sample_addrs),
+        );
+        // Head-and-tail sampling: first sample is the lowest address,
+        // last is the highest. That's the property the reachability
+        // filter relies on.
+        $this->assertSame(0x10000, $groups[0]->sample_addrs[0]);
+        $this->assertSame(
+            0x10000 + 199 * 32,
+            $groups[0]->sample_addrs[count($groups[0]->sample_addrs) - 1],
+        );
+    }
 }

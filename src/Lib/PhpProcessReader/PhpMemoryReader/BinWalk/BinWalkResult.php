@@ -86,7 +86,11 @@ final class BinWalkResult
      *     fingerprint: string,
      *     sample_addr: int,
      *     inferred_shape?: string,
-     *     inferred_confidence?: string
+     *     inferred_confidence?: string,
+     *     effective_confidence?: string,
+     *     reachability?: string,
+     *     reachable_samples?: int,
+     *     sampled_count?: int
      * }>
      */
     public function toSummaryPeriodicGroupsArray(): array
@@ -104,6 +108,15 @@ final class BinWalkResult
             if ($g->detection !== null) {
                 $row['inferred_shape'] = $g->detection->label;
                 $row['inferred_confidence'] = $g->detection->confidence;
+                $effective = $g->effectiveConfidence();
+                if ($effective !== null) {
+                    $row['effective_confidence'] = $effective;
+                }
+            }
+            if ($g->reachability !== null) {
+                $row['reachability'] = $g->reachability;
+                $row['reachable_samples'] = $g->reachable_samples;
+                $row['sampled_count'] = $g->sampled_count;
             }
             $out[] = $row;
         }
