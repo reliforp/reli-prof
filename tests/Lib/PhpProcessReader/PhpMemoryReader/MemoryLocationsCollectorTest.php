@@ -2825,6 +2825,209 @@ class MemoryLocationsCollectorTest extends BaseTestCase
     }
 
     /**
+     * EG(regular_list) must show up as a root branch and its outgoing
+     * edges to resources must be weak — same reasoning as objects_store:
+     * a resource only reachable via the registry should not look pinned
+     * alive, otherwise stream/resource leaks are invisible.
+     */
+    #[DataProvider('provideFromV80')]
+    public function testRegularListRootBranchTracksResourcesWithWeakEdges(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        $target_script =
+            <<<'CODE'
+            <?php
+            $memory_stream = fopen('php://memory', 'r+');
+            fwrite($memory_stream, str_repeat('M', 256));
+            $temp_stream = fopen('php://temp', 'r+');
+            $file_stream = fopen('php://stdout', 'w');
+            fputs($file_stream, "a\n");
+            fgets(STDIN);
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes
+        );
+        $s = fgets($pipes[1]);
+        $this->assertSame("a\n", $s);
+
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
+                new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
+            ),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
+        );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
+            $binary_fingerprint_creator,
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version)
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version)
+        );
+
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            )
+        );
+        $sink = new ArrayContextTreeSink();
+        $memory_locations_collector->collectAll(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+            $executor_globals_address,
+            $compiler_globals_address,
+            null,
+            null,
+            $sink,
+        );
+
+        $contexts_analyzed = $sink->getResult();
+
+        $this->assertArrayHasKey(
+            'regular_list',
+            $contexts_analyzed,
+            'regular_list must appear as a root branch alongside objects_store'
+        );
+        $regular_list = $contexts_analyzed['regular_list'];
+        $this->assertSame('RegularListContext', $regular_list['#type'] ?? null);
+        $this->assertSame(
+            'weak',
+            $regular_list['#edge_strength'] ?? null,
+            'The regular_list root edge itself must be weak'
+        );
+
+        // Walk children: each entry is either a ResourceContext node (first
+        // time seen) or a #reference_node_id pointing at the canonical
+        // ResourceContext emitted under a stronger root (e.g.
+        // global_variables). Either way the edge from regular_list must be
+        // weak so leak analysis can see "only registry-reachable" resources.
+        $resource_edge_count = 0;
+        $weak_edge_count = 0;
+        $resolved_resource_count = 0;
+        foreach ($regular_list as $key => $value) {
+            if (!is_array($value) || str_starts_with((string)$key, '#')) {
+                continue;
+            }
+            $resource_edge_count++;
+            if (($value['#edge_strength'] ?? null) === 'weak') {
+                $weak_edge_count++;
+            }
+            if (isset($value['#reference_node_id'])) {
+                continue;
+            }
+            if (($value['#type'] ?? null) === 'ResourceContext') {
+                $resolved_resource_count++;
+            }
+        }
+
+        $this->assertGreaterThan(
+            0,
+            $resource_edge_count,
+            'regular_list should have at least one resource edge — '
+            . 'the script opened three streams'
+        );
+        $this->assertSame(
+            $resource_edge_count,
+            $weak_edge_count,
+            'Every edge from regular_list must be weak'
+        );
+        // Sanity: at least one of the registered resources should resolve
+        // to a ResourceContext somewhere in the graph (either inline under
+        // regular_list or via a #reference_node_id whose target lives under
+        // global_variables).
+        $found_resource_anywhere = false;
+        $find = static function (array $tree) use (&$find, &$found_resource_anywhere): void {
+            foreach ($tree as $key => $value) {
+                if (!is_array($value) || $key === '#locations') {
+                    continue;
+                }
+                if (($value['#type'] ?? null) === 'ResourceContext') {
+                    $found_resource_anywhere = true;
+                    return;
+                }
+                $find($value);
+            }
+        };
+        $find($contexts_analyzed);
+        $this->assertTrue(
+            $found_resource_anywhere,
+            'At least one ResourceContext should be reachable in the analyzed graph'
+        );
+        $this->assertGreaterThanOrEqual(
+            0,
+            $resolved_resource_count,
+            'sanity: resolved-inline counter is non-negative'
+        );
+    }
+
+    /**
      * Bug 2 regression test: In streaming mode, ObjectContext nodes must have
      * a tree edge to their ObjectPropertiesContext even when all properties
      * are object references (deferred during objects_store collection).
