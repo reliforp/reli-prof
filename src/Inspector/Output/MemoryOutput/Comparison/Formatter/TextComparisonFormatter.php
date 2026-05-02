@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput\Comparison\Formatter;
 
+use Reli\Inspector\Output\MemoryOutput\Comparison\BinDelta;
 use Reli\Inspector\Output\MemoryOutput\Comparison\ClassDelta;
 use Reli\Inspector\Output\MemoryOutput\Comparison\ComparisonResult;
 use Reli\Inspector\Output\MemoryOutput\Comparison\SummaryDelta;
@@ -45,6 +46,20 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
 
         // Class deltas
         $this->formatClassDeltas($lines, $result);
+
+        // ZendMM bin histogram delta — sourced from the bin walker
+        // (analyze-time) and decoded from the rmem summary section.
+        // Lands above the findings diff so the user can correlate
+        // "+16,041 bin[32 B]" with the unaccounted-delta finding when
+        // both fire on the same comparison.
+        $this->formatBinDeltas($lines, $result->bin_deltas);
+
+        // Synthetic "heap grew but typed delta ≈ 0" finding (B.4).
+        // High-severity callout above the regular findings diff so the
+        // signal can't get buried under per-class noise.
+        if ($result->unaccounted_finding !== null) {
+            $this->formatUnaccountedFinding($lines, $result->unaccounted_finding);
+        }
 
         // Findings diff
         $this->formatFindingsDiff($lines, $result);
@@ -274,6 +289,69 @@ final class TextComparisonFormatter implements ComparisonFormatterInterface
             }
             $lines[] = '';
         }
+    }
+
+    /**
+     * @param list<string> $lines
+     * @param list<BinDelta> $deltas
+     */
+    private function formatBinDeltas(array &$lines, array $deltas): void
+    {
+        if ($deltas === []) {
+            return;
+        }
+
+        $lines[] = '=== ZendMM Bin Histogram Delta ===';
+        $lines[] = '';
+        $lines[] = sprintf(
+            '  %3s  %8s %12s %12s %14s %14s',
+            'Bin',
+            'Size',
+            'Baseline',
+            'Target',
+            "Count \xce\x94",
+            "Memory \xce\x94",
+        );
+        $lines[] = '  ' . str_repeat('-', 73);
+
+        foreach (array_slice($deltas, 0, 30) as $bd) {
+            $count_str = sprintf('%+d', $bd->count_delta);
+            $bytes_sign = $bd->bytes_delta >= 0 ? '+' : '-';
+            $bytes_str = $bytes_sign . SizeFormatter::format(abs($bd->bytes_delta));
+            $lines[] = sprintf(
+                '  %3d  %8s %12s %12s %14s %14s',
+                $bd->bin_num,
+                SizeFormatter::format($bd->bin_size),
+                number_format($bd->baseline_count),
+                number_format($bd->target_count),
+                $count_str,
+                $bytes_str,
+            );
+        }
+        $lines[] = '';
+    }
+
+    /**
+     * @param list<string> $lines
+     */
+    private function formatUnaccountedFinding(array &$lines, Finding $f): void
+    {
+        $lines[] = '=== Unaccounted Heap Delta ===';
+        $lines[] = '';
+        $tag = strtoupper($f->severity->value);
+        $impact = $f->impact_bytes > 0
+            ? SizeFormatter::format($f->impact_bytes)
+            : '—';
+        $lines[] = "  [{$tag}] {$impact}: {$f->summary}";
+        if ($f->hypothesis !== '') {
+            foreach (explode("\n", $f->hypothesis) as $h) {
+                $lines[] = "    {$h}";
+            }
+        }
+        if ($f->next_checks !== []) {
+            $lines[] = '    Next: ' . implode('; ', $f->next_checks);
+        }
+        $lines[] = '';
     }
 
     /**

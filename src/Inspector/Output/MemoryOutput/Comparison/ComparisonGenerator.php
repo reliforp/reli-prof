@@ -13,8 +13,13 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput\Comparison;
 
+use PhpCast\Cast;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
+use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
+use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
 use Reli\Inspector\Output\MemoryOutput\Report\ReportResult;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
+use Reli\Lib\PhpInternals\Types\Zend\ZendMmBinsInfo;
 
 final class ComparisonGenerator
 {
@@ -80,6 +85,16 @@ final class ComparisonGenerator
             $target_report,
         );
 
+        $bin_deltas = $this->compareBinHistogram(
+            $baseline->loadBinHistogramSnapshot(),
+            $target->loadBinHistogramSnapshot(),
+        );
+
+        $unaccounted = $this->detectUnaccountedDelta(
+            $summary_deltas,
+            $type_deltas,
+        );
+
         return new ComparisonResult(
             baseline_meta: $baseline_report->meta,
             target_meta: $target_report->meta,
@@ -89,6 +104,148 @@ final class ComparisonGenerator
             class_added: $class_added,
             class_removed: $class_removed,
             findings_diff: $findings_diff,
+            bin_deltas: $bin_deltas,
+            unaccounted_finding: $unaccounted,
+        );
+    }
+
+    /**
+     * @param array{
+     *     histogram: array<int, array{count: int, total_bytes: int}>,
+     *     large_run_count?: int,
+     *     large_run_bytes?: int,
+     *     live_small_slot_count?: int,
+     *     live_small_slot_bytes?: int,
+     *     walked_chunk_count?: int,
+     *     partial?: bool
+     * }|null $baseline
+     * @param array{
+     *     histogram: array<int, array{count: int, total_bytes: int}>,
+     *     large_run_count?: int,
+     *     large_run_bytes?: int,
+     *     live_small_slot_count?: int,
+     *     live_small_slot_bytes?: int,
+     *     walked_chunk_count?: int,
+     *     partial?: bool
+     * }|null $target
+     * @return list<BinDelta>
+     */
+    private function compareBinHistogram(?array $baseline, ?array $target): array
+    {
+        if ($baseline === null && $target === null) {
+            return [];
+        }
+        $b_hist = $baseline['histogram'] ?? [];
+        $t_hist = $target['histogram'] ?? [];
+
+        $bins = array_unique(array_merge(array_keys($b_hist), array_keys($t_hist)));
+        $deltas = [];
+        foreach ($bins as $bin_num) {
+            $b = $b_hist[$bin_num] ?? ['count' => 0, 'total_bytes' => 0];
+            $t = $t_hist[$bin_num] ?? ['count' => 0, 'total_bytes' => 0];
+            $count_delta = $t['count'] - $b['count'];
+            $bytes_delta = $t['total_bytes'] - $b['total_bytes'];
+            if ($count_delta === 0 && $bytes_delta === 0) {
+                continue;
+            }
+            $deltas[] = new BinDelta(
+                bin_num: $bin_num,
+                bin_size: ZendMmBinsInfo::getSize($bin_num),
+                baseline_count: $b['count'],
+                target_count: $t['count'],
+                baseline_bytes: $b['total_bytes'],
+                target_bytes: $t['total_bytes'],
+                count_delta: $count_delta,
+                bytes_delta: $bytes_delta,
+            );
+        }
+
+        // Sort by absolute byte delta — biggest movers first.
+        usort(
+            $deltas,
+            static fn(BinDelta $a, BinDelta $b) => abs($b->bytes_delta) <=> abs($a->bytes_delta),
+        );
+
+        return $deltas;
+    }
+
+    /**
+     * Synthetic "heap grew but the typed allocations didn't" finding (B.4
+     * in the orphan-allocation design). The signal is the design's North
+     * Star: when this fires, the user knows the leak is C-extension-side
+     * emalloc territory and should consult the bin histogram delta.
+     *
+     * Threshold: heap_usage delta clears the smaller of 100 KiB or 1% of
+     * baseline. Lower bar than fragmentation findings on purpose — even a
+     * small heap growth with a flat type breakdown is worth surfacing.
+     *
+     * @param list<SummaryDelta> $summary_deltas
+     * @param list<TypeDelta> $type_deltas
+     */
+    private function detectUnaccountedDelta(
+        array $summary_deltas,
+        array $type_deltas,
+    ): ?Finding {
+        $heap_delta = null;
+        $heap_baseline = null;
+        foreach ($summary_deltas as $sd) {
+            if ($sd->metric === 'zend_mm_heap_usage') {
+                $heap_delta = (int)$sd->delta;
+                $heap_baseline = (int)$sd->baseline;
+                break;
+            }
+        }
+        if ($heap_delta === null || $heap_delta <= 0) {
+            return null;
+        }
+
+        $abs_threshold = 100 * 1024;
+        $rel_threshold = $heap_baseline !== null && $heap_baseline > 0
+            ? (int)floor(Cast::toFloat($heap_baseline) * 0.01)
+            : $abs_threshold;
+        $threshold = min($abs_threshold, $rel_threshold);
+        if ($heap_delta < $threshold) {
+            return null;
+        }
+
+        $type_delta_sum = 0;
+        $type_delta_abs_sum = 0;
+        foreach ($type_deltas as $td) {
+            $type_delta_sum += $td->memory_delta;
+            $type_delta_abs_sum += abs($td->memory_delta);
+        }
+
+        // "Approximately zero" relative to the heap movement: typed deltas
+        // explain less than 10% of what the heap absorbed.
+        if ($type_delta_abs_sum >= (int)floor(Cast::toFloat($heap_delta) * 0.1)) {
+            return null;
+        }
+
+        return new Finding(
+            kind: 'unaccounted_heap_delta',
+            severity: FindingSeverity::High,
+            confidence: FindingConfidence::High,
+            summary: sprintf(
+                'Heap grew by %s but typed allocations only moved by %s'
+                . ' — likely orphan / C-extension emalloc',
+                SizeFormatter::format($heap_delta),
+                SizeFormatter::format($type_delta_sum),
+            ),
+            facts: [
+                'heap_usage_delta' => $heap_delta,
+                'type_delta_sum' => $type_delta_sum,
+                'type_delta_abs_sum' => $type_delta_abs_sum,
+            ],
+            hypothesis: 'The heap absorbed bytes that no PHP-rooted node claimed.'
+                . ' Standard culprits: extension-side emalloc (curl_easy, uv_*, libxml,'
+                . ' pdo_stmt) leaking structs that ZendMM tracks but the root walker'
+                . ' never reaches.',
+            next_checks: [
+                'Inspect the bin histogram delta below for the largest +Δ bin',
+                'Run inspector:memory:report --no-derived-cache on the target dump'
+                    . ' to see the periodic-groups table, which surfaces the leaked shape',
+            ],
+            impact_bytes: $heap_delta,
         );
     }
 

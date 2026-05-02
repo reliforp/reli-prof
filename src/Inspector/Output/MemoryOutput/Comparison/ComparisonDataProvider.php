@@ -39,5 +39,21 @@ interface ComparisonDataProvider
      */
     public function loadClassMap(): array;
 
+    /**
+     * Decoded bin walker output from the summary section, or null when the
+     * snapshot pre-dates the bin walker / the ZendMM walk failed.
+     *
+     * @return array{
+     *     histogram: array<int, array{count: int, total_bytes: int}>,
+     *     large_run_count?: int,
+     *     large_run_bytes?: int,
+     *     live_small_slot_count?: int,
+     *     live_small_slot_bytes?: int,
+     *     walked_chunk_count?: int,
+     *     partial?: bool
+     * }|null
+     */
+    public function loadBinHistogramSnapshot(): ?array;
+
     public function generateReport(bool $full_analysis, ?bool $ffi_csr): ReportResult;
 }

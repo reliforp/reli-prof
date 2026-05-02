@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput\Comparison;
 
+use Reli\Inspector\Output\MemoryOutput\Report\Finding;
+
 final class ComparisonResult
 {
     /**
@@ -23,6 +25,7 @@ final class ComparisonResult
      * @param list<ClassDelta> $class_changes
      * @param list<ClassDelta> $class_added
      * @param list<ClassDelta> $class_removed
+     * @param list<BinDelta> $bin_deltas
      */
     public function __construct(
         public readonly array $baseline_meta,
@@ -33,13 +36,15 @@ final class ComparisonResult
         public readonly array $class_added,
         public readonly array $class_removed,
         public readonly FindingsDiff $findings_diff,
+        public readonly array $bin_deltas = [],
+        public readonly ?Finding $unaccounted_finding = null,
     ) {
     }
 
     /** @return array<string, mixed> */
     public function toArray(): array
     {
-        return [
+        $out = [
             'baseline' => $this->baseline_meta,
             'target' => $this->target_meta,
             'summary_deltas' => array_map(
@@ -57,5 +62,15 @@ final class ComparisonResult
             ],
             'findings_diff' => $this->findings_diff->toArray(),
         ];
+        if ($this->bin_deltas !== []) {
+            $out['bin_deltas'] = array_map(
+                fn(BinDelta $d) => $d->toArray(),
+                $this->bin_deltas,
+            );
+        }
+        if ($this->unaccounted_finding !== null) {
+            $out['unaccounted_finding'] = $this->unaccounted_finding->toArray();
+        }
+        return $out;
     }
 }

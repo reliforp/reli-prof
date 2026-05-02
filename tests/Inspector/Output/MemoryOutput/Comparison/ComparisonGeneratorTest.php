@@ -234,6 +234,94 @@ class ComparisonGeneratorTest extends BaseTestCase
         $this->assertContains('dominant_class', $resolved_kinds);
     }
 
+    public function testCompareBinHistogramEmitsDeltas(): void
+    {
+        $this->buildDb($this->baseline_path, [
+            ['zend_mm_heap_usage' => 1_000_000],
+            // Bin walker recorded 5,000 32 B slots and 100 192 B slots.
+            ['bin_walk' => json_encode([
+                'histogram' => [
+                    3 => ['count' => 5000, 'total_bytes' => 5000 * 32],
+                    13 => ['count' => 100, 'total_bytes' => 100 * 192],
+                ],
+            ])],
+        ]);
+        $this->buildDb($this->target_path, [
+            ['zend_mm_heap_usage' => 1_500_000],
+            // Bin 3 grew significantly; bin 13 unchanged; bin 7 (64 B) is new.
+            ['bin_walk' => json_encode([
+                'histogram' => [
+                    3 => ['count' => 21_000, 'total_bytes' => 21_000 * 32],
+                    13 => ['count' => 100, 'total_bytes' => 100 * 192],
+                    7 => ['count' => 50, 'total_bytes' => 50 * 64],
+                ],
+            ])],
+        ]);
+
+        $result = $this->compare();
+
+        $this->assertNotEmpty($result->bin_deltas);
+        // Sorted by |bytes_delta| desc, so bin 3 lands first.
+        $this->assertSame(3, $result->bin_deltas[0]->bin_num);
+        $this->assertSame(32, $result->bin_deltas[0]->bin_size);
+        $this->assertSame(16_000, $result->bin_deltas[0]->count_delta);
+        $this->assertSame(16_000 * 32, $result->bin_deltas[0]->bytes_delta);
+
+        // Unchanged bin (13) is omitted entirely.
+        $bin_nums = array_map(
+            static fn(BinDelta $d) => $d->bin_num,
+            $result->bin_deltas,
+        );
+        $this->assertNotContains(13, $bin_nums);
+        $this->assertContains(7, $bin_nums);
+    }
+
+    public function testUnaccountedDeltaFiringWhenHeapGrowsButTypesFlat(): void
+    {
+        $this->buildDb($this->baseline_path, [
+            ['zend_mm_heap_usage' => 10_000_000],
+        ]);
+        $this->buildDb($this->target_path, [
+            // Heap +1 MiB but no typed allocations changed (the dbs have no
+            // location data, so the type breakdown is empty on both sides).
+            ['zend_mm_heap_usage' => 11_048_576],
+        ]);
+
+        $result = $this->compare();
+
+        $this->assertNotNull($result->unaccounted_finding);
+        $this->assertSame('unaccounted_heap_delta', $result->unaccounted_finding->kind);
+        $this->assertGreaterThan(0, $result->unaccounted_finding->impact_bytes);
+    }
+
+    public function testUnaccountedDeltaSilentWhenHeapShrunk(): void
+    {
+        $this->buildDb($this->baseline_path, [
+            ['zend_mm_heap_usage' => 11_000_000],
+        ]);
+        $this->buildDb($this->target_path, [
+            ['zend_mm_heap_usage' => 10_000_000],
+        ]);
+
+        $result = $this->compare();
+        $this->assertNull($result->unaccounted_finding);
+    }
+
+    public function testUnaccountedDeltaSilentWhenHeapBarelyMoved(): void
+    {
+        // Heap +50 KiB on a 10 MiB baseline — both below 1% and below
+        // 100 KiB, so the synthetic finding stays quiet.
+        $this->buildDb($this->baseline_path, [
+            ['zend_mm_heap_usage' => 10_000_000],
+        ]);
+        $this->buildDb($this->target_path, [
+            ['zend_mm_heap_usage' => 10_050_000],
+        ]);
+
+        $result = $this->compare();
+        $this->assertNull($result->unaccounted_finding);
+    }
+
     public function testComparisonResultToArray(): void
     {
         $this->buildDb($this->baseline_path, [

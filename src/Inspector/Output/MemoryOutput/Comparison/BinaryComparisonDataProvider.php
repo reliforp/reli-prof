@@ -97,6 +97,41 @@ final class BinaryComparisonDataProvider implements ComparisonDataProvider
         return $this->class_map_cache ?? [];
     }
 
+    /**
+     * @psalm-suppress MixedAssignment, PossiblyInvalidArrayAccess
+     */
+    #[\Override]
+    public function loadBinHistogramSnapshot(): ?array
+    {
+        if (!$this->reader->hasSection(Format::SECTION_SUMMARY)) {
+            return null;
+        }
+        $data = $this->reader->getSectionData(Format::SECTION_SUMMARY);
+        $dict = $this->reader->getStringDict();
+
+        $offset = 0;
+        $entry_count = unpack('V', $data, $offset)[1];
+        $offset += 4;
+
+        for ($i = 0; $i < $entry_count; $i++) {
+            $key_id = unpack('V', $data, $offset)[1];
+            $offset += 4;
+            $value_id = unpack('V', $data, $offset)[1];
+            $offset += 4;
+
+            $key = $dict->lookup($key_id);
+            if ($key !== 'bin_walk') {
+                continue;
+            }
+            $value = $dict->lookup($value_id);
+            if (!is_string($value) || $value === '') {
+                return null;
+            }
+            return BinHistogramSnapshot::decode($value);
+        }
+        return null;
+    }
+
     #[\Override]
     public function generateReport(bool $full_analysis, ?bool $ffi_csr): ReportResult
     {
