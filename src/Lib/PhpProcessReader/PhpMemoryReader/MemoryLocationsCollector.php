@@ -121,6 +121,12 @@ final class MemoryLocationsCollector
      * @param \Reli\Inspector\MemoryDump\FastPath\FastPathReader|null $fast_path
      *     Optional fast-path reader for dump analysis. When provided,
      *     hot collector jobs use string-buffer reads instead of FFI.
+     * @param bool $disable_bin_walk When true, skip the ZendMM bin
+     *     walker that powers the orphan-allocation analysis pipeline
+     *     (per-bin histogram, periodic groups, shape detection,
+     *     region map). Reclaims the ~17% wall-time the walker adds at
+     *     analyze time on heaps where the orphan-allocation features
+     *     aren't needed.
      */
     public function collectAll(
         ProcessSpecifier $process_specifier,
@@ -131,6 +137,7 @@ final class MemoryLocationsCollector
         ?int $bg_address = null,
         ?ContextTreeSink $sink = null,
         ?\Reli\Inspector\MemoryDump\FastPath\FastPathReader $fast_path = null,
+        bool $disable_bin_walk = false,
     ): CollectedMemories {
         $pid = $process_specifier->pid;
         $php_version = $target_php_settings->php_version;
@@ -411,17 +418,19 @@ final class MemoryLocationsCollector
         // resolution still works in that case.
         $symbol_resolver = $this->buildSymbolResolver($pid, $process_memory_map);
         $bin_walk_result = null;
-        try {
-            $bin_walk_result = (new ZendMmBinWalker($this->memory_reader))->walk(
-                $pid,
-                $zend_mm_main_chunk,
-                $dereferencer,
-                $ctx->address_map,
-                $process_memory_map,
-                $symbol_resolver,
-            );
-        } catch (\Throwable $e) {
-            Log::debug('ZendMmBinWalker failed', ['exception' => $e]);
+        if (!$disable_bin_walk) {
+            try {
+                $bin_walk_result = (new ZendMmBinWalker($this->memory_reader))->walk(
+                    $pid,
+                    $zend_mm_main_chunk,
+                    $dereferencer,
+                    $ctx->address_map,
+                    $process_memory_map,
+                    $symbol_resolver,
+                );
+            } catch (\Throwable $e) {
+                Log::debug('ZendMmBinWalker failed', ['exception' => $e]);
+            }
         }
 
         $context_pools->clear();

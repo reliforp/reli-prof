@@ -39,6 +39,7 @@ final class MemoryDumpReader
         private ?int $bg_address = null,
         private ?int $rss_bytes = null,
         private ?FastPathReader $fast_path = null,
+        private bool $disable_bin_walk = false,
     ) {
     }
 
@@ -77,6 +78,7 @@ final class MemoryDumpReader
                 $this->bg_address,
                 $sink,
                 $this->fast_path,
+                $this->disable_bin_walk,
             );
 
             $region_boundaries = new RegionBoundaries(
@@ -166,6 +168,7 @@ final class MemoryDumpReader
             $this->bg_address,
             $sink,
             $this->fast_path,
+            $this->disable_bin_walk,
         );
 
         // RegionBoundaries is already set on the sink by collectAll()

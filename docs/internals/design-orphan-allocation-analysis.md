@@ -424,6 +424,27 @@ when detectors don't quite reach a confident label.
 1. **Bin walker cost on large heaps.** ~10M slots for hundreds of MiB
    of ZendMM is acceptable; the walker always runs and always emits
    the full slot list. Compression is a future knob, not a v1 concern.
+
+   **Empirical overhead** (PHP 8.4, sandbox, 5-run mean of
+   `inspector:memory:analyze` on synthetic targets):
+
+   | target | walker OFF | walker ON | Δ wall | Δ rmem |
+   |---|---|---|---|---|
+   | 23 MB heap, 90K alloc | 10.00 s | 11.68 s | **+16.8 %** | +0.7 % |
+   | 232 MB heap, 900K alloc | 99.22 s | 116.39 s | **+17.3 %** | +0.07 % |
+
+   Linear scaling, ~17 % wall-time across both target sizes. rmem
+   size delta is essentially noise (per-(bin, label) sample address
+   list capped at 256, so total bounded by shape cardinality, not by
+   slot count).
+
+   **Default-on with `--no-bin-walk` opt-out.** The orphan-allocation
+   features are the whole point of the pipeline; default-off would
+   just hide them. The 17 % surcharge is acceptable for a
+   once-per-investigation analyze; users with very large dumps who
+   don't need the orphan path can pass `--no-bin-walk` to
+   `inspector:memory:analyze` to skip it.
+
 2. **rmem size.** Slot lists land directly in rmem alongside
    `bin_histogram`. No sidecar file; rmem already sits in the same
    order of magnitude for non-trivial captures.
