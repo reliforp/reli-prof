@@ -151,7 +151,7 @@ final class EmitResourceJob implements CollectorJob
             $orig_path_address = $php_stream->orig_path;
             if ($orig_path_address !== 0) {
                 $resource_context->stream_orig_path = (string)$ctx->dereferencer->deref(
-                    new Pointer(RawString::class, $orig_path_address, 256),
+                    new Pointer(RawString::class, $orig_path_address, 4096),
                 );
             }
 
