@@ -56,6 +56,9 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendArray $included_files;
 
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public ZendArray $regular_list;
+
     /** @var Pointer<ZendArray>|null */
     public ?Pointer $ini_directives;
 
@@ -93,6 +96,7 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
         unset($this->objects_store);
         unset($this->exception);
         unset($this->included_files);
+        unset($this->regular_list);
     }
 
     #[\Override]
@@ -234,6 +238,10 @@ final class ZendExecutorGlobals implements LazyDereferencable, PointedTypeResolv
             ),
             'included_files' => $this->included_files = $this->createInlineDereferencable(
                 'included_files',
+                ZendArray::class,
+            ),
+            'regular_list' => $this->regular_list = $this->createInlineDereferencable(
+                'regular_list',
                 ZendArray::class,
             ),
             'exception' => $this->exception = $this->readExceptionEager(),
