@@ -2985,6 +2985,26 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $found_unix_socket_with_fd = false;
         $found_glob_with_pattern = false;
         $found_userspace_with_object = false;
+        // Each stream label should also surface MemoryLocation accounting
+        // entries — the php_stream itself plus the per-label abstract data
+        // block — so the analyzer can attribute those bytes to the resource.
+        $found_stdio_with_locations = false;
+        $found_unix_socket_with_locations = false;
+        $found_glob_with_locations = false;
+        $found_userspace_with_locations = false;
+
+        $hasLocationOfClass = static function (array $value, string $class): bool {
+            $locations = $value['#locations'] ?? null;
+            if (!is_iterable($locations)) {
+                return false;
+            }
+            foreach ($locations as $location) {
+                if ($location instanceof $class) {
+                    return true;
+                }
+            }
+            return false;
+        };
 
         $walk = function (array $tree) use (
             &$walk,
@@ -2993,6 +3013,11 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             &$found_unix_socket_with_fd,
             &$found_glob_with_pattern,
             &$found_userspace_with_object,
+            &$found_stdio_with_locations,
+            &$found_unix_socket_with_locations,
+            &$found_glob_with_locations,
+            &$found_userspace_with_locations,
+            $hasLocationOfClass,
         ): void {
             foreach ($tree as $key => $value) {
                 if (!is_array($value) || $key === '#locations') {
@@ -3003,10 +3028,23 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                 if ($type === 'ResourceContext' && $label !== null) {
                     $orig_path = $value['stream_orig_path'] ?? null;
                     $fd = $value['stream_fd'] ?? null;
+                    $hasStreamLoc = $hasLocationOfClass(
+                        $value,
+                        \Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\PhpStreamMemoryLocation::class,
+                    );
                     if ($label === 'STDIO') {
                         if (is_string($orig_path) && str_contains($orig_path, 'reli-stdio-')) {
                             if (is_int($fd) && $fd > 2) {
                                 $found_stdio_with_orig_path = true;
+                            }
+                            if (
+                                $hasStreamLoc
+                                && $hasLocationOfClass(
+                                    $value,
+                                    \Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\PhpStdioStreamDataMemoryLocation::class,
+                                )
+                            ) {
+                                $found_stdio_with_locations = true;
                             }
                         }
                         if (isset($value['stream_temp_name'])) {
@@ -3019,6 +3057,15 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                     if ($label === 'unix_socket') {
                         if (is_int($fd) && $fd > 2) {
                             $found_unix_socket_with_fd = true;
+                            if (
+                                $hasStreamLoc
+                                && $hasLocationOfClass(
+                                    $value,
+                                    \Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\PhpNetstreamDataMemoryLocation::class,
+                                )
+                            ) {
+                                $found_unix_socket_with_locations = true;
+                            }
                         }
                     }
                     // glob:// streams: _php_stream_opendir does not populate
@@ -3034,11 +3081,29 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                             && str_contains($orig_path, '*.txt')
                         ) {
                             $found_glob_with_pattern = true;
+                            if (
+                                $hasStreamLoc
+                                && $hasLocationOfClass(
+                                    $value,
+                                    \Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\PhpGlobStreamDataMemoryLocation::class,
+                                )
+                            ) {
+                                $found_glob_with_locations = true;
+                            }
                         }
                     }
                     if ($label === 'user-space') {
                         if (isset($value['stream_userspace_object'])) {
                             $found_userspace_with_object = true;
+                            if (
+                                $hasStreamLoc
+                                && $hasLocationOfClass(
+                                    $value,
+                                    \Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\PhpUserstreamDataMemoryLocation::class,
+                                )
+                            ) {
+                                $found_userspace_with_locations = true;
+                            }
                         }
                     }
                 }
@@ -3066,6 +3131,22 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $this->assertTrue(
             $found_userspace_with_object,
             'user-space stream should expose a stream_userspace_object child for the wrapper instance'
+        );
+        $this->assertTrue(
+            $found_stdio_with_locations,
+            'STDIO ResourceContext should carry PhpStreamMemoryLocation + PhpStdioStreamDataMemoryLocation entries'
+        );
+        $this->assertTrue(
+            $found_unix_socket_with_locations,
+            'unix_socket ResourceContext should carry PhpStreamMemoryLocation + PhpNetstreamDataMemoryLocation entries'
+        );
+        $this->assertTrue(
+            $found_glob_with_locations,
+            'glob ResourceContext should carry PhpStreamMemoryLocation + PhpGlobStreamDataMemoryLocation entries'
+        );
+        $this->assertTrue(
+            $found_userspace_with_locations,
+            'user-space ResourceContext should carry PhpStreamMemoryLocation + PhpUserstreamDataMemoryLocation entries'
         );
     }
 

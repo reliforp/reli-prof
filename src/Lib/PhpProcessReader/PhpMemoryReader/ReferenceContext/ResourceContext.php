@@ -31,7 +31,8 @@ final class ResourceContext implements ReferenceContext
     #[\Override]
     public function getLocations(): iterable
     {
-        return [$this->memory_location];
+        yield $this->memory_location;
+        yield from $this->extra_locations;
     }
 
     #[\Override]
