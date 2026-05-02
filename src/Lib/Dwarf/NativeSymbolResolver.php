@@ -104,14 +104,33 @@ final class NativeSymbolResolver
             }
         }
 
-        // Try loading from the binary itself
-        $resolver = $this->tryLoadFromFile($modulePath);
+        // Strict 3-step probe so distro-stripped binaries with a
+        // separate `-dbgsym` companion surface their full symbol set
+        // (the validator's PHP 8.3 + php8.3-cli-dbgsym setup).
+        //
+        // Old behaviour deferred everything to the all-in-one
+        // {@see Elf64ReverseSymbolResolver::loadFromBinary}, which
+        // returns success on the first non-null hit — `.dynsym`
+        // counted, so the debug-file branch was never reached and
+        // we ended up only ever resolving exported symbols.
+        //
+        //  1. main binary `.symtab`  — the typical "binary not stripped"
+        //     case (custom builds with debug); cheap, the binary is
+        //     already in the page cache after exec.
+        //  2. separate debug file `.symtab` — distro convention; brings
+        //     in vtables (`std_object_handlers` etc.) that
+        //     FunctionPointerDetector wants to label.
+        //  3. main binary `.dynsym` — last resort. Exports only;
+        //     `execute_ex+0x...` lands here, vtables don't.
+        $resolver = $this->tryLoadSymtabFromFile($modulePath);
         if ($resolver === null) {
-            // Fallback: try separate debug file for .symtab
             $debugFile = $this->debugFileLocator->locate($modulePath);
             if ($debugFile !== null) {
-                $resolver = $this->tryLoadFromFile($debugFile);
+                $resolver = $this->tryLoadSymtabFromFile($debugFile);
             }
+        }
+        if ($resolver === null) {
+            $resolver = $this->tryLoadDynsymFromFile($modulePath);
         }
 
         if ($resolver !== null && $fingerprint !== null) {
@@ -174,20 +193,39 @@ final class NativeSymbolResolver
         return $this->isFileCache[$path];
     }
 
-    private function tryLoadFromFile(string $filePath): ?Elf64ReverseSymbolResolver
+    private function tryLoadSymtabFromFile(string $filePath): ?Elf64ReverseSymbolResolver
+    {
+        $reader = $this->readBinary($filePath);
+        if ($reader === null) {
+            return null;
+        }
+        return Elf64ReverseSymbolResolver::loadSymtabFromBinary(
+            $this->elfParser,
+            $reader,
+        );
+    }
+
+    private function tryLoadDynsymFromFile(string $filePath): ?Elf64ReverseSymbolResolver
+    {
+        $reader = $this->readBinary($filePath);
+        if ($reader === null) {
+            return null;
+        }
+        return Elf64ReverseSymbolResolver::loadDynsymFromBinary(
+            $this->elfParser,
+            $reader,
+        );
+    }
+
+    private function readBinary(string $filePath): ?StringByteReader
     {
         $resolved = $this->resolvePath($filePath);
-
         try {
             $binary = $this->fileReader->readAll($resolved);
         } catch (\Throwable) {
             return null;
         }
-
-        return Elf64ReverseSymbolResolver::loadFromBinary(
-            $this->elfParser,
-            new StringByteReader($binary),
-        );
+        return new StringByteReader($binary);
     }
 
     /**

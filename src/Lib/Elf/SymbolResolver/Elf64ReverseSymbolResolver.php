@@ -63,31 +63,68 @@ final class Elf64ReverseSymbolResolver
         return $resolver;
     }
 
-    public static function loadFromBinary(Elf64Parser $parser, ByteReaderInterface $data): ?self
-    {
+    /**
+     * Try to build a resolver from the binary's `.symtab` section
+     * (full symbol table, includes static / non-exported entries —
+     * notably C++ vtables and the `B`/`D`-typed `std_object_handlers`
+     * style globals reli's FunctionPointerDetector wants to label).
+     *
+     * Returns null when the binary is stripped (no `.symtab`). The
+     * caller should then try the separate debug file before falling
+     * back to {@see loadDynsymFromBinary}, which only sees exported
+     * symbols.
+     */
+    public static function loadSymtabFromBinary(
+        Elf64Parser $parser,
+        ByteReaderInterface $data,
+    ): ?self {
         try {
             $elf_header = $parser->parseElfHeader($data);
             if ($elf_header->e_shnum === 0 || $elf_header->e_shoff->toInt() === 0) {
-                return self::loadDynamicOnly($parser, $data);
+                return null;
             }
-
             $section_headers = $parser->parseSectionHeader($data, $elf_header);
-
-            // Try .symtab first (has more symbols)
             $symtab_entry = $section_headers->findSymbolTableEntry();
             $strtab_entry = $section_headers->findStringTableEntry();
-
-            if ($symtab_entry !== null && $strtab_entry !== null) {
-                $symbol_table = $parser->parseSymbolTableFromSectionHeader($data, $symtab_entry);
-                $string_table = $parser->parseStringTableFromSectionHeader($data, $strtab_entry);
-                return self::fromSymbolTableAndStringTable($symbol_table, $string_table);
+            if ($symtab_entry === null || $strtab_entry === null) {
+                return null;
             }
-
-            // Fallback to .dynsym
-            return self::loadDynamicOnly($parser, $data);
+            $symbol_table = $parser->parseSymbolTableFromSectionHeader($data, $symtab_entry);
+            $string_table = $parser->parseStringTableFromSectionHeader($data, $strtab_entry);
+            return self::fromSymbolTableAndStringTable($symbol_table, $string_table);
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    /**
+     * Last-resort path: build a resolver from the dynamic symbol table
+     * (`.dynsym`) only. Catches exported symbols (the equivalent of
+     * `nm -D`) but misses static-storage globals like vtables.
+     */
+    public static function loadDynsymFromBinary(
+        Elf64Parser $parser,
+        ByteReaderInterface $data,
+    ): ?self {
+        return self::loadDynamicOnly($parser, $data);
+    }
+
+    /**
+     * Compatibility entry point: tries `.symtab` first, then falls
+     * back to `.dynsym` from the same binary. Callers that have access
+     * to a separate debug file should prefer the explicit
+     * {@see loadSymtabFromBinary} / {@see loadDynsymFromBinary} pair
+     * so they can interleave the debug-file lookup between the two
+     * steps — stripped distro binaries with a `-dbgsym` companion
+     * never surface their full symbol set otherwise.
+     */
+    public static function loadFromBinary(Elf64Parser $parser, ByteReaderInterface $data): ?self
+    {
+        $resolver = self::loadSymtabFromBinary($parser, $data);
+        if ($resolver !== null) {
+            return $resolver;
+        }
+        return self::loadDynsymFromBinary($parser, $data);
     }
 
     private static function loadDynamicOnly(Elf64Parser $parser, ByteReaderInterface $data): ?self

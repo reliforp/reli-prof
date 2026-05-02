@@ -222,4 +222,49 @@ class Elf64ReverseSymbolResolverTest extends BaseTestCase
         $resolver = Elf64ReverseSymbolResolver::fromArray([]);
         $this->assertNull($resolver->resolve(0x1000));
     }
+
+    public function testLoadSymtabReturnsNullForStrippedBinary(): void
+    {
+        // The validator's scenario: distro-shipped PHP has only
+        // `.dynsym`, no `.symtab`. The split methods make this
+        // observable so NativeSymbolResolver can sequence the
+        // separate-debug-file lookup between the two.
+        $binary = file_get_contents(PHP_BINARY);
+        if ($binary === false) {
+            $this->markTestSkipped('Cannot read PHP binary');
+        }
+        $hasSymtab = (bool)preg_match('/\\.symtab/', $binary);
+        if ($hasSymtab) {
+            $this->markTestSkipped(
+                'PHP binary has .symtab — this assertion only meaningful'
+                . ' against a stripped binary',
+            );
+        }
+        $parser = new Elf64Parser(new LittleEndianReader());
+        $resolver = Elf64ReverseSymbolResolver::loadSymtabFromBinary(
+            $parser,
+            new StringByteReader($binary),
+        );
+        $this->assertNull($resolver);
+    }
+
+    public function testLoadDynsymAlwaysWorksForRealBinary(): void
+    {
+        // .dynsym is always present in any dynamically linked ELF —
+        // this is the last-resort path FunctionPointerDetector falls
+        // back to when neither main nor debug carry .symtab.
+        $binary = file_get_contents(PHP_BINARY);
+        if ($binary === false) {
+            $this->markTestSkipped('Cannot read PHP binary');
+        }
+        $parser = new Elf64Parser(new LittleEndianReader());
+        $resolver = Elf64ReverseSymbolResolver::loadDynsymFromBinary(
+            $parser,
+            new StringByteReader($binary),
+        );
+        $this->assertNotNull($resolver);
+        // dynsym always carries `execute_ex` — it's an exported entry
+        // used by extensions like Xdebug.
+        $this->assertNotEmpty($resolver->toArray());
+    }
 }
