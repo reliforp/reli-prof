@@ -83,6 +83,10 @@ final class BinPeriodicityPass implements PassInterface
             $stride = (int)($g['stride'] ?? 0);
             $fp = (string)($g['fingerprint'] ?? '');
             $sample_addr = (int)($g['sample_addr'] ?? 0);
+            $inferred_shape = isset($g['inferred_shape']) ? (string)$g['inferred_shape'] : '';
+            $inferred_confidence = isset($g['inferred_confidence'])
+                ? (string)$g['inferred_confidence']
+                : '';
             if ($count <= 0 || $bin_size <= 0) {
                 continue;
             }
@@ -91,13 +95,35 @@ final class BinPeriodicityPass implements PassInterface
             $is_hotspot = $bin_total > 0
                 && Cast::toFloat($count) / Cast::toFloat($bin_total) >= self::HOTSPOT_FRACTION;
 
+            // Inferred shape, when present, leads the summary text — it's
+            // the bit a human reader actually wants ("16,000 Buckets")
+            // rather than the raw fingerprint.
+            $shape_prefix = $inferred_shape !== ''
+                ? sprintf('%s × ', $inferred_shape)
+                : '';
+
+            $facts = [
+                'bin_num' => $bin_num,
+                'bin_size' => $bin_size,
+                'count' => $count,
+                'stride' => $stride,
+                'fingerprint' => $fp,
+                'sample_addr' => $sample_addr,
+                'bin_total' => $bin_total,
+            ];
+            if ($inferred_shape !== '') {
+                $facts['inferred_shape'] = $inferred_shape;
+                $facts['inferred_confidence'] = $inferred_confidence;
+            }
+
             $findings[] = new Finding(
                 kind: $is_hotspot ? 'bin_periodic_hotspot' : 'bin_periodic_group',
                 severity: $is_hotspot ? FindingSeverity::Medium : FindingSeverity::Info,
                 confidence: FindingConfidence::Medium,
                 summary: sprintf(
-                    'bin[%d B]: %s same-shape live slots, stride %d B%s'
+                    '%sbin[%d B]: %s same-shape live slots, stride %d B%s'
                     . ' (sample 0x%x, fp %s%s)',
+                    $shape_prefix,
                     $bin_size,
                     number_format($count),
                     $stride,
@@ -111,15 +137,7 @@ final class BinPeriodicityPass implements PassInterface
                     substr($fp, 0, 16),
                     strlen($fp) > 16 ? '…' : '',
                 ),
-                facts: [
-                    'bin_num' => $bin_num,
-                    'bin_size' => $bin_size,
-                    'count' => $count,
-                    'stride' => $stride,
-                    'fingerprint' => $fp,
-                    'sample_addr' => $sample_addr,
-                    'bin_total' => $bin_total,
-                ],
+                facts: $facts,
                 hypothesis: $is_hotspot
                     ? 'Likely orphan / C-extension emalloc — many same-shape allocations'
                         . ' dominate this bin without a typed PHP root.'

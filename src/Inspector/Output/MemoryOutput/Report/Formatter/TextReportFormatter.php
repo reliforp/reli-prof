@@ -317,14 +317,15 @@ final class TextReportFormatter implements ReportFormatterInterface
             $lines[] = '=== ZendMM Periodic Groups ===';
             $lines[] = '';
             $lines[] = sprintf(
-                '  %8s %10s %8s  %-14s  %s',
+                '  %8s %10s %8s  %-14s  %-32s %s',
                 'BinSize',
                 'Count',
                 'Stride',
                 'Sample addr',
-                'Fingerprint (hex, first 16 B)',
+                'Inferred shape',
+                'Fingerprint',
             );
-            $lines[] = '  ' . str_repeat('-', 80);
+            $lines[] = '  ' . str_repeat('-', 96);
 
             // Already sorted by count desc inside the bin walker but
             // re-sort here to be defensive (findings may have been
@@ -352,15 +353,23 @@ final class TextReportFormatter implements ReportFormatterInterface
                 $sample = $facts['sample_addr'] ?? 0;
                 /** @var string $fp */
                 $fp = $facts['fingerprint'] ?? '';
+                /** @var string $shape */
+                $shape = $facts['inferred_shape'] ?? '';
+                /** @var string $confidence */
+                $confidence = $facts['inferred_confidence'] ?? '';
+                $shape_cell = $shape !== ''
+                    ? sprintf('%s [%s]', $shape, strtoupper($confidence))
+                    : '—';
                 $tag = $finding->kind === 'bin_periodic_hotspot' ? '*' : ' ';
                 $lines[] = sprintf(
-                    ' %s%8s %10s %8d  0x%012x  %s',
+                    ' %s%8s %10s %8d  0x%012x  %-32s %s',
                     $tag,
                     SizeFormatter::format($bin_size),
                     number_format($count),
                     $stride,
                     $sample,
-                    substr($fp, 0, 32),
+                    strlen($shape_cell) > 32 ? substr($shape_cell, 0, 31) . '…' : $shape_cell,
+                    substr($fp, 0, 16),
                 );
             }
             $lines[] = '  (* = hotspot: dominates its bin)';

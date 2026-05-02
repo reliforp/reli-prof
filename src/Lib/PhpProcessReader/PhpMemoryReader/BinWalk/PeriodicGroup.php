@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk;
 
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ShapeDetection;
+
 /**
  * A run of like-shaped live small-bin slots observed at constant stride.
  *
@@ -20,6 +22,11 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk;
  * cheap structural similarity that, combined with the stride / count, is
  * enough to surface "16,000 copies of one shape in bin[32 B]" without any
  * detector knowing what the shape is.
+ *
+ * When the detector pipeline (Detector\\*) recognises the bytes as a
+ * known structure it attaches a {@see ShapeDetection} to label the
+ * group; downstream renderers can show "Bucket(zval IS_STRING)" or
+ * "zend_string(len=11)" instead of bare hex.
  */
 final class PeriodicGroup
 {
@@ -30,6 +37,7 @@ final class PeriodicGroup
         public readonly int $stride,
         public readonly string $fingerprint_hex,
         public readonly int $sample_addr,
+        public readonly ?ShapeDetection $detection = null,
     ) {
     }
 }

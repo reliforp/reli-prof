@@ -14,6 +14,10 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk;
 
 use Reli\Lib\PhpInternals\Types\Zend\ZendMmBinsInfo;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\BucketDetector;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ShapeDetection;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ShapeDetector;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ZendStringDetector;
 
 /**
  * Periodicity detection over bin-walker output.
@@ -36,12 +40,19 @@ final class PeriodicityDetector
 
     /**
      * @param array<int, array<int, list<array{addr: int, fp: string}>>> $live_by_bin_by_chunk
+     * @param list<ShapeDetector>|null $detectors When null, the built-in
+     *     PHP-shape detectors are used. Pass an empty list to disable
+     *     detection entirely (tests / future opt-out).
      * @return list<PeriodicGroup>
      */
     public static function detect(
         array $live_by_bin_by_chunk,
         int $threshold = self::PERIODIC_THRESHOLD,
+        ?array $detectors = null,
     ): array {
+        if ($detectors === null) {
+            $detectors = self::defaultDetectors();
+        }
         $out = [];
         foreach ($live_by_bin_by_chunk as $bin_num => $by_chunk) {
             $bin_size = ZendMmBinsInfo::getSize($bin_num);
@@ -60,6 +71,7 @@ final class PeriodicityDetector
                     if ($stride === 0) {
                         continue;
                     }
+                    $detection = self::pickBestDetection($detectors, $fp, $bin_size);
                     $out[] = new PeriodicGroup(
                         bin_num: $bin_num,
                         bin_size: $bin_size,
@@ -67,6 +79,7 @@ final class PeriodicityDetector
                         stride: $stride,
                         fingerprint_hex: bin2hex($fp),
                         sample_addr: $addrs[0],
+                        detection: $detection,
                     );
                 }
             }
@@ -76,6 +89,55 @@ final class PeriodicityDetector
             static fn(PeriodicGroup $a, PeriodicGroup $b) => $b->count <=> $a->count,
         );
         return $out;
+    }
+
+    /** @return list<ShapeDetector> */
+    private static function defaultDetectors(): array
+    {
+        return [
+            new BucketDetector(),
+            new ZendStringDetector(),
+        ];
+    }
+
+    /**
+     * Pick the highest-confidence detection from the registered detectors.
+     * Confidence-first per the design's selection rule
+     * (HIGH > MEDIUM > LOW), then first-registered wins on tie. Detectors
+     * that return null are skipped.
+     *
+     * @param list<ShapeDetector> $detectors
+     */
+    private static function pickBestDetection(
+        array $detectors,
+        string $fp,
+        int $bin_size,
+    ): ?ShapeDetection {
+        $best = null;
+        foreach ($detectors as $d) {
+            $hit = $d->detect($fp, $bin_size);
+            if ($hit === null) {
+                continue;
+            }
+            if ($best === null) {
+                $best = $hit;
+                continue;
+            }
+            if (self::confidenceRank($hit->confidence) > self::confidenceRank($best->confidence)) {
+                $best = $hit;
+            }
+        }
+        return $best;
+    }
+
+    private static function confidenceRank(string $c): int
+    {
+        return match ($c) {
+            ShapeDetection::CONFIDENCE_HIGH => 3,
+            ShapeDetection::CONFIDENCE_MEDIUM => 2,
+            ShapeDetection::CONFIDENCE_LOW => 1,
+            default => 0,
+        };
     }
 
     /** @param list<int> $sorted_addrs */

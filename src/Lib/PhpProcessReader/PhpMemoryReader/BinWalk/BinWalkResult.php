@@ -84,14 +84,16 @@ final class BinWalkResult
      *     count: int,
      *     stride: int,
      *     fingerprint: string,
-     *     sample_addr: int
+     *     sample_addr: int,
+     *     inferred_shape?: string,
+     *     inferred_confidence?: string
      * }>
      */
     public function toSummaryPeriodicGroupsArray(): array
     {
         $out = [];
         foreach ($this->periodic_groups as $g) {
-            $out[] = [
+            $row = [
                 'bin_num' => $g->bin_num,
                 'bin_size' => $g->bin_size,
                 'count' => $g->count,
@@ -99,6 +101,11 @@ final class BinWalkResult
                 'fingerprint' => $g->fingerprint_hex,
                 'sample_addr' => $g->sample_addr,
             ];
+            if ($g->detection !== null) {
+                $row['inferred_shape'] = $g->detection->label;
+                $row['inferred_confidence'] = $g->detection->confidence;
+            }
+            $out[] = $row;
         }
         return $out;
     }
