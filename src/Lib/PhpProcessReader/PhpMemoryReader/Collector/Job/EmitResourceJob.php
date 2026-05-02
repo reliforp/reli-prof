@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\Job;
 
 use Reli\Lib\PhpInternals\Types\C\RawString;
+use Reli\Lib\PhpInternals\Types\Php\PhpNetstreamData;
 use Reli\Lib\PhpInternals\Types\Php\PhpStdioStreamData;
 use Reli\Lib\PhpInternals\Types\Php\PhpStream;
 use Reli\Lib\PhpInternals\Types\Php\PhpStreamMemoryData;
@@ -146,6 +147,13 @@ final class EmitResourceJob implements CollectorJob
             $label = (string)$ctx->dereferencer->deref(new Pointer(RawString::class, $label_address, 32));
             $resource_context->stream_type_label = $label;
 
+            $orig_path_address = $php_stream->orig_path;
+            if ($orig_path_address !== 0) {
+                $resource_context->stream_orig_path = (string)$ctx->dereferencer->deref(
+                    new Pointer(RawString::class, $orig_path_address, 256),
+                );
+            }
+
             if ($label === 'MEMORY') {
                 $this->collectMemoryStreamData($php_stream, $ctx, $resource_context);
             } elseif ($label === 'TEMP') {
@@ -154,6 +162,13 @@ final class EmitResourceJob implements CollectorJob
                 $this->collectStdioStreamData($php_stream, $ctx, $resource_context);
             } elseif ($label === 'user-space') {
                 return $this->extractUserspaceObjectZval($php_stream, $ctx);
+            } elseif (
+                $label === 'tcp_socket'
+                || $label === 'udp_socket'
+                || $label === 'unix_socket'
+                || $label === 'udg_socket'
+            ) {
+                $this->collectSocketStreamData($php_stream, $ctx, $resource_context);
             }
         } catch (\Throwable) {
             return null;
@@ -292,6 +307,25 @@ final class EmitResourceJob implements CollectorJob
                 $resource_context->add('stream_temp_name', $cached);
             }
         }
+    }
+
+    private function collectSocketStreamData(
+        PhpStream $php_stream,
+        CollectorContext $ctx,
+        ResourceContext $resource_context,
+    ): void {
+        $abstract_address = $php_stream->abstract;
+        if ($abstract_address === 0) {
+            return;
+        }
+
+        $netstream_data = $ctx->dereferencer->deref(new Pointer(
+            PhpNetstreamData::class,
+            $abstract_address,
+            $ctx->zend_type_reader->sizeOf('php_netstream_data_t'),
+        ));
+
+        $resource_context->stream_fd = $netstream_data->socket;
     }
 
     private function extractUserspaceObjectZval(

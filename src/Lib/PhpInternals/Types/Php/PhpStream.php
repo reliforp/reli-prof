@@ -28,6 +28,8 @@ final class PhpStream implements CDataDereferencable
     public int $abstract;
     /** @psalm-suppress PropertyNotSetInConstructor */
     public int $res;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $orig_path;
 
     /**
      * @param CastedCData<php_stream> $casted_cdata
@@ -40,6 +42,7 @@ final class PhpStream implements CDataDereferencable
         unset($this->ops);
         unset($this->abstract);
         unset($this->res);
+        unset($this->orig_path);
     }
 
     public function __get(string $field_name): mixed
@@ -51,6 +54,9 @@ final class PhpStream implements CDataDereferencable
             'abstract' => $this->abstract = $this->casted_cdata->casted->abstract,
             'res' => $this->res = FFIHelper::castPointerToInt(
                 $this->casted_cdata->casted->res
+            ),
+            'orig_path' => $this->orig_path = FFIHelper::castPointerToInt(
+                $this->casted_cdata->casted->orig_path
             ),
         };
     }

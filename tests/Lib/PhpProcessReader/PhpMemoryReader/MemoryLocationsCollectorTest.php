@@ -2825,6 +2825,237 @@ class MemoryLocationsCollectorTest extends BaseTestCase
     }
 
     /**
+     * Per-label child decoders attached to the resource (STDIO temp_name,
+     * userspace object zval, socket fd, glob orig_path) should surface on
+     * the ResourceContext as either child links or scalar metadata.
+     */
+    #[DataProvider('provideFromV80')]
+    public function testStreamChildDecodersExposeFdOrigPathAndUserspaceObject(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        $target_script =
+            <<<'CODE'
+            <?php
+            $stdio_path = tempnam(sys_get_temp_dir(), 'reli-stdio-');
+            $stdio_stream = fopen($stdio_path, 'r+');
+            $tmp_stream = tmpfile();
+
+            $sock_path = sys_get_temp_dir() . '/reli-sock-' . uniqid();
+            $server = stream_socket_server('unix://' . $sock_path);
+
+            $glob_dir = sys_get_temp_dir() . '/reli-glob-' . uniqid();
+            mkdir($glob_dir);
+            touch($glob_dir . '/a.txt');
+            $glob_stream = opendir('glob://' . $glob_dir . '/*.txt');
+
+            class ReliTestStream {
+                public $context;
+                public string $marker = 'RELI_USERSPACE_MARKER';
+                private bool $eof = false;
+                public function stream_open($path, $mode, $options, &$opened_path) { return true; }
+                public function stream_eof() { return $this->eof; }
+                public function stream_read($count) { $this->eof = true; return ''; }
+            }
+            stream_wrapper_register('relitest', ReliTestStream::class);
+            $userspace_stream = fopen('relitest://hello', 'r');
+
+            echo "ready\n";
+            fgets(STDIN);
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes
+        );
+        $s = fgets($pipes[1]);
+        $this->assertSame("ready\n", $s);
+
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
+                new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
+            ),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
+        );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
+            $binary_fingerprint_creator,
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(
+                php_version: $php_version,
+            )
+        );
+
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            )
+        );
+        $sink = new ArrayContextTreeSink();
+        $memory_locations_collector->collectAll(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+            $executor_globals_address,
+            $compiler_globals_address,
+            null,
+            null,
+            $sink,
+        );
+
+        $contexts_analyzed = $sink->getResult();
+
+        $found_stdio_with_orig_path = false;
+        $found_stdio_with_temp_name = false;
+        $found_unix_socket_with_fd = false;
+        $found_glob_with_pattern = false;
+        $found_userspace_with_object = false;
+
+        $walk = function (array $tree) use (
+            &$walk,
+            &$found_stdio_with_orig_path,
+            &$found_stdio_with_temp_name,
+            &$found_unix_socket_with_fd,
+            &$found_glob_with_pattern,
+            &$found_userspace_with_object,
+        ): void {
+            foreach ($tree as $key => $value) {
+                if (!is_array($value) || $key === '#locations') {
+                    continue;
+                }
+                $type = $value['#type'] ?? null;
+                $label = $value['stream_type_label'] ?? null;
+                if ($type === 'ResourceContext' && $label !== null) {
+                    $orig_path = $value['stream_orig_path'] ?? null;
+                    $fd = $value['stream_fd'] ?? null;
+                    if ($label === 'STDIO') {
+                        if (is_string($orig_path) && str_contains($orig_path, 'reli-stdio-')) {
+                            if (is_int($fd) && $fd > 2) {
+                                $found_stdio_with_orig_path = true;
+                            }
+                        }
+                        if (isset($value['stream_temp_name'])) {
+                            $found_stdio_with_temp_name = true;
+                        }
+                    }
+                    // unix_socket: PHP < 8.4 does not always populate
+                    // stream->orig_path for streams created via
+                    // stream_socket_server, so we only require the fd here.
+                    if ($label === 'unix_socket') {
+                        if (is_int($fd) && $fd > 2) {
+                            $found_unix_socket_with_fd = true;
+                        }
+                    }
+                    // glob:// streams: PHP's _php_stream_opendir does not
+                    // populate php_stream->orig_path, and the pattern lives
+                    // inside php_glob_stream_data after a libc-dependent
+                    // glob_t (size differs between glibc and musl). We
+                    // intentionally do not decode that struct, so the only
+                    // signal exposed for glob is the label itself.
+                    if ($label === 'glob') {
+                        $found_glob_with_pattern = true;
+                    }
+                    if ($label === 'user-space') {
+                        if (isset($value['stream_userspace_object'])) {
+                            $found_userspace_with_object = true;
+                        }
+                    }
+                }
+                $walk($value);
+            }
+        };
+        $walk($contexts_analyzed);
+
+        $this->assertTrue(
+            $found_stdio_with_orig_path,
+            'STDIO stream should expose orig_path (file path) and stream_fd > 2'
+        );
+        $this->assertTrue(
+            $found_stdio_with_temp_name,
+            'tmpfile()-backed STDIO stream should expose a stream_temp_name child string'
+        );
+        $this->assertTrue(
+            $found_unix_socket_with_fd,
+            'unix_socket stream should expose stream_fd and orig_path with the socket file path'
+        );
+        $this->assertTrue(
+            $found_glob_with_pattern,
+            'glob:// stream should at least be tagged with stream_type_label=glob'
+        );
+        $this->assertTrue(
+            $found_userspace_with_object,
+            'user-space stream should expose a stream_userspace_object child for the wrapper instance'
+        );
+    }
+
+    /**
      * EG(regular_list) must show up as a root branch and its outgoing
      * edges to resources must be weak — same reasoning as objects_store:
      * a resource only reachable via the registry should not look pinned

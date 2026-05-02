@@ -1278,6 +1278,13 @@ typedef struct {
 	zval object;
 } php_userstream_data_t;
 
+// main/network.h (php_netstream_data_t — only the leading php_socket_t fd is
+// declared here; subsequent fields (sockaddr_storage, struct timeval, enum
+// ownership, …) vary by libc / PHP version and are intentionally omitted.)
+typedef struct {
+	int socket;
+} php_netstream_data_t;
+
 // ext/pdo/php_pdo_driver.h
 typedef char pdo_error_type[6];
 

@@ -362,6 +362,7 @@ class php_stream extends CData
     public ?CPointer $ops;
     public int $abstract;
     public ?CPointer $res;
+    public ?CPointer $orig_path;
 }
 
 class php_stream_memory_data extends CData
@@ -388,6 +389,11 @@ class php_userstream_data_t extends CData
 {
     public int $wrapper;
     public zval $object;
+}
+
+class php_netstream_data_t extends CData
+{
+    public int $socket;
 }
 
 class pdo_dbh_object_t extends CData
