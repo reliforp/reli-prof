@@ -23,7 +23,7 @@ use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Elf\Process\BinaryFingerprint;
 use Reli\Lib\Elf\Process\BinaryFingerprintCreator;
 use Reli\Lib\File\FileReaderInterface;
-use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
+use Reli\Lib\File\PathResolver\ProcessPathResolver;
 use Reli\Lib\PhpInternals\Types\Zend\ZendCastedTypeProvider;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
 use Reli\Lib\PhpInternals\VersionedPointedTypeResolver;
@@ -46,7 +46,7 @@ final class PhpTsrmLsCacheFinder
         private Elf64Parser $elf64_parser,
         private FileReaderInterface $file_reader,
         private ProcessMemoryMapCreatorInterface $process_memory_map_creator,
-        private ContainerAwarePathResolver $process_path_resolver,
+        private ProcessPathResolver $process_path_resolver,
         private ZendTypeReaderCreator $zend_type_reader_creator,
         private BinaryAnalysisCache $binary_analysis_cache,
         private BinaryFingerprintCreator $binary_fingerprint_creator,

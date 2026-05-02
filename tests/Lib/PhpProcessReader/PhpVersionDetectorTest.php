@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader;
 
 use Reli\BaseTestCase;
+use Reli\Lib\PhpProcessReader\MainExecutable\ProcExeReadlinkResolver;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\ByteStream\IntegerByteSequence\LittleEndianReader;
 use Reli\Lib\Elf\Parser\Elf64Parser;
@@ -74,6 +75,7 @@ class PhpVersionDetectorTest extends BaseTestCase
             ),
             ProcessMemoryMapCreator::create(),
             $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
         );
         $memory_reader = new MemoryReader();
         $process_memory_map_creator = ProcessMemoryMapCreator::create();

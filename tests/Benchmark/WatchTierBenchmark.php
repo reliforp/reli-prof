@@ -13,6 +13,7 @@
 require __DIR__ . '/../../vendor/autoload.php';
 
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
+use Reli\Lib\PhpProcessReader\MainExecutable\ProcExeReadlinkResolver;
 use Reli\Inspector\Watch\HeapStatsReader;
 use Reli\Inspector\Watch\VariableReader;
 use Reli\Inspector\Watch\VariableSpec;
@@ -101,6 +102,7 @@ $psrc = new PhpSymbolReaderCreator(
     ),
     $pmc,
     $bac,
+    new ProcExeReadlinkResolver(),
 );
 $tgr = new TsrmGlobalsResolver($psrc, $ir, $mr, $bac, $pmc, $bfc);
 $finder = new PhpGlobalsFinder(

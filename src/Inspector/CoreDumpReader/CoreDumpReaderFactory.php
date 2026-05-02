@@ -29,6 +29,8 @@ use Reli\Lib\Elf\Tls\ThreadPointerRetrieverInterface;
 use Reli\Lib\File\PathResolver\MappedPathResolver;
 use Reli\Lib\File\PathResolver\ProcessPathResolver;
 use Reli\Lib\Integer\UInt64;
+use Reli\Lib\PhpProcessReader\MainExecutable\MainExecutablePathResolver;
+use Reli\Lib\PhpProcessReader\MainExecutable\StaticMainExecutablePathResolver;
 use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
@@ -96,6 +98,33 @@ final class CoreDumpReaderFactory
                 ];
             }
         }
+        // Surface the "main executable" path as the lowest-start
+        // NT_FILE entry. /proc/<pid>/exe doesn't exist post-mortem,
+        // so we lean on the kernel-populated NT_FILE notes instead.
+        // A PIE main binary (current default for distros) is mapped
+        // at the lowest user-space address, well below the shared
+        // libraries (which the dynamic linker places much higher),
+        // so the lowest-start entry is reliably the main binary.
+        // We deliberately do *not* correlate against PT_LOAD here:
+        // when the target's coredump_filter excludes file-backed
+        // private mappings (the default 0x33 / 0x33-without-bit-0
+        // shape produced by gcore on shared text), the main
+        // executable's r-x VMAs are not in PT_LOAD even though they
+        // are in NT_FILE.
+        $main_executable_path = null;
+        $main_executable_vaddr = null;
+        /** @var NtFileEntry $file_map */
+        foreach ($file_maps as $file_map) {
+            if ($file_map->name === '') {
+                continue;
+            }
+            $start = $file_map->start->toInt();
+            if ($main_executable_vaddr === null || $start < $main_executable_vaddr) {
+                $main_executable_vaddr = $start;
+                $main_executable_path = $file_map->name;
+            }
+        }
+
         $memory_areas = [];
         /** @var array<string, int> $coredump_offsets vaddr_hex => coredump file offset */
         $coredump_offsets = [];
@@ -142,6 +171,51 @@ final class CoreDumpReaderFactory
                 $file_path,
             );
         }
+
+        // NT_FILE entries enumerate every file-backed VMA the kernel
+        // saw, including text (`r-x`) ones that `coredump_filter` may
+        // exclude from PT_LOAD by default. Without those, ELF symbol
+        // resolution against shared libraries (`.dynsym` reads, etc.)
+        // throws OutOfBoundsException because the address isn't in
+        // any tracked memory area. Add a synthetic memory area for
+        // every NT_FILE range not already covered by a PT_LOAD-derived
+        // entry so the MemoryReader can fall back to reading the
+        // file via `--dependency-root`. The synthetic permissions
+        // are set to `r-x` because in practice the missing ranges
+        // are text segments — the dumper / readers don't actually
+        // gate on the bits, so being slightly imprecise is fine.
+        foreach ($file_maps as $file_map) {
+            if ($file_map->name === '') {
+                continue;
+            }
+            $fm_start = $file_map->start->toInt();
+            $fm_end = $file_map->end->toInt();
+            $covered = false;
+            foreach ($memory_areas as $area) {
+                if (
+                    hexdec($area->begin) <= $fm_start
+                    && $fm_end <= hexdec($area->end)
+                ) {
+                    $covered = true;
+                    break;
+                }
+            }
+            if ($covered) {
+                continue;
+            }
+            $inode_result = file_exists($file_map->name) ? fileinode($file_map->name) : false;
+            $synthetic_inode = $inode_result !== false ? $inode_result : 0;
+            $memory_areas[] = new ProcessMemoryArea(
+                dechex($fm_start),
+                dechex($fm_end),
+                dechex($file_map->file_offset->toInt()),
+                new ProcessMemoryAttribute(true, false, true, false),
+                '00:00',
+                $synthetic_inode,
+                $file_map->name,
+            );
+        }
+
         $path_resolver = new MappedPathResolver($path_mapping);
         $process_memory_map = new ProcessMemoryMap($memory_areas);
         /** @var FFI&object{open:callable,lseek:callable,read:callable,close:callable} $libc_ffi */
@@ -291,6 +365,8 @@ final class CoreDumpReaderFactory
                             'thread_pointer_retriever',
                             new CoreDumpThreadPointerRetriever($pr_statuses)
                         ),
+                MainExecutablePathResolver::class =>
+                    new StaticMainExecutablePathResolver($main_executable_path),
             ])
             ->build()
         ;

@@ -37,6 +37,8 @@ use Reli\Lib\File\FileReaderInterface;
 use Reli\Lib\File\NativeFileReader;
 use Reli\Lib\File\PathResolver\ContainerAwarePathResolver;
 use Reli\Lib\File\PathResolver\ProcessPathResolver;
+use Reli\Lib\PhpProcessReader\MainExecutable\MainExecutablePathResolver;
+use Reli\Lib\PhpProcessReader\MainExecutable\ProcExeReadlinkResolver;
 use Reli\Lib\Directory\AppDirectory;
 use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\Libc\Sys\Ptrace\Ptrace;
@@ -66,6 +68,7 @@ return [
     ProcessMemoryMapCreatorInterface::class => autowire(ProcessMemoryMapCreator::class),
     ProcessModuleSymbolReaderCreatorInterface::class => autowire(ProcessModuleSymbolReaderCreator::class),
     ProcessPathResolver::class => autowire(ContainerAwarePathResolver::class),
+    MainExecutablePathResolver::class => autowire(ProcExeReadlinkResolver::class),
     ZendTypeReader::class => function () {
         return new ZendTypeReader(ZendTypeReader::V80);
     },
