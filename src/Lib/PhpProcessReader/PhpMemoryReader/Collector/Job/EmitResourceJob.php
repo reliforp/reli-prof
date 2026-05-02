@@ -14,12 +14,15 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\Job;
 
 use Reli\Lib\PhpInternals\Types\C\RawString;
+use Reli\Lib\PhpInternals\Types\Php\PhpStdioStreamData;
 use Reli\Lib\PhpInternals\Types\Php\PhpStream;
 use Reli\Lib\PhpInternals\Types\Php\PhpStreamMemoryData;
 use Reli\Lib\PhpInternals\Types\Php\PhpStreamOps;
 use Reli\Lib\PhpInternals\Types\Php\PhpStreamTempData;
+use Reli\Lib\PhpInternals\Types\Php\PhpUserstreamData;
 use Reli\Lib\PhpInternals\Types\Zend\ZendResource;
 use Reli\Lib\PhpInternals\Types\Zend\ZendString;
+use Reli\Lib\PhpInternals\Types\Zend\Zval;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorJob;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\JobQueue;
@@ -80,8 +83,10 @@ final class EmitResourceJob implements CollectorJob
             ->resource_context_pool
             ->getContextForLocation($memory_location);
 
-        // Try to collect stream data (best effort)
-        $this->tryCollectStreamData($resource, $ctx, $resource_context);
+        // Try to collect stream data (best effort).
+        // For userspace streams the embedded zval is returned and dispatched
+        // after emitNode so the resulting node_id can parent the zval graph.
+        $deferred_userspace_zval = $this->tryCollectStreamData($resource, $ctx, $resource_context);
 
         $node_id = $ctx->emitNode(
             $resource_context,
@@ -92,16 +97,24 @@ final class EmitResourceJob implements CollectorJob
         if ($node_id >= 0) {
             $ctx->address_map[$address] = $node_id;
         }
+
+        if ($deferred_userspace_zval !== null) {
+            $queue->push(new ResolveZvalJob(
+                $deferred_userspace_zval,
+                $node_id >= 0 ? $node_id : null,
+                'stream_userspace_object',
+            ));
+        }
     }
 
     private function tryCollectStreamData(
         ZendResource $resource,
         CollectorContext $ctx,
         ResourceContext $resource_context,
-    ): void {
+    ): ?Zval {
         $ptr_address = $resource->ptr;
         if ($ptr_address === 0) {
-            return;
+            return null;
         }
 
         try {
@@ -113,12 +126,12 @@ final class EmitResourceJob implements CollectorJob
             $php_stream = $ctx->dereferencer->deref($php_stream_pointer);
 
             if ($php_stream->res !== $this->pointer->address) {
-                return;
+                return null;
             }
 
             $ops_address = $php_stream->ops;
             if ($ops_address === 0) {
-                return;
+                return null;
             }
             $ops = $ctx->dereferencer->deref(new Pointer(
                 PhpStreamOps::class,
@@ -128,7 +141,7 @@ final class EmitResourceJob implements CollectorJob
 
             $label_address = $ops->label;
             if ($label_address === 0) {
-                return;
+                return null;
             }
             $label = (string)$ctx->dereferencer->deref(new Pointer(RawString::class, $label_address, 32));
             $resource_context->stream_type_label = $label;
@@ -137,10 +150,15 @@ final class EmitResourceJob implements CollectorJob
                 $this->collectMemoryStreamData($php_stream, $ctx, $resource_context);
             } elseif ($label === 'TEMP') {
                 $this->collectTempStreamData($php_stream, $ctx, $resource_context);
+            } elseif ($label === 'STDIO') {
+                $this->collectStdioStreamData($php_stream, $ctx, $resource_context);
+            } elseif ($label === 'user-space') {
+                return $this->extractUserspaceObjectZval($php_stream, $ctx);
             }
         } catch (\Throwable) {
-            return;
+            return null;
         }
+        return null;
     }
 
     private function collectMemoryStreamData(
@@ -231,5 +249,66 @@ final class EmitResourceJob implements CollectorJob
         if ($inner_label === 'MEMORY') {
             $this->collectMemoryStreamData($inner_stream, $ctx, $resource_context);
         }
+    }
+
+    private function collectStdioStreamData(
+        PhpStream $php_stream,
+        CollectorContext $ctx,
+        ResourceContext $resource_context,
+    ): void {
+        $abstract_address = $php_stream->abstract;
+        if ($abstract_address === 0) {
+            return;
+        }
+
+        $stdio_data = $ctx->dereferencer->deref(new Pointer(
+            PhpStdioStreamData::class,
+            $abstract_address,
+            $ctx->zend_type_reader->sizeOf('php_stdio_stream_data'),
+        ));
+
+        $resource_context->stream_fd = $stdio_data->fd;
+
+        $temp_name_address = $stdio_data->temp_name;
+        if ($temp_name_address === 0) {
+            return;
+        }
+
+        $string_pointer = new Pointer(
+            ZendString::class,
+            $temp_name_address,
+            $ctx->zend_type_reader->sizeOf('zend_string'),
+        );
+
+        if (!$ctx->memory_locations->has($temp_name_address)) {
+            $str = $ctx->dereferencer->deref($string_pointer);
+            $memory_location = ZendStringMemoryLocation::fromZendString($str, $ctx->dereferencer);
+            $ctx->memory_locations->add($memory_location);
+            $string_context = $ctx->context_pools->string_context_pool->getContextForLocation($memory_location);
+            $resource_context->add('stream_temp_name', $string_context);
+        } else {
+            $cached = $ctx->context_pools->string_context_pool->getContextByAddress($temp_name_address);
+            if ($cached !== null) {
+                $resource_context->add('stream_temp_name', $cached);
+            }
+        }
+    }
+
+    private function extractUserspaceObjectZval(
+        PhpStream $php_stream,
+        CollectorContext $ctx,
+    ): ?Zval {
+        $abstract_address = $php_stream->abstract;
+        if ($abstract_address === 0) {
+            return null;
+        }
+
+        $userstream_data = $ctx->dereferencer->deref(new Pointer(
+            PhpUserstreamData::class,
+            $abstract_address,
+            $ctx->zend_type_reader->sizeOf('php_userstream_data_t'),
+        ));
+
+        return $userstream_data->object;
     }
 }

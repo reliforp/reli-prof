@@ -1288,6 +1288,21 @@ typedef struct {
 	char *tmpdir;
 } php_stream_temp_data;
 
+// main/streams/plain_wrapper.c
+typedef struct {
+	uintptr_t file;
+	int fd;
+	uint32_t flags_bitfield;
+	int lock_flag;
+	zend_string *temp_name;
+} php_stdio_stream_data;
+
+// main/streams/userspace.c
+typedef struct {
+	uintptr_t wrapper;
+	zval object;
+} php_userstream_data_t;
+
 // ext/pdo/php_pdo_driver.h
 typedef char pdo_error_type[6];
 

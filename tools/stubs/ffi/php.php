@@ -376,6 +376,20 @@ class php_stream_temp_data extends CData
     public int $smax;
 }
 
+class php_stdio_stream_data extends CData
+{
+    public int $file;
+    public int $fd;
+    public int $lock_flag;
+    public ?CPointer $temp_name;
+}
+
+class php_userstream_data_t extends CData
+{
+    public int $wrapper;
+    public zval $object;
+}
+
 class pdo_dbh_object_t extends CData
 {
     public ?CPointer $inner;
