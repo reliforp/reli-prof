@@ -16,11 +16,21 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation;
 use Reli\Lib\Process\MemoryLocation;
 
 /**
- * The (path, path_len, pattern, pattern_len) tail of php_glob_stream_data
- * — the only portion of that struct reli decodes. The leading glob_t /
- * php_glob_t header (72 or 96 bytes depending on whether PHP was built
- * --with-system-glob) is not accounted for here; the registered range
- * starts at the tail offset that successfully validated.
+ * The php_glob_stream_data (a.k.a. glob_s_t) allocation backing a
+ * glob:// stream. The struct begins at php_stream->abstract and its
+ * total size depends on which glob implementation PHP was built
+ * against:
+ *
+ *   - 120 bytes for PHP 7.0..8.4 / system glob_t (header 72B,
+ *     index/flags 16B, path/pattern tail 32B).
+ *   - 168 bytes for PHP 8.5 default build / bundled php_glob_t
+ *     (header 96B, index/flags 16B, path/pattern tail 32B,
+ *     trailing open_basedir_* fields rounded up for struct
+ *     alignment).
+ *
+ * The exact size is settled at decode time by which tail offset
+ * (88 vs 112) passes strlen-vs-len validation; this MemoryLocation
+ * is only registered once that probe succeeds.
  */
 final class PhpGlobStreamDataMemoryLocation extends MemoryLocation
 {

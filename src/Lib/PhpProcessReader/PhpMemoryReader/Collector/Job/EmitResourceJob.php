@@ -302,13 +302,23 @@ final class EmitResourceJob implements CollectorJob
             return;
         }
 
-        $size = $ctx->zend_type_reader->sizeOf('php_stdio_stream_data');
         $stdio_data = $ctx->dereferencer->deref(new Pointer(
             PhpStdioStreamData::class,
             $abstract_address,
-            $size,
+            $ctx->zend_type_reader->sizeOf('php_stdio_stream_data'),
         ));
-        $abstract_location = new PhpStdioStreamDataMemoryLocation($abstract_address, $size);
+        // The reli partial declaration only covers the leading 32 bytes
+        // (file/fd/bitfield/lock_flag/temp_name); register the full
+        // allocation as it exists on a typical Linux x86_64 build:
+        //   leading 32 + HAVE_MMAP last_mapped_addr/len 16 + struct stat 144
+        //   = 192 bytes
+        // glibc Debian images leave HAVE_FLUSHIO undefined, so the `last_op`
+        // byte is absent. Alpine (musl) defines HAVE_FLUSHIO and ends up at
+        // 200 bytes; we keep the registration at 192 so we never overclaim
+        // past the real allocation, accepting an 8-byte undercount on musl.
+        // Other libcs / non-mmap builds fall back to the same conservative
+        // value.
+        $abstract_location = new PhpStdioStreamDataMemoryLocation($abstract_address, 192);
         $ctx->memory_locations->add($abstract_location);
         $resource_context->addLocation($abstract_location);
 
@@ -349,13 +359,20 @@ final class EmitResourceJob implements CollectorJob
             return;
         }
 
-        $size = $ctx->zend_type_reader->sizeOf('php_netstream_data_t');
         $netstream_data = $ctx->dereferencer->deref(new Pointer(
             PhpNetstreamData::class,
             $abstract_address,
-            $size,
+            $ctx->zend_type_reader->sizeOf('php_netstream_data_t'),
         ));
-        $abstract_location = new PhpNetstreamDataMemoryLocation($abstract_address, $size);
+        // The reli partial declaration only covers the leading
+        // php_socket_t fd. The full allocation on a typical Linux
+        // x86_64 build is:
+        //   socket 4 + addrlen 4 + sockaddr_storage 128 + is_blocked 4
+        //   + (4 pad) + timeval 16 + timeout_event 1 + (3 pad)
+        //   + ownership-enum 4 = 168 bytes
+        // sockaddr_storage and timeval are the same size on glibc and
+        // musl on x86_64, so 168 holds for both libcs.
+        $abstract_location = new PhpNetstreamDataMemoryLocation($abstract_address, 168);
         $ctx->memory_locations->add($abstract_location);
         $resource_context->addLocation($abstract_location);
 
@@ -400,11 +417,25 @@ final class EmitResourceJob implements CollectorJob
             return;
         }
 
-        foreach ([88, 112] as $tail_offset) {
+        foreach (
+            [
+                // tail offset => full sizeof(glob_s_t)
+                //   88 / 120: PHP 7.0..8.4 (libc glob_t header, 72B; tail
+                //             ends after pattern_len at offset 120).
+                //   112 / 168: PHP 8.5 default build (bundled php_glob_t
+                //             header, 96B; tail extended with
+                //             open_basedir_indexmap{,_size,_used}, struct
+                //             padded up to 168 bytes).
+                [88, 120],
+                [112, 168],
+            ] as [$tail_offset, $struct_size]
+        ) {
             $synthetic_uri = $this->tryDecodeGlobTail(
                 $ctx,
                 $resource_context,
-                $abstract_address + $tail_offset,
+                $abstract_address,
+                $tail_offset,
+                $struct_size,
             );
             if ($synthetic_uri !== null) {
                 $resource_context->stream_orig_path = $synthetic_uri;
@@ -416,14 +447,15 @@ final class EmitResourceJob implements CollectorJob
     private function tryDecodeGlobTail(
         CollectorContext $ctx,
         ResourceContext $resource_context,
-        int $tail_address,
+        int $abstract_address,
+        int $tail_offset,
+        int $struct_size,
     ): ?string {
         try {
-            $size = $ctx->zend_type_reader->sizeOf('php_glob_stream_data_tail');
             $tail = $ctx->dereferencer->deref(new Pointer(
                 PhpGlobStreamDataTail::class,
-                $tail_address,
-                $size,
+                $abstract_address + $tail_offset,
+                $ctx->zend_type_reader->sizeOf('php_glob_stream_data_tail'),
             ));
         } catch (\Throwable) {
             return null;
@@ -435,12 +467,15 @@ final class EmitResourceJob implements CollectorJob
             return null;
         }
 
-        // Only register the tail as accounted memory once both pairs
-        // validate — otherwise we'd be charging the resource for bytes
-        // we couldn't actually interpret.
-        $tail_location = new PhpGlobStreamDataMemoryLocation($tail_address, $size);
-        $ctx->memory_locations->add($tail_location);
-        $resource_context->addLocation($tail_location);
+        // The successful tail offset disambiguates which glob_s_t variant
+        // PHP was built against, so we know the size of the *whole*
+        // allocation pointed to by php_stream->abstract — not just the
+        // bytes we deref'd. Register the full struct so the analyzer
+        // attributes the libc/php_glob_t header and any trailing
+        // open_basedir_* fields to the resource as well.
+        $location = new PhpGlobStreamDataMemoryLocation($abstract_address, $struct_size);
+        $ctx->memory_locations->add($location);
+        $resource_context->addLocation($location);
 
         return 'glob://' . $path . '/' . $pattern;
     }
