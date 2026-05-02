@@ -93,9 +93,22 @@ final class EmitResourceJob implements CollectorJob
             ->getContextForLocation($memory_location);
 
         // Try to collect stream data (best effort).
-        // For userspace streams the embedded zval is returned and dispatched
-        // after emitNode so the resulting node_id can parent the zval graph.
-        $deferred_userspace_zval = $this->tryCollectStreamData($resource, $ctx, $resource_context);
+        // - For userspace streams the embedded zval is returned and
+        //   dispatched after emitNode so the resulting node_id can parent
+        //   the zval graph.
+        // - $extra_addresses collects every heap address registered as a
+        //   stream-related MemoryLocation (php_stream, abstract block,
+        //   inner stream for TEMP, …). After emitNode we map each of
+        //   those into address_map so external scanners (e.g. the
+        //   ZendMM-bin pass that walks unaccounted allocations) can
+        //   resolve the heap address back to this resource node.
+        $extra_addresses = [];
+        $deferred_userspace_zval = $this->tryCollectStreamData(
+            $resource,
+            $ctx,
+            $resource_context,
+            $extra_addresses,
+        );
 
         $node_id = $ctx->emitNode(
             $resource_context,
@@ -105,6 +118,9 @@ final class EmitResourceJob implements CollectorJob
         );
         if ($node_id >= 0) {
             $ctx->address_map[$address] = $node_id;
+            foreach ($extra_addresses as $extra_address) {
+                $ctx->address_map[$extra_address] = $node_id;
+            }
         }
 
         if ($deferred_userspace_zval !== null) {
@@ -116,10 +132,12 @@ final class EmitResourceJob implements CollectorJob
         }
     }
 
+    /** @param list<int> $extra_addresses */
     private function tryCollectStreamData(
         ZendResource $resource,
         CollectorContext $ctx,
         ResourceContext $resource_context,
+        array &$extra_addresses,
     ): ?Zval {
         $ptr_address = $resource->ptr;
         if ($ptr_address === 0) {
@@ -141,6 +159,7 @@ final class EmitResourceJob implements CollectorJob
             $stream_location = new PhpStreamMemoryLocation($ptr_address, $php_stream_size);
             $ctx->memory_locations->add($stream_location);
             $resource_context->addLocation($stream_location);
+            $extra_addresses[] = $ptr_address;
 
             $ops_address = $php_stream->ops;
             if ($ops_address === 0) {
@@ -167,22 +186,22 @@ final class EmitResourceJob implements CollectorJob
             }
 
             if ($label === 'MEMORY') {
-                $this->collectMemoryStreamData($php_stream, $ctx, $resource_context);
+                $this->collectMemoryStreamData($php_stream, $ctx, $resource_context, $extra_addresses);
             } elseif ($label === 'TEMP') {
-                $this->collectTempStreamData($php_stream, $ctx, $resource_context);
+                $this->collectTempStreamData($php_stream, $ctx, $resource_context, $extra_addresses);
             } elseif ($label === 'STDIO') {
-                $this->collectStdioStreamData($php_stream, $ctx, $resource_context);
+                $this->collectStdioStreamData($php_stream, $ctx, $resource_context, $extra_addresses);
             } elseif ($label === 'user-space') {
-                return $this->extractUserspaceObjectZval($php_stream, $ctx, $resource_context);
+                return $this->extractUserspaceObjectZval($php_stream, $ctx, $resource_context, $extra_addresses);
             } elseif (
                 $label === 'tcp_socket'
                 || $label === 'udp_socket'
                 || $label === 'unix_socket'
                 || $label === 'udg_socket'
             ) {
-                $this->collectSocketStreamData($php_stream, $ctx, $resource_context);
+                $this->collectSocketStreamData($php_stream, $ctx, $resource_context, $extra_addresses);
             } elseif ($label === 'glob') {
-                $this->collectGlobStreamData($php_stream, $ctx, $resource_context);
+                $this->collectGlobStreamData($php_stream, $ctx, $resource_context, $extra_addresses);
             }
         } catch (\Throwable) {
             return null;
@@ -190,10 +209,12 @@ final class EmitResourceJob implements CollectorJob
         return null;
     }
 
+    /** @param list<int> $extra_addresses */
     private function collectMemoryStreamData(
         PhpStream $php_stream,
         CollectorContext $ctx,
         ResourceContext $resource_context,
+        array &$extra_addresses,
     ): void {
         $abstract_address = $php_stream->abstract;
         if ($abstract_address === 0) {
@@ -209,6 +230,7 @@ final class EmitResourceJob implements CollectorJob
         $abstract_location = new PhpStreamMemoryDataMemoryLocation($abstract_address, $size);
         $ctx->memory_locations->add($abstract_location);
         $resource_context->addLocation($abstract_location);
+        $extra_addresses[] = $abstract_address;
 
         $data_address = $mem_data->data;
         if ($data_address === 0) {
@@ -236,10 +258,12 @@ final class EmitResourceJob implements CollectorJob
         }
     }
 
+    /** @param list<int> $extra_addresses */
     private function collectTempStreamData(
         PhpStream $php_stream,
         CollectorContext $ctx,
         ResourceContext $resource_context,
+        array &$extra_addresses,
     ): void {
         $abstract_address = $php_stream->abstract;
         if ($abstract_address === 0) {
@@ -255,6 +279,7 @@ final class EmitResourceJob implements CollectorJob
         $temp_location = new PhpStreamTempDataMemoryLocation($abstract_address, $temp_size);
         $ctx->memory_locations->add($temp_location);
         $resource_context->addLocation($temp_location);
+        $extra_addresses[] = $abstract_address;
 
         $innerstream_address = $temp_data->innerstream;
         if ($innerstream_address === 0) {
@@ -270,6 +295,7 @@ final class EmitResourceJob implements CollectorJob
         $inner_stream_location = new PhpStreamMemoryLocation($innerstream_address, $inner_stream_size);
         $ctx->memory_locations->add($inner_stream_location);
         $resource_context->addLocation($inner_stream_location);
+        $extra_addresses[] = $innerstream_address;
 
         $inner_ops_address = $inner_stream->ops;
         if ($inner_ops_address === 0) {
@@ -288,14 +314,16 @@ final class EmitResourceJob implements CollectorJob
         $inner_label = (string)$ctx->dereferencer->deref(new Pointer(RawString::class, $inner_label_address, 32));
 
         if ($inner_label === 'MEMORY') {
-            $this->collectMemoryStreamData($inner_stream, $ctx, $resource_context);
+            $this->collectMemoryStreamData($inner_stream, $ctx, $resource_context, $extra_addresses);
         }
     }
 
+    /** @param list<int> $extra_addresses */
     private function collectStdioStreamData(
         PhpStream $php_stream,
         CollectorContext $ctx,
         ResourceContext $resource_context,
+        array &$extra_addresses,
     ): void {
         $abstract_address = $php_stream->abstract;
         if ($abstract_address === 0) {
@@ -321,6 +349,7 @@ final class EmitResourceJob implements CollectorJob
         $abstract_location = new PhpStdioStreamDataMemoryLocation($abstract_address, 192);
         $ctx->memory_locations->add($abstract_location);
         $resource_context->addLocation($abstract_location);
+        $extra_addresses[] = $abstract_address;
 
         $resource_context->stream_fd = $stdio_data->fd;
 
@@ -349,10 +378,12 @@ final class EmitResourceJob implements CollectorJob
         }
     }
 
+    /** @param list<int> $extra_addresses */
     private function collectSocketStreamData(
         PhpStream $php_stream,
         CollectorContext $ctx,
         ResourceContext $resource_context,
+        array &$extra_addresses,
     ): void {
         $abstract_address = $php_stream->abstract;
         if ($abstract_address === 0) {
@@ -375,6 +406,7 @@ final class EmitResourceJob implements CollectorJob
         $abstract_location = new PhpNetstreamDataMemoryLocation($abstract_address, 168);
         $ctx->memory_locations->add($abstract_location);
         $resource_context->addLocation($abstract_location);
+        $extra_addresses[] = $abstract_address;
 
         $resource_context->stream_fd = $netstream_data->socket;
     }
@@ -407,10 +439,12 @@ final class EmitResourceJob implements CollectorJob
      * any mismatch the resource silently degrades to label-only — same
      * best-effort posture as the rest of tryCollectStreamData.
      */
+    /** @param list<int> $extra_addresses */
     private function collectGlobStreamData(
         PhpStream $php_stream,
         CollectorContext $ctx,
         ResourceContext $resource_context,
+        array &$extra_addresses,
     ): void {
         $abstract_address = $php_stream->abstract;
         if ($abstract_address === 0) {
@@ -436,6 +470,7 @@ final class EmitResourceJob implements CollectorJob
                 $abstract_address,
                 $tail_offset,
                 $struct_size,
+                $extra_addresses,
             );
             if ($synthetic_uri !== null) {
                 $resource_context->stream_orig_path = $synthetic_uri;
@@ -444,12 +479,14 @@ final class EmitResourceJob implements CollectorJob
         }
     }
 
+    /** @param list<int> $extra_addresses */
     private function tryDecodeGlobTail(
         CollectorContext $ctx,
         ResourceContext $resource_context,
         int $abstract_address,
         int $tail_offset,
         int $struct_size,
+        array &$extra_addresses,
     ): ?string {
         try {
             $tail = $ctx->dereferencer->deref(new Pointer(
@@ -476,6 +513,7 @@ final class EmitResourceJob implements CollectorJob
         $location = new PhpGlobStreamDataMemoryLocation($abstract_address, $struct_size);
         $ctx->memory_locations->add($location);
         $resource_context->addLocation($location);
+        $extra_addresses[] = $abstract_address;
 
         return 'glob://' . $path . '/' . $pattern;
     }
@@ -507,10 +545,12 @@ final class EmitResourceJob implements CollectorJob
         return $raw;
     }
 
+    /** @param list<int> $extra_addresses */
     private function extractUserspaceObjectZval(
         PhpStream $php_stream,
         CollectorContext $ctx,
         ResourceContext $resource_context,
+        array &$extra_addresses,
     ): ?Zval {
         $abstract_address = $php_stream->abstract;
         if ($abstract_address === 0) {
@@ -526,6 +566,7 @@ final class EmitResourceJob implements CollectorJob
         $abstract_location = new PhpUserstreamDataMemoryLocation($abstract_address, $size);
         $ctx->memory_locations->add($abstract_location);
         $resource_context->addLocation($abstract_location);
+        $extra_addresses[] = $abstract_address;
 
         return $userstream_data->object;
     }
