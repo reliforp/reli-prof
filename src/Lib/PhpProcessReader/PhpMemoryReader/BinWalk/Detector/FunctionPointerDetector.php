@@ -95,8 +95,24 @@ final class FunctionPointerDetector implements ShapeDetector
             );
         }
 
+        // Symbol-level promotion: when a symbol resolver is in context
+        // and lands the pointer inside a named function, render the
+        // full "module:symbol+offset" so the validator can read
+        // "is this an opcode handler in libphp.so or a libuv callback?"
+        // off a single line in the compare output.
+        $symbol_label = '';
+        if ($context->symbol_resolver !== null) {
+            $hit = $context->symbol_resolver->resolve($ptr);
+            if ($hit !== null) {
+                [$sym_name, $offset] = $hit;
+                $symbol_label = $offset > 0
+                    ? sprintf(':%s+0x%x', $sym_name, $offset)
+                    : sprintf(':%s', $sym_name);
+            }
+        }
+
         return new ShapeDetection(
-            label: sprintf('func_ptr (%s)', $module),
+            label: sprintf('func_ptr (%s%s)', $module, $symbol_label),
             confidence: ShapeDetection::CONFIDENCE_HIGH,
         );
     }

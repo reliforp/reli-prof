@@ -37,7 +37,12 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\UserFunctionDefin
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
+use Reli\Lib\Dwarf\NativeSymbolResolver;
+use Reli\Lib\Elf\Process\BinaryAnalysisCache;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\NativeSymbolResolverAdapter;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\SymbolResolverInterface;
 use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
+use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 use Reli\Lib\Process\Pointer\Dereferencer;
@@ -56,6 +61,7 @@ final class MemoryLocationsCollector
         private ZendTypeReaderCreator $zend_type_reader_creator,
         private PhpZendMemoryManagerChunkFinder $chunk_finder,
         private ?ProcessMemoryMapCreatorInterface $process_memory_map_creator = null,
+        private ?BinaryAnalysisCache $binary_analysis_cache = null,
     ) {
     }
 
@@ -396,6 +402,14 @@ final class MemoryLocationsCollector
                 Log::debug('process memory map fetch failed', ['exception' => $e]);
             }
         }
+        // Build a symbol resolver only when /proc/<pid>/exe is reachable
+        // (i.e., a live target). For rdump-driven analyze the pid is the
+        // original target's pid which is meaningless on the analyzing
+        // host; without an accessible binary on disk we'd just thrash
+        // through file-not-found per slot. The module-level resolver
+        // (FunctionPointerDetector falls back to module names) still
+        // works in that case.
+        $symbol_resolver = $this->buildSymbolResolver($pid, $process_memory_map);
         $bin_walk_result = null;
         try {
             $bin_walk_result = (new ZendMmBinWalker($this->memory_reader))->walk(
@@ -404,6 +418,7 @@ final class MemoryLocationsCollector
                 $dereferencer,
                 $ctx->address_map,
                 $process_memory_map,
+                $symbol_resolver,
             );
         } catch (\Throwable $e) {
             Log::debug('ZendMmBinWalker failed', ['exception' => $e]);
@@ -431,6 +446,43 @@ final class MemoryLocationsCollector
             $chunks_mostly_empty_count,
             $bin_walk_result,
         );
+    }
+
+    /**
+     * Build the symbol resolver used by FunctionPointerDetector when
+     * available. Returns null when:
+     *
+     * - The memory map isn't available (no module identification)
+     * - /proc/{pid}/exe isn't accessible (rdump-driven analyze, where
+     *   the target's binaries aren't laid out on the analyzing host)
+     * - NativeSymbolResolver instantiation throws for any reason
+     *
+     * The "resolver per analyze" lifetime is fine: NativeSymbolResolver
+     * caches per-binary results internally, and the analyze pass
+     * touches each binary once.
+     */
+    private function buildSymbolResolver(
+        int $pid,
+        ?ProcessMemoryMap $process_memory_map,
+    ): ?SymbolResolverInterface {
+        if ($process_memory_map === null) {
+            return null;
+        }
+        $process_root = "/proc/{$pid}/root";
+        if (!@is_readable("/proc/{$pid}/exe")) {
+            return null;
+        }
+        try {
+            $native = new NativeSymbolResolver(
+                memoryMap: $process_memory_map,
+                processRoot: $process_root,
+                binaryAnalysisCache: $this->binary_analysis_cache,
+            );
+            return new NativeSymbolResolverAdapter($native);
+        } catch (\Throwable $e) {
+            Log::debug('symbol resolver build failed', ['exception' => $e]);
+            return null;
+        }
     }
 
     private function collectRealCallStackOnMemoryLimitViolation(

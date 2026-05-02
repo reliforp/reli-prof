@@ -23,6 +23,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\DetectorRegistry;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ModuleResolverInterface;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ProcessMemoryMapModuleResolver;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\ShapeDetector;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\SymbolResolverInterface;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
@@ -86,6 +87,12 @@ final class ZendMmBinWalker
      *     of the target. When supplied, FunctionPointerDetector resolves
      *     `.text` pointers to module names — without it the per-slot scan
      *     can still classify shapes that don't depend on module info.
+     * @param SymbolResolverInterface|null $symbol_resolver Optional ELF
+     *     symbol resolver. When supplied alongside `$memory_map`,
+     *     FunctionPointerDetector promotes labels from
+     *     `func_ptr (libphp.so)` to `func_ptr (libphp.so:execute_ex+0x123)`
+     *     — the validator's "is this an opcode handler or a libuv
+     *     callback?" question landing as a single row of compare output.
      */
     public function walk(
         int $pid,
@@ -93,11 +100,13 @@ final class ZendMmBinWalker
         Dereferencer $dereferencer,
         ?array $reachable_set = null,
         ?ProcessMemoryMap $memory_map = null,
+        ?SymbolResolverInterface $symbol_resolver = null,
     ): BinWalkResult {
         $context = new DetectorContext(
             module_resolver: $memory_map !== null
                 ? new ProcessMemoryMapModuleResolver($memory_map)
                 : null,
+            symbol_resolver: $symbol_resolver,
         );
         $heap = $main_chunk->heap_slot;
         $free_heads = $heap->getFreeSlotHeads();

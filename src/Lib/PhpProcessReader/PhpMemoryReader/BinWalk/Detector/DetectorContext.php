@@ -28,6 +28,7 @@ final class DetectorContext
 {
     public function __construct(
         public readonly ?ModuleResolverInterface $module_resolver = null,
+        public readonly ?SymbolResolverInterface $symbol_resolver = null,
     ) {
     }
 }
