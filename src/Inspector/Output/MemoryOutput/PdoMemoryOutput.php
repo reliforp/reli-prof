@@ -2285,5 +2285,4 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             }
         }
     }
-
 }

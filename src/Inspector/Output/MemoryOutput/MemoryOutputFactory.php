@@ -122,5 +122,4 @@ final class MemoryOutputFactory
         $sink = $binary_output->createStreamingSink();
         return [$binary_output, $sink];
     }
-
 }

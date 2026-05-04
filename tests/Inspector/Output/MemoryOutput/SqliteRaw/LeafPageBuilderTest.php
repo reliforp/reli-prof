@@ -121,7 +121,8 @@ class LeafPageBuilderTest extends BaseTestCase
         $builder = new LeafPageBuilder(
             first_pgno: 2,
             max_pages: 1,
-            emit: function (): void {},
+            emit: function (): void {
+            },
         );
         $this->expectException(\RuntimeException::class);
         for ($i = 1; $i <= 1000; $i++) {
