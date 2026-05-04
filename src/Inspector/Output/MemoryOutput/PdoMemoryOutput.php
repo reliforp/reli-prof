@@ -147,8 +147,14 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             if (
                 self::sharedMmapIngestEnabled()
                 && extension_loaded('ffi')
-                && $this->ingestFromRmemSharedMmap($rmem_path, $summary)
+                && $this->canUseSharedMmapIngest($rmem_path)
             ) {
+                // Pre-flight passed — committed to shared-mmap. Any
+                // failure inside ingestFromRmemSharedMmap throws
+                // rather than falls back, because the target DB has
+                // already been mutated (schema, run, summary, file
+                // size) by the time we get past allocateRun().
+                $this->ingestFromRmemSharedMmap($rmem_path, $summary);
                 return;
             }
             $this->ingestFromRmemParallel($rmem_path, $summary);
@@ -160,6 +166,34 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     private static function sharedMmapIngestEnabled(): bool
     {
         return getenv('RELI_SHARED_MMAP_INGEST') === '1';
+    }
+
+    /**
+     * Cheap pre-flight check for the shared-mmap path. Runs before
+     * any side effect on the target DB. Returns false to signal
+     * "use the regular parallel-shard path"; once the caller has
+     * decided to enter ingestFromRmemSharedMmap, that method
+     * commits — failures throw rather than fall back, because the
+     * DB has been mutated by then.
+     *
+     * Currently checks: rmem string dict has no string > 1 KiB. A
+     * single big string can blow past the inline cell limit when
+     * combined with the rest of a row's columns; falling back
+     * pre-emptively is cheaper than discovering it mid-fork (and
+     * far cheaper than discovering it post-fork when fallback is
+     * no longer safe).
+     */
+    private function canUseSharedMmapIngest(string $rmem_path): bool
+    {
+        $reader = BinaryReader::open($rmem_path);
+        $dict = $reader->getStringDict();
+        for ($i = 0, $n = $dict->count(); $i < $n; $i++) {
+            $s = $dict->lookup($i);
+            if ($s !== null && strlen($s) > 1024) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -347,12 +381,15 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * for user indexes, summaries, canonical IDs — is identical to
      * the other paths.
      *
-     * Returns `true` on success, `false` to signal "fell back, caller
-     * should run the regular parallel path". Reasons we bail:
-     *   - rmem references a string too long for inline cell payload
-     *     (overflow chains aren't supported yet);
-     *   - a worker raised CellTooLargeException at runtime;
-     *   - any worker exited non-zero for another reason.
+     * **Commits the target DB on entry**: callers must have decided
+     * via {@see canUseSharedMmapIngest} that this path is safe
+     * before invoking it. Once we call {@see allocateRun}, the DB
+     * has the schema + run + summary written to it, and any
+     * subsequent failure throws — falling back to
+     * ingestFromRmemParallel against a half-populated DB would
+     * double-insert and corrupt. CellTooLargeException at runtime
+     * (mid-fork overflow that the dict-only pre-flight missed) also
+     * surfaces as a fatal RuntimeException.
      *
      * Gated by `RELI_SHARED_MMAP_INGEST=1` while we evaluate whether
      * the wall-clock win justifies maintaining the second ingest
@@ -364,16 +401,17 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * @psalm-suppress InvalidPropertyFetch
      * @psalm-suppress MixedAssignment
      * @psalm-suppress MixedArgument
-     * @psalm-suppress MixedReturnTypeCoercion
      * @psalm-suppress UnusedFunctionCall
      */
     public function ingestFromRmemSharedMmap(
         string $rmem_path,
         array $summary,
         ?int $worker_count = null,
-    ): bool {
+    ): void {
         if (!$this->driver instanceof SqliteDriver) {
-            return false;
+            throw new \RuntimeException(
+                'ingestFromRmemSharedMmap requires SqliteDriver'
+            );
         }
         $worker_count = $worker_count ?? $this->defaultWorkerCount();
         $log_phases = getenv('RELI_SHARED_MMAP_PHASES') === '1';
@@ -387,6 +425,11 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $phase_t = $now;
         };
 
+        // String-dict pre-flight has already been done by
+        // canUseSharedMmapIngest (called by the dispatch); here we
+        // only count rows. From this point on we commit to the
+        // shared-mmap path — failures throw rather than fall back,
+        // because allocateRun() will mutate the target DB.
         $reader = BinaryReader::open($rmem_path);
         $section_counts = [
             'context_nodes' => $reader->hasSection(Format::SECTION_NODES)
@@ -398,26 +441,8 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             'context_node_attributes' => $reader->hasSection(Format::SECTION_ATTRIBUTES)
                 ? $reader->getSectionElementCount(Format::SECTION_ATTRIBUTES) : 0,
         ];
-
-        // Pre-flight: any string longer than 1 KiB risks overflowing
-        // an inline cell once combined with the rest of a row.
-        // Cheaper to fall back than to discover this mid-fork.
-        $dict = $reader->getStringDict();
-        $max_string_len = 0;
-        for ($i = 0, $n = $dict->count(); $i < $n; $i++) {
-            $s = $dict->lookup($i);
-            if ($s !== null) {
-                $len = strlen($s);
-                if ($len > $max_string_len) {
-                    $max_string_len = $len;
-                }
-            }
-        }
         unset($reader);
-        if ($max_string_len > 1024) {
-            return false;
-        }
-        $phase('preflight + dict scan');
+        $phase('section count read');
 
         $run_id = $this->allocateRun($summary);
         $phase('allocateRun (schema+run+summary)');
@@ -453,7 +478,9 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 continue;
             }
             if (!isset($rootpages[$name])) {
-                return false;
+                throw new \RuntimeException(
+                    "shared-mmap ingest: missing rootpage for table {$name}"
+                );
             }
             $rows_per_worker = (int)ceil($count / $worker_count);
             $bytes_per_row = (int)ceil((float)($est_avg_cell_bytes[$name] ?? 100) * 1.15);
@@ -461,7 +488,19 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $tables[$name] = [$count, max(1, $est_leaves)];
         }
         if ($tables === []) {
-            return true;
+            // No data sections to ingest — schema + run + summary
+            // are already in place from allocateRun(); we still
+            // need to run the post-passes the regular ingest does
+            // so the empty DB matches direct-write parity.
+            $db = $this->driver->createConnection();
+            $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+            $this->insertLocationTypesSummaryFromDb($db, $run_id);
+            $this->insertClassObjectsSummaryFromDb($db, $run_id);
+            $this->computeCanonicalNodeIds($db, $run_id);
+            $this->driver->afterBulkInsert($db);
+            $this->createIndexes($db);
+            $this->createViews($db);
+            return;
         }
 
         $plan = SharedMmapTableWriter::plan(
@@ -483,7 +522,9 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             if ($fd >= 0) {
                 LibcFileWriter::close($fd);
             }
-            return false;
+            throw new \RuntimeException(
+                "shared-mmap ingest: failed to ftruncate {$db_path} to {$total_pages} pages"
+            );
         }
         LibcFileWriter::close($fd);
 
@@ -502,7 +543,9 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 LibcFileWriter::close($meta_res[2]);
             }
             @unlink($meta_path);
-            return false;
+            throw new \RuntimeException(
+                'shared-mmap ingest: failed to mmap data and/or meta region'
+            );
         }
         [$data_ptr, $data_len, $data_fd] = $data_res;
         [$meta_ptr, $meta_len, $meta_fd] = $meta_res;
@@ -554,8 +597,25 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 }
             }
             $phase('fork + workers (leaf page writes)');
-            if ($had_overflow || $other_failure) {
-                return false;
+            if ($had_overflow) {
+                // CellTooLargeException at runtime — the dict-only
+                // pre-flight (canUseSharedMmapIngest) didn't catch
+                // this because a single row's combined columns can
+                // overflow the inline payload limit even when each
+                // individual string fits. The target DB has been
+                // mutated; we can't fall back. Surface as fatal so
+                // the user knows to disable RELI_SHARED_MMAP_INGEST.
+                throw new \RuntimeException(
+                    'shared-mmap ingest: a row exceeded the inline payload '
+                    . 'limit at runtime; disable RELI_SHARED_MMAP_INGEST '
+                    . 'to use the parallel-shard path which tolerates '
+                    . 'large rows via overflow chains'
+                );
+            }
+            if ($other_failure) {
+                throw new \RuntimeException(
+                    'shared-mmap ingest: one or more workers exited non-zero'
+                );
             }
 
             $all_unused = [];
@@ -642,8 +702,6 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         }
         $this->createViews($db);
         $phase('createViews');
-
-        return true;
     }
 
     private static function parallelIndexEnabled(): bool
@@ -652,9 +710,17 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     }
 
     /**
-     * Per-index sharded CREATE INDEX. Returns true on success and
-     * the caller can skip the serial createIndexes(); false to
-     * signal "fell back".
+     * Per-index sharded CREATE INDEX. Returns true if the parallel
+     * path completed and the caller can skip the serial
+     * createIndexes(). Returns false only on ParallelIndexBuilder's
+     * cheap pre-flight bail (non-Sqlite driver, FFI/pcntl
+     * unavailable) — at that point nothing has been written, so
+     * falling back to the serial createIndexes is safe. Once
+     * ParallelIndexBuilder commits, any failure throws rather than
+     * returning null/false; we let those bubble up to surface as a
+     * fatal error, because falling back to serial createIndexes
+     * after partial parallel writes would leave orphan index pages
+     * that PRAGMA integrity_check flags.
      *
      * Each (name, table, sql) tuple matches one statement that
      * createIndexes() would have run; ParallelIndexBuilder forks
@@ -694,15 +760,18 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             (int)ceil($max_rows / 50) + 256,
         );
 
+        // ParallelIndexBuilder returns null only on cheap pre-flight
+        // bail (FFI/pcntl unavailable) — we can fall back to the
+        // serial path safely. Once it commits to mutating the file
+        // any failure throws; we let those bubble up because the
+        // serial fallback would write on top of orphan index pages
+        // and break integrity_check.
         $result = ParallelIndexBuilder::build(
             $db_path,
             $specs,
             $this->defaultWorkerCount(),
             $reservation,
         );
-        // ParallelIndexBuilder uses a shared atomic pgno counter so
-        // workers claim exact-sized ranges → output is dense, no
-        // freelist trunk pages and no mid-file holes to clean up.
         return $result !== null;
     }
 
@@ -1484,7 +1553,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         // through them see the real data.
         if (!$needs_sql_fallback && self::formatDirectIndexEnabled()) {
             unset($db);
-            $this->mergeIntegerIndexes($shard_paths, $main_path);
+            $this->mergeIntegerIndexes($shard_paths, $main_path, $run_id);
             $db = $this->driver->createConnection();
             $db->exec('PRAGMA synchronous = OFF');
             $db->exec('PRAGMA temp_store = MEMORY');
@@ -1575,8 +1644,11 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      *
      * @param array<int, string> $shard_paths shard index => path
      */
-    private function mergeIntegerIndexes(array $shard_paths, string $main_path): void
-    {
+    private function mergeIntegerIndexes(
+        array $shard_paths,
+        string $main_path,
+        int $run_id,
+    ): void {
         foreach (self::integerIndexSpecs() as [$index_name, $_table, $_key]) {
             $reader = SqliteRawReader::open($main_path);
             $rootpage = $reader->findSchemaEntry($index_name);
@@ -1597,7 +1669,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 continue;
             }
             $writer = SqliteRawWriter::open($main_path);
-            $merger = new IntegerIndexMerger($writer, $sort_runs, 1); // run_id = 1 (we're always the only run)
+            $merger = new IntegerIndexMerger($writer, $sort_runs, $run_id);
             try {
                 $merger->merge($rootpage['rootpage']);
             } catch (OverflowNotSupportedException $_e) {

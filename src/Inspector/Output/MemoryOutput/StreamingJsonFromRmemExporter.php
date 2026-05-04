@@ -22,8 +22,9 @@ use Reli\Inspector\Output\MemoryOutput\BinaryFormat\StringDict;
  * Memory usage is O(nodes + edges) for the traversal indices, plus
  * O(tree depth) for the recursion.
  *
- * Output shape mirrors StreamingJsonFromDbExporter byte-for-byte for
- * the same logical input.
+ * Replaced the earlier StreamingJsonFromDbExporter (deleted in the
+ * unify-memory-output cleanup); the JSON output shape is preserved
+ * byte-for-byte for the same logical input.
  *
  * @psalm-suppress InaccessibleMethod
  * @psalm-suppress PossiblyNullPropertyFetch

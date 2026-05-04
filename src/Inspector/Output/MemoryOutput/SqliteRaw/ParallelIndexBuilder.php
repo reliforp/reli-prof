@@ -49,8 +49,12 @@ use Reli\Lib\File\LibcFileWriter;
  *      index via PRAGMA writable_schema, return the unused-pgno
  *      list so the caller can hand it to {@see SqliteFileMaintainer::finalize}.
  *
- * Falls back to the caller's serial path when fork or FFI is
- * unavailable (returns null from {@see build}).
+ * Pre-flight only (FFI / pcntl unavailable, empty spec list)
+ * returns null cleanly so the caller can fall back. Once the
+ * builder commits to mutating the target DB, any failure throws
+ * rather than returns null — falling back to a different code
+ * path on a partially-populated file would leave orphan index
+ * pages that PRAGMA integrity_check flags.
  *
  * @psalm-suppress MixedAssignment
  * @psalm-suppress MixedArgument
@@ -74,10 +78,9 @@ final class ParallelIndexBuilder
     private const int META_BYTES_PER_SLOT = 16;
 
     /**
-     * Build the supplied indexes in parallel and return the list of
-     * unused pgnos for the caller to put on the freelist, plus the
-     * final effective page count of the file. Returns null when
-     * fork or FFI is unavailable or any worker fails.
+     * Build the supplied indexes in parallel and return the file's
+     * final effective page count. See the class-level docblock for
+     * the null-vs-throw split between pre-flight and commit.
      *
      * `$index_specs` is a list of associative arrays:
      *   `name`      — index name
@@ -92,8 +95,18 @@ final class ParallelIndexBuilder
      *                 main DB. ~10-30x less I/O than full cp on real
      *                 schemas.
      *
+     * Pre-flight (FFI / pcntl unavailable, empty spec list) returns
+     * null cleanly with no side effects — caller can fall back to a
+     * different code path. Once we get past those checks the method
+     * commits to mutating `$main_db_path` (ftruncate + page writes
+     * + sqlite_master inserts), so any subsequent failure throws
+     * rather than returns null. A null-returning fallback after
+     * commit would leave the file with orphan index pages that
+     * `PRAGMA integrity_check` flags.
+     *
      * @param list<array{name: string, table: string, sql: string, columns: list<string>}> $index_specs
-     * @return array{int}|null [effective_total_pages]
+     * @return array{int}|null [effective_total_pages] or null on
+     *     pre-flight bail (FFI/pcntl unavailable)
      */
     public static function build(
         string $main_db_path,
@@ -121,6 +134,8 @@ final class ParallelIndexBuilder
 
         $current_pages = self::pageCount($main_db_path);
         if ($current_pages === null) {
+            // Can't even read the target DB — nothing to clean up,
+            // safe to bail.
             return null;
         }
         $reservation_per_idx = max(
@@ -134,16 +149,20 @@ final class ParallelIndexBuilder
         // down to the actual highest claimed pgno at the end.
         $upper_bound_pages = $current_pages + count($index_specs) * $reservation_per_idx;
 
-        // Pre-grow main DB (sparse).
+        // From here on we commit: any failure throws.
         $libc = \FFI::cdef('int open(const char *, int, int);', null);
         /** @var int $fd */
         $fd = $libc->open($main_db_path, 2, 0);
         if ($fd < 0) {
-            return null;
+            throw new \RuntimeException(
+                "ParallelIndexBuilder: failed to open {$main_db_path}"
+            );
         }
         if (!LibcFileWriter::ftruncate($fd, $upper_bound_pages * self::PAGE_SIZE)) {
             LibcFileWriter::close($fd);
-            return null;
+            throw new \RuntimeException(
+                "ParallelIndexBuilder: failed to ftruncate {$main_db_path}"
+            );
         }
         LibcFileWriter::close($fd);
 
@@ -174,7 +193,9 @@ final class ParallelIndexBuilder
             }
             @unlink($meta_path);
             @unlink($counter_path);
-            return null;
+            throw new \RuntimeException(
+                'ParallelIndexBuilder: failed to mmap data and/or meta region'
+            );
         }
         [$data_ptr, $data_len, $data_fd] = $data_res;
         [$meta_ptr, $meta_len, $meta_fd] = $meta_res;
@@ -223,7 +244,9 @@ final class ParallelIndexBuilder
                 @unlink($sp);
             }
             if ($any_failure) {
-                return null;
+                throw new \RuntimeException(
+                    'ParallelIndexBuilder: one or more workers failed'
+                );
             }
 
             // Read meta region back: for each index, the actual
@@ -240,7 +263,9 @@ final class ParallelIndexBuilder
                 $root = $u['root'];
                 $page_count = $u['count'];
                 if ($root === 0 || $page_count === 0) {
-                    return null;
+                    throw new \RuntimeException(
+                        "ParallelIndexBuilder: missing meta entry for index {$spec['name']}"
+                    );
                 }
                 $index_results[$spec['name']] = [
                     'table' => $spec['table'],
@@ -270,13 +295,8 @@ final class ParallelIndexBuilder
             @unlink($counter_path);
         }
 
-        // The early `return null` on worker failure already happens
-        // before we get here via the wait loop, but keeping the
-        // guard makes the contract explicit.
-        /** @psalm-suppress TypeDoesNotContainType */
-        if ($any_failure) {
-            return null;
-        }
+        // Worker-failure path already threw inside the try block;
+        // reaching here means all workers succeeded.
 
         // Update the SQLite file header so a freshly-opened
         // connection sees the extended page count. Without this
