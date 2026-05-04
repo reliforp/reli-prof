@@ -35,6 +35,22 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 
+/**
+ * PDO-driven memory output (sqlite3 / mysql / postgresql).
+ *
+ * @todo This class has accumulated several concerns — rmem serial
+ *       ingest, parallel-shard ingest, shared-mmap ingest, raw
+ *       SQLite merge orchestration, integer-index merge
+ *       orchestration, per-table row generators, worker management.
+ *       Now that the rmem-canonical migration has settled, it's
+ *       worth splitting into smaller collaborators (e.g.
+ *       RmemToPdoIngestor / SqliteRmemParallelIngestor /
+ *       SqliteSharedMmapIngestor / RmemRowProjector). Deferred to
+ *       a follow-up so the unify-memory-output PR doesn't grow
+ *       further; the public surface here is a single
+ *       MemoryOutputInterface::output, so an internal decomposition
+ *       is non-breaking.
+ */
 final class PdoMemoryOutput implements MemoryOutputInterface
 {
     public function __construct(
@@ -147,7 +163,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             if (
                 self::sharedMmapIngestEnabled()
                 && extension_loaded('ffi')
-                && $this->canUseSharedMmapIngest($rmem_path)
+                && $this->passesSharedMmapPreflight($rmem_path)
             ) {
                 // Pre-flight passed — committed to shared-mmap. Any
                 // failure inside ingestFromRmemSharedMmap throws
@@ -169,21 +185,23 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     }
 
     /**
-     * Cheap pre-flight check for the shared-mmap path. Runs before
-     * any side effect on the target DB. Returns false to signal
-     * "use the regular parallel-shard path"; once the caller has
-     * decided to enter ingestFromRmemSharedMmap, that method
-     * commits — failures throw rather than fall back, because the
-     * DB has been mutated by then.
+     * Cheap heuristic pre-flight for the shared-mmap path. Runs
+     * before any side effect on the target DB. Returns true to
+     * permit the dispatch to commit to {@see ingestFromRmemSharedMmap},
+     * false to fall back to the regular parallel-shard path.
      *
-     * Currently checks: rmem string dict has no string > 1 KiB. A
-     * single big string can blow past the inline cell limit when
-     * combined with the rest of a row's columns; falling back
-     * pre-emptively is cheaper than discovering it mid-fork (and
-     * far cheaper than discovering it post-fork when fallback is
-     * no longer safe).
+     * **Heuristic, not a safety guarantee.** The check looks at the
+     * rmem string dict and bails on any string > 1 KiB; a single
+     * big string can blow past the inline cell limit when combined
+     * with the rest of a row's columns. A row whose individual
+     * strings each fit under 1 KiB but whose combined columns
+     * exceed `INLINE_PAYLOAD_LIMIT` will still throw
+     * CellTooLargeException at runtime — surface as a fatal error
+     * after the DB has already been mutated. The 1 KiB cutoff is
+     * tuned to keep that runtime case rare in practice; in
+     * production use, bumping it should track row-shape changes.
      */
-    private function canUseSharedMmapIngest(string $rmem_path): bool
+    private function passesSharedMmapPreflight(string $rmem_path): bool
     {
         $reader = BinaryReader::open($rmem_path);
         $dict = $reader->getStringDict();
@@ -382,7 +400,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * the other paths.
      *
      * **Commits the target DB on entry**: callers must have decided
-     * via {@see canUseSharedMmapIngest} that this path is safe
+     * via {@see passesSharedMmapPreflight} that this path is safe
      * before invoking it. Once we call {@see allocateRun}, the DB
      * has the schema + run + summary written to it, and any
      * subsequent failure throws — falling back to
@@ -391,9 +409,14 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * (mid-fork overflow that the dict-only pre-flight missed) also
      * surfaces as a fatal RuntimeException.
      *
-     * Gated by `RELI_SHARED_MMAP_INGEST=1` while we evaluate whether
-     * the wall-clock win justifies maintaining the second ingest
-     * path. Not the default yet.
+     * **Experimental, gated by `RELI_SHARED_MMAP_INGEST=1`.** Not
+     * the default yet. On a fatal failure after the commit point,
+     * the output DB will be left in an incomplete state — the
+     * file's data tables may be partially populated with no
+     * indexes / summaries / canonical IDs. Recover by deleting the
+     * output file and retrying without the env var, which routes
+     * through the parallel-shard path that tolerates large rows
+     * and handles mid-run failures safely.
      *
      * @param array<int, array<string, mixed>> $summary
      * @psalm-suppress InaccessibleMethod
@@ -426,7 +449,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         };
 
         // String-dict pre-flight has already been done by
-        // canUseSharedMmapIngest (called by the dispatch); here we
+        // passesSharedMmapPreflight (called by the dispatch); here we
         // only count rows. From this point on we commit to the
         // shared-mmap path — failures throw rather than fall back,
         // because allocateRun() will mutate the target DB.
@@ -599,7 +622,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $phase('fork + workers (leaf page writes)');
             if ($had_overflow) {
                 // CellTooLargeException at runtime — the dict-only
-                // pre-flight (canUseSharedMmapIngest) didn't catch
+                // pre-flight (passesSharedMmapPreflight) didn't catch
                 // this because a single row's combined columns can
                 // overflow the inline payload limit even when each
                 // individual string fits. The target DB has been
@@ -607,14 +630,18 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 // the user knows to disable RELI_SHARED_MMAP_INGEST.
                 throw new \RuntimeException(
                     'shared-mmap ingest: a row exceeded the inline payload '
-                    . 'limit at runtime; disable RELI_SHARED_MMAP_INGEST '
-                    . 'to use the parallel-shard path which tolerates '
-                    . 'large rows via overflow chains'
+                    . 'limit at runtime; the output DB is incomplete. '
+                    . 'Delete the output file and retry without '
+                    . 'RELI_SHARED_MMAP_INGEST — the parallel-shard path '
+                    . 'tolerates large rows via overflow chains.'
                 );
             }
             if ($other_failure) {
                 throw new \RuntimeException(
-                    'shared-mmap ingest: one or more workers exited non-zero'
+                    'shared-mmap ingest: one or more workers exited non-zero; '
+                    . 'the output DB is incomplete. Delete the output file '
+                    . 'and retry, optionally without RELI_SHARED_MMAP_INGEST '
+                    . 'to fall back to the parallel-shard path.'
                 );
             }
 
