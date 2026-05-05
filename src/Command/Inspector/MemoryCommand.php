@@ -81,29 +81,6 @@ final class MemoryCommand extends ReliCommand
         }
         Log::info('start memory command');
         $memory_profiler_settings = $this->memory_profiler_settings_from_console_input->createSettings($input);
-
-        // Mirror MemoryExportSqliteCommand's guard: refuse to overwrite
-        // an existing sqlite3 output rather than ingest into a DB that
-        // already carries reli's schema. The SqliteRaw shard merger
-        // assumes a single-leaf sqlite_master, which holds for a fresh
-        // DB but not for a re-run into an already-populated reli DB —
-        // the second capture would die mid-merge with
-        // SqliteRaw\Reader::loadSqliteMaster's
-        // "sqlite_master root is not a leaf (type 0x05); not yet
-        // supported" instead of doing anything user-meaningful.
-        if (
-            $memory_profiler_settings->output_format === 'sqlite3'
-            && $memory_profiler_settings->output_path !== null
-            && file_exists($memory_profiler_settings->output_path)
-        ) {
-            $output->writeln(
-                '<error>Output already exists: '
-                . $memory_profiler_settings->output_path
-                . ' (refusing to overwrite)</error>'
-            );
-            return 1;
-        }
-
         $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
         $target_process_settings = $this->target_process_settings_from_console_input->createSettings($input);
 

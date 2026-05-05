@@ -159,6 +159,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             && extension_loaded('pcntl')
             && function_exists('pcntl_fork')
             && function_exists('pcntl_waitpid')
+            && !$this->mainHasExistingRuns()
         ) {
             if (
                 self::sharedMmapIngestEnabled()
@@ -176,7 +177,51 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $this->ingestFromRmemParallel($rmem_path, $summary);
             return;
         }
+        // Multi-run-into-same-DB lands here. The parallel-shard and
+        // shared-mmap paths build a fresh table b-tree from shard
+        // leaves only and overwrite the table rootpage, which would
+        // strand the prior run's rows in orphan pages — a feature
+        // regression vs 0.12.0, where the SQL append path naturally
+        // preserved them. Route through the serial ingest, which
+        // INSERTs row-by-row into the existing table and matches
+        // 0.12.0's append semantics exactly.
         $this->ingestFromRmemSerial($rmem_path, $summary);
+    }
+
+    /**
+     * True if the SQLite output already carries a `runs` table with
+     * at least one row, i.e. this is a re-ingest into an
+     * already-populated reli DB rather than a fresh first capture.
+     * Used by {@see ingestFromRmem} to route multi-run captures away
+     * from the parallel paths that overwrite table rootpages.
+     */
+    private function mainHasExistingRuns(): bool
+    {
+        if (!$this->driver instanceof SqliteDriver) {
+            return false;
+        }
+        $path = $this->driver->path();
+        if (!file_exists($path) || filesize($path) === 0) {
+            return false;
+        }
+        try {
+            $db = $this->driver->createConnection();
+            $stmt = $db->query(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'runs' LIMIT 1"
+            );
+            if ($stmt === false || $stmt->fetchColumn() === false) {
+                return false;
+            }
+            $stmt = $db->query('SELECT EXISTS(SELECT 1 FROM runs)');
+            if ($stmt === false) {
+                return false;
+            }
+            return (bool)(int)$stmt->fetchColumn();
+        } catch (\Throwable) {
+            // Unrelated SQLite content or a transient open failure —
+            // let the normal ingest path surface a useful error.
+            return false;
+        }
     }
 
     private static function sharedMmapIngestEnabled(): bool
