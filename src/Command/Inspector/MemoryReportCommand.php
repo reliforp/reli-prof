@@ -80,6 +80,14 @@ final class MemoryReportCommand extends ReliCommand
             'run all analysis passes (default: on; --no-full-analysis to limit for very large snapshots)',
             true,
         );
+        $this->addOption(
+            'bin-detail',
+            null,
+            InputOption::VALUE_NEGATABLE,
+            'include verbose per-bin diagnostic tables (periodic groups,'
+            . ' per-bin shape detection) in the text report (default: off)',
+            false,
+        );
         $this->addMemoryLimitOption();
         // Advanced / tuning options.
         // These mostly matter on large snapshots (multi-GB SQLite, OOM, slow
@@ -286,8 +294,10 @@ final class MemoryReportCommand extends ReliCommand
             );
         }
 
+        $bin_detail = (bool)$input->getOption('bin-detail');
+
         $formatter = match ($format) {
-            'report' => new TextReportFormatter(),
+            'report' => new TextReportFormatter($bin_detail),
             'report-json' => new JsonReportFormatter($pretty),
             default => throw new \RuntimeException(
                 "Unsupported format: {$format} (supported: report, report-json)"

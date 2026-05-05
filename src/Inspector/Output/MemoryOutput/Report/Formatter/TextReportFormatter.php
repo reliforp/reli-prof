@@ -23,6 +23,17 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\UniformSiblingDetector;
 
 final class TextReportFormatter implements ReportFormatterInterface
 {
+    public function __construct(
+        // Gate the verbose per-bin diagnostic tables (Periodic Groups,
+        // Per-bin Shape Detection) behind an opt-in. They are useful when
+        // hunting a specific leak but too long for an always-on summary;
+        // the bin histogram itself stays on. `bin_periodic_hotspot`
+        // findings are surfaced separately in the Actionable section, so
+        // the leak signal is preserved when this is off.
+        private bool $bin_detail = false,
+    ) {
+    }
+
     /** @psalm-suppress InvalidOperand */
     #[\Override]
     public function format(ReportResult $result): string
@@ -324,7 +335,7 @@ final class TextReportFormatter implements ReportFormatterInterface
 
         // Periodic groups — runs of like-shaped slots that are the
         // signature of "extension X is leaking copies of struct Y".
-        if ($bin_periodic_groups !== []) {
+        if ($this->bin_detail && $bin_periodic_groups !== []) {
             $lines[] = '=== ZendMM Periodic Groups ===';
             $lines[] = '';
             $lines[] = sprintf(
@@ -414,7 +425,7 @@ final class TextReportFormatter implements ReportFormatterInterface
         // periodic-group path skips because their bytes don't match
         // slot-to-slot. Grouped by bin so the user reads "what's in
         // this bin?" in one block.
-        if ($bin_shape_counts !== []) {
+        if ($this->bin_detail && $bin_shape_counts !== []) {
             /** @var array<int, list<Finding>> $by_bin */
             $by_bin = [];
             foreach ($bin_shape_counts as $f) {
