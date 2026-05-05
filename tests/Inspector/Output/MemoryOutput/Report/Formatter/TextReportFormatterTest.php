@@ -1212,4 +1212,110 @@ class TextReportFormatterTest extends BaseTestCase
         $this->assertStringContainsString('[retained_approximate]', $output);
         $this->assertStringNotContainsString('=== Observations', $output);
     }
+
+    public function testBinDetailSectionsAreHiddenByDefault(): void
+    {
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'bin_histogram_overview',
+                severity: FindingSeverity::Info,
+                confidence: FindingConfidence::High,
+                summary: 'ZendMM live: 1.00 MB in 1,000 small slots',
+                facts: [],
+            ),
+            new Finding(
+                kind: 'bin_histogram_entry',
+                severity: FindingSeverity::Info,
+                confidence: FindingConfidence::High,
+                summary: 'bin[32 B]: 100 live (3.20 KB)',
+                facts: [
+                    'bin_num' => 1,
+                    'bin_size' => 32,
+                    'count' => 100,
+                    'total_bytes' => 3200,
+                ],
+            ),
+            new Finding(
+                kind: 'bin_periodic_group',
+                severity: FindingSeverity::Info,
+                confidence: FindingConfidence::High,
+                summary: 'periodic group',
+                facts: [
+                    'bin_size' => 32,
+                    'count' => 50,
+                    'stride' => 32,
+                    'sample_addr' => 0x7f0000000000,
+                    'fingerprint' => 'abcd',
+                    'inferred_shape' => 'Bucket(IS_STRING)',
+                    'inferred_confidence' => 'high',
+                    'reachability' => 'orphan',
+                ],
+            ),
+            new Finding(
+                kind: 'bin_shape_count',
+                severity: FindingSeverity::Info,
+                confidence: FindingConfidence::High,
+                summary: 'shape count',
+                facts: [
+                    'bin_num' => 1,
+                    'shape' => 'Bucket(IS_STRING)',
+                    'confidence' => 'high',
+                    'count' => 50,
+                    'percentage' => 76.0,
+                    'orphan_count' => 30,
+                    'reachable_count' => 20,
+                ],
+            ),
+        ]);
+
+        $output = (new TextReportFormatter())->format($result);
+
+        // Histogram itself stays on (the user keeps the compact summary).
+        $this->assertStringContainsString('=== ZendMM Bin Histogram ===', $output);
+        // Verbose per-bin diagnostic tables are gated off by default.
+        $this->assertStringNotContainsString('=== ZendMM Periodic Groups ===', $output);
+        $this->assertStringNotContainsString('=== Per-bin Shape Detection ===', $output);
+    }
+
+    public function testBinDetailSectionsAppearWhenEnabled(): void
+    {
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'bin_periodic_group',
+                severity: FindingSeverity::Info,
+                confidence: FindingConfidence::High,
+                summary: 'periodic group',
+                facts: [
+                    'bin_size' => 32,
+                    'count' => 50,
+                    'stride' => 32,
+                    'sample_addr' => 0x7f0000000000,
+                    'fingerprint' => 'abcd',
+                    'inferred_shape' => 'Bucket(IS_STRING)',
+                    'inferred_confidence' => 'high',
+                    'reachability' => 'orphan',
+                ],
+            ),
+            new Finding(
+                kind: 'bin_shape_count',
+                severity: FindingSeverity::Info,
+                confidence: FindingConfidence::High,
+                summary: 'shape count',
+                facts: [
+                    'bin_num' => 1,
+                    'shape' => 'Bucket(IS_STRING)',
+                    'confidence' => 'high',
+                    'count' => 50,
+                    'percentage' => 76.0,
+                    'orphan_count' => 30,
+                    'reachable_count' => 20,
+                ],
+            ),
+        ]);
+
+        $output = (new TextReportFormatter(bin_detail: true))->format($result);
+
+        $this->assertStringContainsString('=== ZendMM Periodic Groups ===', $output);
+        $this->assertStringContainsString('=== Per-bin Shape Detection ===', $output);
+    }
 }
