@@ -177,25 +177,27 @@ final class IntegerIndexMerger
                 $chunk = array_slice($level, $i, $max_children);
                 $is_last_chunk = ($i + $max_children >= $n);
                 if ($is_last_chunk) {
-                    $chunk_rightmost = $remaining_rightmost;
-                } else {
-                    // The last entry of this chunk gets promoted to
-                    // become the divider in the next-level interior
-                    // cell; its child becomes that interior cell's
-                    // rightmost descendant for this internal page.
-                    $last = $chunk[count($chunk) - 1];
-                    $chunk_rightmost = $last['pgno'];
-                }
-                $page = $this->buildInteriorPage($chunk, $chunk_rightmost, $page_size);
-                $pgno = $this->main->appendPage($page);
-                if ($is_last_chunk) {
-                    $rightmost = $pgno;
+                    $page = $this->buildInteriorPage($chunk, $remaining_rightmost, $page_size);
+                    $rightmost = $this->main->appendPage($page);
                     break; // no divider needed for the last chunk; it's the rightmost of the next level
                 }
-                // The cell that gets promoted up: divider = the
-                // promoted entry from the last leaf in this chunk.
-                $promoted = $chunk[count($chunk) - 1]['divider_payload'];
-                $next[] = ['pgno' => $pgno, 'divider_payload' => $promoted];
+                // The last entry of this chunk is *removed* from the
+                // chunk before it gets passed to buildInteriorPage:
+                // its pgno becomes this internal page's
+                // rightmost-child pointer (lives in the page header,
+                // not as a cell), and its divider becomes the divider
+                // promoted up to the parent level. Leaving it in
+                // $chunk would write it as both cell N-1 and as the
+                // rightmost pointer, so its pgno gets referenced
+                // twice on the page — exactly the corruption shape
+                // PRAGMA integrity_check reports as
+                // "page X cell N-1: 2nd reference to page Y" and
+                // "wrong # of entries in index ...".
+                $last = array_pop($chunk);
+                \assert($last !== null); // $chunk had $max_children entries
+                $page = $this->buildInteriorPage($chunk, $last['pgno'], $page_size);
+                $pgno = $this->main->appendPage($page);
+                $next[] = ['pgno' => $pgno, 'divider_payload' => $last['divider_payload']];
             }
             $level = $next;
         }
