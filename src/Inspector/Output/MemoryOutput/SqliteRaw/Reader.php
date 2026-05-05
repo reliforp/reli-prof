@@ -165,31 +165,76 @@ final class Reader
 
     /**
      * Parse sqlite_master (rooted at page 1, b-tree starts at offset
-     * 100). Returns a name => row map. Only single-leaf sqlite_master
-     * is supported here; if the schema ever grows past one page,
-     * this will need to walk like collectTableLeaves does. Our
-     * shards have ≤ 4 tables so a single leaf is always enough.
+     * 100). Returns a name => row map.
+     *
+     * Walks the full b-tree rather than assuming page 1 is a leaf:
+     * shard files (≤ 4 tables) fit in one leaf and used to motivate
+     * the original single-leaf shortcut, but a re-ingest into an
+     * already-populated reli main DB has 24+ sqlite_master entries,
+     * pushing page 1 to interior (type 0x05). The interior walk only
+     * fires when the schema actually grew past one leaf, so the fast
+     * path for shard files is unchanged in practice.
      */
     private function loadSqliteMaster(): array
     {
-        $page = $this->readPage(1);
-        $btree_offset = Format::HEADER_SIZE;
+        $entries = [];
+        // Page 1 carries the 100-byte file header; descendant pages
+        // start their b-tree header at offset 0. walkSqliteMasterPage
+        // applies the right offset based on $pgno.
+        $this->walkSqliteMasterPage(1, $entries);
+        return $entries;
+    }
+
+    /**
+     * Walk one page of the sqlite_master b-tree. Leaf pages contribute
+     * their decoded cells to `$entries`; interior pages recurse into
+     * their children (cells + rightmost). Mirrors `walkTablePages`
+     * but decodes leaf cells into the sqlite_master row shape.
+     *
+     * @param array<string, array{type:string,name:string,tbl_name:string,rootpage:int,sql:string}> $entries
+     */
+    private function walkSqliteMasterPage(int $pgno, array &$entries): void
+    {
+        $page = $this->readPage($pgno);
+        $btree_offset = $pgno === 1 ? Format::HEADER_SIZE : 0;
         $type = ord($page[$btree_offset]);
-        if ($type !== Format::BTREE_LEAF_TABLE) {
+        $cell_count = (int)unpack('n', substr($page, $btree_offset + Format::PG_CELL_COUNT, 2))[1];
+
+        if ($type === Format::BTREE_LEAF_TABLE) {
+            $cell_ptr_array_offset = $btree_offset + 8;
+            for ($i = 0; $i < $cell_count; $i++) {
+                $cell_ptr = (int)unpack(
+                    'n',
+                    substr($page, $cell_ptr_array_offset + $i * 2, 2),
+                )[1];
+                $row = $this->decodeSqliteMasterCell($page, $cell_ptr);
+                $entries[$row['name']] = $row;
+            }
+            return;
+        }
+
+        if ($type !== Format::BTREE_INTERIOR_TABLE) {
             throw new \RuntimeException(
-                sprintf('sqlite_master root is not a leaf (type 0x%02x); not yet supported', $type)
+                sprintf(
+                    'expected sqlite_master b-tree page at %d, got type 0x%02x',
+                    $pgno,
+                    $type,
+                ),
             );
         }
-        $cell_count = unpack('n', substr($page, $btree_offset + Format::PG_CELL_COUNT, 2))[1];
-        $cell_ptr_array_offset = $btree_offset + 8;
 
-        $entries = [];
+        $rightmost = (int)unpack('N', substr($page, $btree_offset + Format::PG_RIGHTMOST_PTR, 4))[1];
+        $cell_ptr_array_offset = $btree_offset + 12; // 8-byte hdr + 4-byte rightmost
         for ($i = 0; $i < $cell_count; $i++) {
-            $cell_ptr = unpack('n', substr($page, $cell_ptr_array_offset + $i * 2, 2))[1];
-            $row = $this->decodeSqliteMasterCell($page, (int)$cell_ptr);
-            $entries[$row['name']] = $row;
+            $cell_ptr = (int)unpack(
+                'n',
+                substr($page, $cell_ptr_array_offset + $i * 2, 2),
+            )[1];
+            // Interior table cell: u32 left_child_pgno + varint rowid
+            $child_pgno = (int)unpack('N', substr($page, $cell_ptr, 4))[1];
+            $this->walkSqliteMasterPage($child_pgno, $entries);
         }
-        return $entries;
+        $this->walkSqliteMasterPage($rightmost, $entries);
     }
 
     /**
