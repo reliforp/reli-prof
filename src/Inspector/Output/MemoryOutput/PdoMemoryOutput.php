@@ -1220,12 +1220,11 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * enabled — at 100K rows on the rbt:analyze trace, the
      * IntegerIndexMerger spends ~0.49s building three integer
      * indexes via PHP-side leaf assembly while the CREATE INDEX
-     * machinery in C only takes ~0.28s for the same three. L is
-     * still correct (5K integrity_check passes, COUNT(*) matches
-     * full-scan); it just isn't a wall-clock win at this scale
-     * with the current PHP-only implementation. Off by default
-     * until the followups in docs/internals/format-direct-merge.md
-     * land. Enable with RELI_FORMAT_DIRECT_INDEX=1.
+     * machinery in C only takes ~0.28s for the same three. It
+     * just isn't a wall-clock win at this scale with the current
+     * PHP-only implementation. Off by default until the followups
+     * in docs/internals/format-direct-merge.md land. Enable with
+     * RELI_FORMAT_DIRECT_INDEX=1.
      *
      * @param array<int, array<string, mixed>> $summary
      */
