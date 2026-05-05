@@ -178,15 +178,18 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             )
         ');
 
-        // `id INTEGER PRIMARY KEY` is the rowid alias on a regular
-        // ROWID table — no extra storage cost, but it gives report-time
-        // chunked loaders a stable, indexable column they can paginate
-        // by (`WHERE run_id = ? AND id > ? LIMIT N`) without SQLite's
-        // planner mistakenly using the (run_id, *) covering indexes
-        // and post-filtering rowid per chunk.
+        // On SQLite, `id INTEGER PRIMARY KEY` is the rowid alias on a
+        // regular ROWID table — no extra storage cost, but it gives
+        // report-time chunked loaders a stable, indexable column they
+        // can paginate by (`WHERE run_id = ? AND id > ? LIMIT N`)
+        // without SQLite's planner mistakenly using the (run_id, *)
+        // covering indexes and post-filtering rowid per chunk. Use
+        // `{$autoId}` so PostgreSQL/MySQL get a SERIAL/AUTO_INCREMENT
+        // default — INSERTs below omit `id` and the literal would
+        // leave them with a NOT NULL violation.
         $db->exec("
             CREATE TABLE IF NOT EXISTS context_edges (
-                id INTEGER PRIMARY KEY,
+                id {$autoId},
                 run_id INTEGER NOT NULL,
                 parent_node_id INTEGER,
                 child_node_id INTEGER NOT NULL,
