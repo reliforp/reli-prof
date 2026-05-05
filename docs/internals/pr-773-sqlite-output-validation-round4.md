@@ -136,6 +136,33 @@ finding the sqlite path doesn't:
 All other 253 findings are bit-identical between the two paths; the
 only delta is the missing `call_stack`.
 
+### Pre-existing in 0.12.0 — newly visible because of #773
+
+`git show 0.12.0:.../GraphSubstrate.php` and
+`git show 0.12.0:.../CallStackPass.php` confirm:
+
+- 0.12.0 ships the **identical** `GraphSubstrate::iterateNodeSizes`
+  implementation (`return $this->node_sizes;`) populated the same
+  way from `context_node_locations` only.
+- 0.12.0 ships the **identical** `CallStackPass::analyzeWithSubstrate`
+  using the same `iterateNodeSizes + getNodeType` lookup pattern.
+- 0.12.0 has 23 Pass classes; PR has 26 (3 net new).
+
+So the bug has existed since at least 0.12.0. The reason no one
+noticed until #773 is that **0.12.0 had no rmem-direct report path
+at all** — the only way to run `inspector:memory:report` was
+against a SQLite DB, so there was no second code path to compare
+against. #773's new `BinaryReportDataProvider` is a brand-new
+rmem-direct report path that *doesn't* have the bug
+(`FfiCsrGraphSubstrate.iterateNodeSizes` iterates every node);
+when the two paths run against the same dump and produce
+different finding sets, the gap finally surfaces.
+
+In short: not a #773 regression — same shape as the round-3
+postgres `context_edges` schema asymmetry. #773 *exposes* the
+pre-existing `GraphSubstrate.iterateNodeSizes` bug because it adds
+a comparison path that doesn't share it.
+
 ### Root cause — `GraphSubstrate::iterateNodeSizes` excludes 0-size structural nodes
 
 `Inspector\Output\MemoryOutput\Report\Pass\CallStackPass::analyzeWithSubstrate`
