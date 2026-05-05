@@ -18,18 +18,25 @@ test.
    closures with captured `$this` / static / first-class-callable, and
    suspended generators — also produce integrity-clean,
    content-identical output across all 8 flag combinations.**
-3. **One new defect found**: writing a second `inspector:memory`
+3. **One new regression found**: writing a second `inspector:memory`
    capture into an already-populated reli SQLite database fails with
    `RuntimeException: sqlite_master root is not a leaf (type 0x05);
    not yet supported` from `SqliteRaw\Reader::loadSqliteMaster`.
    Affects every flag combination. Reproduces with a 100-element-array
    target.
-   **Fixed in [#776](https://github.com/reliforp/reli-prof/pull/776)**
-   by mirroring the refuse-to-overwrite guard
-   `MemoryExportSqliteCommand` already has. The follow-up is purely
-   documentation: three places in the codebase still advertise a
-   "compare run IDs within the same file" workflow that was never
-   actually reachable — see the resolution section below.
+   **0.12.0 supports this workflow** — repeated
+   `inspector:memory -f sqlite3 -o existing.sqlite3` against a
+   long-running target produces a 2-run DB
+   (`runs` table has 2 rows, `context_edges` has both `run_id=1` and
+   `run_id=2` populated, `integrity_check = ok`). So this is a real
+   feature regression introduced by #773's rmem-canonical migration,
+   not just an implementation-detail leak. See the verification at
+   the bottom of this document.
+   **[#776](https://github.com/reliforp/reli-prof/pull/776) stops the
+   crash** by mirroring `MemoryExportSqliteCommand`'s
+   refuse-to-overwrite guard, but only as a *safe interim* — it
+   doesn't restore the released-and-removed feature. The follow-up
+   options are listed in the resolution section below.
 4. As a related-but-not-defect observation, `inspector:memory -f json`
    silently truncates an existing JSON file at the same path, while
    `inspector:memory:export-sqlite` explicitly refuses to overwrite.
@@ -174,107 +181,156 @@ mostly because the third row's failure mode looks like a low-level
 "reli is broken" bug to a user who was just expecting the same
 silent-overwrite behaviour as JSON.
 
-### Resolution: refuse-on-exists, then prune the now-stale docs
+### Resolution: #776 stops the crash, but doesn't replace the lost feature
 
-The pragmatic stance is to commit to refuse-on-exists as the *final*
-behaviour rather than an interim stopgap, because:
+`inspector:memory -f sqlite3 -o existing.sqlite3` is a
+**released-and-working capability in 0.12.0**: repeating it against
+a long-running target produces a 2-run DB that
+`inspector:memory:compare snapshot.db --run-id-baseline 1 --run-id-target 2`
+(also released in 0.12.0) consumes correctly. The combined feature
+is documented:
 
-- Two-file `inspector:memory:compare` (rmem/rmem, sqlite/sqlite, or
-  even rmem/sqlite mixed) **already works today** and is the path
-  the PR description's rmem-as-canonical-intermediate direction
-  implicitly favours.
-- rmem/rmem compare skips SQLite ingest entirely, so it's strictly
-  cheaper than building one shared multi-run DB.
-- "Bundle everything in one file for sharing" is solved by `tar.gz`
-  on the rmem files; doesn't need schema-level support.
-- `runs.run_id` autoincrement and the per-row `run_id` column stay
-  useful for future workflows where multi-run-per-DB is built up
-  by something other than re-running `inspector:memory` against the
-  same path (the obvious one is `inspector:sidecar` collecting many
-  dumps into one DB), without any work being needed on the write
-  side right now.
+- `MemoryCompareCommand.php:55` — `target` arg help text:
+  `path to the target snapshot (.rmem or SQLite .db/.sqlite); omit to compare run IDs within the same file`
+- `docs/memory/memory-report.md:381-383` — worked example showing
+  exactly this flow.
+- `docs/memory/memory-report.md:449` — usage block's
+  `(omit to compare run IDs within the same SQLite file)` parenthetical.
 
-In other words [#776](https://github.com/reliforp/reli-prof/pull/776)
-is a complete fix — option 1 from the previous draft of this report,
-upgraded from "stopgap" to "final".
+The `runs.run_id` autoincrement, the `run_id` column on every per-run
+table, the `CREATE TABLE IF NOT EXISTS`, and the
+`MemoryCompareCommand`'s `--run-id-baseline` / `--run-id-target`
+options are all 0.12.0-shipped infrastructure that already work as a
+unit on a real multi-run DB. The only thing missing in 0.13.x is
+that the new rmem-canonical `SqliteRaw\Reader::loadSqliteMaster`
+can't *parse* a populated reli DB during the second ingest — its
+docblock at `Reader.php:166-172` explicitly flags this as a known
+TODO ("if the schema ever grows past one page, this will need to
+walk like collectTableLeaves does").
 
-#### Documentation cleanup that should follow #776
+#776's refuse-to-overwrite guard fixes the *crash* (which is what was
+critical), but the user-visible behaviour after #776 is "0.12.0
+feature is gone, error message instead". For 0.13.x to ship without
+a feature regression vs 0.12.0, one of A/B/C below has to follow.
 
-Three places currently advertise a "compare run IDs within the same
-file" workflow that has never actually been reachable for the user
-(the only way to put two `run_id`s into one file is to ingest twice
-into the same path, which #776 now refuses, and which previously
-crashed mid-merge). They should be updated so users don't reach for
-a feature that doesn't exist:
+#### A. (Preferred) Restore the feature
 
-1. **`src/Command/Inspector/MemoryCompareCommand.php:55`** — the
-   `target` argument's help text:
-
-   ```php
-   'path to the target snapshot (.rmem or SQLite .db/.sqlite); '
-       . 'omit to compare run IDs within the same file'
-   ```
-
-   Suggested replacement:
-
-   ```php
-   'path to the target snapshot (.rmem or SQLite .db/.sqlite)'
-   ```
-
-   i.e. drop the `; omit to ...` clause. The `target` argument
-   stays optional (because the `--run-id-baseline` /
-   `--run-id-target` options remain available for the rare case
-   where two run_ids really did end up in one DB — e.g. via a
-   future sidecar workflow), but we stop telling users to omit it
-   for a workflow they can't construct.
-
-2. **`docs/memory/memory-report.md:381-383`** — the example block:
-
-   ```markdown
-   # Compare run IDs within the same file (SQLite only — multi-run support
-   # requires the relational schema)
-   ./reli inspector:memory:compare snapshot.db --run-id-baseline 1 --run-id-target 2
-   ```
-
-   Suggested action: **delete this example entirely.** The
-   surrounding text already shows the canonical two-rmem
-   workflow, which is the recommended form.
-
-3. **`docs/memory/memory-report.md:449`** — the usage block's
-   parenthetical:
-
-   ```
-   target  ... (omit to compare run IDs within the same SQLite file)
-   ```
-
-   Suggested replacement: drop the parenthetical, matching the
-   change to the source-of-truth help text in (1).
-
-Optionally, the same `docs/memory/memory-report.md` rewrite is a
-good place to **promote rmem/rmem compare as the recommended
-form** — it sidesteps the SQLite ingest cost entirely and is what
-the PR-description-level "rmem is the canonical intermediate"
-direction implies. The two-file SQLite compare should still be
-documented (some users will be coming from existing `.sqlite3`
-captures), but rmem-first reads more naturally given the rest of
-the PR.
-
-#### What's *not* recommended as follow-up
-
-Implementing real multi-run-per-DB writes (the round-1 draft of
-this report's "option 2": loosen
+Implement the missing piece: teach
 `SqliteRaw\Reader::loadSqliteMaster` to walk multi-leaf
-`sqlite_master`, make parallel-shard ingest stamp the
-freshly-allocated `run_id` on every row, add an integration test
-exercising the compare-within-one-file flow). That code change is
-real work; the user-visible benefit is duplicated by the
-already-working two-file compare path, which is also faster
-because it skips the second SQLite ingest.
+`sqlite_master` (the docblock TODO at `Reader.php:166-172`), and
+add an integration test that captures twice into the same SQLite
+file and asserts:
 
-Leaving the `run_id` columns and autoincrement in place keeps the
-schema forward-compatible if a real multi-run producer (e.g.
-`inspector:sidecar`) wants to use it later, without paying the
-implementation cost speculatively now.
+- `PRAGMA integrity_check = ok` on the final DB
+- `runs` table has 2 rows
+- per-run row counts in `context_edges` etc. equal the single-run
+  baselines
+- `inspector:memory:compare path.sqlite3 --run-id-baseline=1 --run-id-target=2`
+  works end-to-end
+
+The shard ingest already stamps the freshly-allocated `run_id` on
+every row (`PdoMemoryOutput.php:330-338`'s comment block describes
+this design intent explicitly), so the only code change needed is
+in the reader. Once that lands, #776's guard can be dropped (or kept
+behind a `--no-append` opt-out for users who want export-sqlite-style
+overwrite refusal).
+
+This is the only option that **keeps 0.12.0's docs accurate as-is,
+keeps `inspector:memory:compare`'s `--run-id-*` options meaningful,
+and avoids a 0.13.x release-note line saying "we broke this 0.12.0
+workflow on purpose"**.
+
+#### B. Accept the regression, document it
+
+Ship 0.13.x with #776's guard as the final behaviour and add a
+**Backwards-incompatible change** entry to the release notes
+explicitly:
+
+> `inspector:memory -f sqlite3 -o foo.sqlite3` no longer appends a
+> second run to an existing file. To compare two snapshots, capture
+> them as separate files (`.rmem` is recommended for speed) and
+> pass both paths to `inspector:memory:compare`. The
+> `--run-id-baseline` / `--run-id-target` options to
+> `inspector:memory:compare` remain available for DBs assembled by
+> other producers (e.g. `inspector:sidecar`) but no first-party
+> producer creates them in 0.13.x.
+
+Plus the doc updates that follow from this:
+
+1. `MemoryCompareCommand.php:55`: drop `; omit to compare run IDs within the same file`.
+2. `docs/memory/memory-report.md:381-383`: delete the
+   `--run-id-baseline 1 --run-id-target 2` example.
+3. `docs/memory/memory-report.md:449`: drop the
+   `(omit to compare run IDs within the same SQLite file)` parenthetical.
+
+This is honest about the change but loses a working feature for the
+sake of avoiding the Reader change.
+
+#### C. Add an `--append` opt-in flag
+
+Keep #776's guard as the default (safe, mirrors `export-sqlite`), but
+add `inspector:memory --append -f sqlite3 -o existing.sqlite3` that
+takes the multi-leaf-aware path. Default is the new safe behaviour;
+0.12.0 users get an explicit one-flag migration. Effectively A's
+implementation work, with the safer default of B; the cost is one
+extra CLI option to document.
+
+#### Recommendation
+
+A. The schema, the CLI, and the docs are all *already* aligned on
+multi-run-per-DB; only the reader is in the way. Implementing
+multi-leaf `sqlite_master` parse is a contained, well-understood
+change (the SQLite file format spec is small and the existing
+`collectTableLeaves` is the template). Doing it in this PR cycle —
+or in an immediate follow-up before 0.13.0 ships — preserves
+feature parity with 0.12.0 and saves the 0.13.x release notes from
+having to advertise a feature deletion.
+
+If the implementation cost is judged too high right now, **C is the
+acceptable backup** — it preserves the option for 0.12.0 users at
+trivial doc cost, and the underlying work to lift the
+single-leaf assumption can be shipped any time later without
+touching anything else.
+
+**B should only be picked if multi-run-per-DB is genuinely deemed
+the wrong design** — e.g. the team decides rmem two-file is the
+strategic direction and the 0.12.0 multi-run-write path was a
+historical accident. That's a defensible position, but it should
+be stated explicitly rather than landed by accident through #776
+silently swallowing a feature.
+
+### 0.12.0 baseline verification (proof that this is a regression)
+
+Run against the released 0.12.0 tag in this repo with a trivial
+target (`['hello' => 'world', 'arr' => range(1, 100)]`) parked in a
+sleep loop:
+
+```text
+=== 0.12.0 first capture ===
+size=7659520 integrity=ok
+runs row(s):  1|2026-05-05T15:45:07Z
+context_edges run_id=1: 35447
+
+=== 0.12.0 SECOND capture into same file ===
+size=16265216 integrity=ok
+runs rows:    1|2026-05-05T15:45:07Z
+              2|2026-05-05T15:45:08Z
+context_edges by run_id:
+              1|35447
+              2|35447
+```
+
+Both runs land cleanly, `integrity_check = ok`, both
+`run_id` values are populated with the per-run row counts of a
+single capture, file roughly doubles in size — exactly the
+"compare run IDs within the same file" workflow the docs describe.
+
+`inspector:memory:compare snapshot.db --run-id-baseline 1 --run-id-target 2`
+against this DB also works on 0.12.0 (compares the two runs and
+reports zero deltas, since both captures were of the same parked
+target). So the entire pipeline — produce → store → compare — was
+shipped and functional in 0.12.0; the regression is purely on the
+write side and purely in 0.13.x's new rmem-canonical ingest.
 
 ## Test artefacts
 
