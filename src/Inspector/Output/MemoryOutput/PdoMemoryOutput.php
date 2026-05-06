@@ -1810,7 +1810,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             return;
         }
 
-        $writer = SqliteRawWriter::open($main_path);
+        $writer = SqliteRawWriter::openForPatch($main_path);
         foreach ($jobs as $job) {
             $merger = new IntegerIndexMerger($writer, $job['sort_runs']);
             try {

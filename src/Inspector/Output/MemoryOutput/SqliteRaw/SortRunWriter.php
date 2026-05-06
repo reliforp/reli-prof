@@ -16,23 +16,19 @@ namespace Reli\Inspector\Output\MemoryOutput\SqliteRaw;
 /**
  * Per-shard sort-run file for a single integer index.
  *
- * File layout (v2 — cells pre-encoded by the worker):
+ * File layout (v3 — parallel-array sections so the reader can bulk
+ * `unpack` each column in one C call):
  *   [u32 BE record count]
- *   record_count × [
- *     i64 BE key,          // sort key
- *     i64 BE rowid,        // tiebreaker
- *     u8 cell_len,         // bytes in the encoded cell that follows
- *     cell_len bytes cell  // SQLite leaf cell: varint(payload_size) + record_payload
- *   ]
+ *   [u32 BE cell_data_size]                        // bytes in the cell-data section
+ *   record_count × i64 BE key                      // sort key
+ *   record_count × i64 BE rowid                    // tiebreaker
+ *   record_count × u32 BE cell_offset              // offset within the cell-data section
+ *   cell_data_size bytes                           // concatenated SQLite leaf cell bytes
  *
- * The cell is encoded by the worker against the freshly-allocated
- * `run_id` passed to the constructor — that is the only run_id the
- * resulting index will ever carry, so encoding it once per worker (in
- * parallel) is strictly cheaper than the previous scheme where main
- * called `RecordEncoder::encodeIntegerRow([$run_id, $key, $rowid])`
- * per row in the k-way merge. The merger now does heap pull + memcpy
- * only and the per-row record-encoding cost moves off the critical
- * path entirely.
+ * The cell bytes are encoded by the worker against the constructor-
+ * supplied `run_id` — the only run_id the resulting index will ever
+ * carry — so encoding parallelises across shards and the merger does
+ * heap pull + memcpy only.
  *
  * Records must be appended in (key, rowid) ascending order — the
  * worker is expected to extract them in sorted order via
@@ -45,9 +41,7 @@ namespace Reli\Inspector\Output\MemoryOutput\SqliteRaw;
  */
 final class SortRunWriter
 {
-    /** @var resource */
-    private $fh;
-    private int $count = 0;
+    private string $path;
     private bool $closed = false;
 
     /**
@@ -61,23 +55,25 @@ final class SortRunWriter
     private string $run_id_body;
 
     /**
-     * Output buffer: cells accumulate here and get flushed in 64 KiB
-     * chunks. fwrite once per row over hundreds of thousands of rows
-     * pays a fixed per-call overhead even with PHP's 8 KiB stream
-     * buffer in front; one flush per ~64 KiB amortises that to noise.
+     * Parallel buffers for the three column sections. Sized in
+     * proportion to the number of records — for our largest index
+     * (~700 K rows total / 4 shards ≈ 175 K per shard) the combined
+     * buffers are roughly 8.4 MB per writer, well within a worker's
+     * PHP memory budget. Cell-data is buffered in $cell_data so we
+     * can write the whole file in one shot at close().
+     *
+     * @var list<int>
      */
-    private const BUFFER_FLUSH_BYTES = 65536;
-    private string $buffer = '';
+    private array $keys = [];
+    /** @var list<int> */
+    private array $rowids = [];
+    /** @var list<int> */
+    private array $cell_offsets = [];
+    private string $cell_data = '';
 
     public function __construct(string $path, int $run_id)
     {
-        $fh = fopen($path, 'wb');
-        if ($fh === false) {
-            throw new \RuntimeException("failed to open sort run file for write: {$path}");
-        }
-        $this->fh = $fh;
-        // Reserve 4 bytes for the record count; rewritten at close.
-        fwrite($this->fh, "\x00\x00\x00\x00");
+        $this->path = $path;
 
         [$tc, $body] = self::encodeIntegerValue($run_id);
         $this->run_id = $run_id;
@@ -88,22 +84,10 @@ final class SortRunWriter
     public function append(int $key, int $rowid): void
     {
         $cell = $this->encodeCell($key, $rowid);
-        $cell_len = strlen($cell);
-        if ($cell_len > 255) {
-            // Three int64 columns plus the small constant-bytes overhead
-            // never reaches 256; if it does we've encoded something we
-            // didn't expect and the file format would silently truncate.
-            throw new \LengthException(
-                "encoded cell length {$cell_len} exceeds u8 range — "
-                . "integer index payload is not three small ints"
-            );
-        }
-        $this->buffer .= pack('JJ', $key, $rowid) . chr($cell_len) . $cell;
-        $this->count++;
-        if (strlen($this->buffer) >= self::BUFFER_FLUSH_BYTES) {
-            fwrite($this->fh, $this->buffer);
-            $this->buffer = '';
-        }
+        $this->keys[] = $key;
+        $this->rowids[] = $rowid;
+        $this->cell_offsets[] = strlen($this->cell_data);
+        $this->cell_data .= $cell;
     }
 
     public function close(): void
@@ -111,14 +95,27 @@ final class SortRunWriter
         if ($this->closed) {
             return;
         }
-        if ($this->buffer !== '') {
-            fwrite($this->fh, $this->buffer);
-            $this->buffer = '';
+        $count = count($this->keys);
+        $cell_data_size = strlen($this->cell_data);
+        $header = pack('N', $count) . pack('N', $cell_data_size);
+        // Bulk-pack each column in one C-side `pack(...)` call —
+        // J*/N* accept a list and emit the BE bytes in a single
+        // pass. The reader uses the symmetric bulk `unpack` to
+        // hydrate the columns at construction.
+        $keys_bytes = $count > 0 ? pack('J*', ...$this->keys) : '';
+        $rowids_bytes = $count > 0 ? pack('J*', ...$this->rowids) : '';
+        $offsets_bytes = $count > 0 ? pack('N*', ...$this->cell_offsets) : '';
+
+        $payload = $header . $keys_bytes . $rowids_bytes . $offsets_bytes . $this->cell_data;
+        if (file_put_contents($this->path, $payload) === false) {
+            throw new \RuntimeException("failed to write sort run file: {$this->path}");
         }
-        fflush($this->fh);
-        rewind($this->fh);
-        fwrite($this->fh, pack('N', $this->count));
-        fclose($this->fh);
+        // Free the buffers so a worker that holds many writers
+        // simultaneously isn't pinning their memory after close.
+        $this->keys = [];
+        $this->rowids = [];
+        $this->cell_offsets = [];
+        $this->cell_data = '';
         $this->closed = true;
     }
 
@@ -134,9 +131,7 @@ final class SortRunWriter
      * `varint(payload_size) + payload`. Specialised for the common
      * shape (key/rowid in int32 range) so the bulk of rows take a
      * single `pack` call; falls through to the general encoder for
-     * keys whose magnitude exceeds int32 (rare in our schema —
-     * node_id values comfortably fit, addresses don't but addresses
-     * never key these three indexes).
+     * keys whose magnitude exceeds int32.
      */
     private function encodeCell(int $key, int $rowid): string
     {
@@ -145,17 +140,11 @@ final class SortRunWriter
             && $rowid >= -2147483648 && $rowid <= 2147483647
         ) {
             // tc = 4 for both key and rowid → 4-byte signed BE bodies.
-            // header_inner = run_id_tc_varint + "\x04\x04"
-            // header_size  = 1 + strlen(run_id_tc_varint) + 2
-            //              = strlen(run_id_tc_varint) + 3 (always 4 for our run_ids)
-            // payload      = varint(header_size) + header_inner + run_id_body + key + rowid
             $inner = $this->run_id_tc_varint . "\x04\x04";
             $header_size = 1 + strlen($inner);
             $payload = chr($header_size) . $inner . $this->run_id_body
                 . pack('NN', $key & 0xffffffff, $rowid & 0xffffffff);
             $payload_size = strlen($payload);
-            // payload_size is always small (< 32) for our 3-int rows
-            // — single-byte varint covers everything.
             return chr($payload_size) . $payload;
         }
         // Fallback: full encoder (handles 6/8-byte int bodies for
@@ -206,8 +195,6 @@ final class SortRunWriter
     private static function writeVarintShort(int $v): string
     {
         if ($v < 0 || $v >= 0x80) {
-            // Defensive: type codes 0..9 cover everything we emit;
-            // anything larger is a bug in the caller.
             return Format::writeVarint($v);
         }
         return chr($v);
