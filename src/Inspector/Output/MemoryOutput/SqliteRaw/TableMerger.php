@@ -157,32 +157,53 @@ final class TableMerger
     }
 
     /**
-     * Walk the cell pointer array, decode each cell's payload size
-     * varint, and return the maximum rowid (== last cell's rowid for
-     * a sane leaf, but compute it explicitly for safety). Throws
-     * if any cell would need an overflow chain.
+     * Verify no cell needs an overflow chain and return the leaf's
+     * maximum rowid.
+     *
+     * SQLite stores table-leaf cells in rowid order, so the last cell
+     * carries the leaf's max rowid by definition — no per-cell rowid
+     * scan needed. Overflow detection still has to look at every
+     * cell's payload-size varint, but most payloads encode in 1–2
+     * bytes (single-byte varint < 128, two-byte < 16384), so we
+     * inline the fast cases and fall back to the generic decoder only
+     * for the rare ≥3-byte varint. That removes one varint decode per
+     * cell and a function-call dispatch per byte for the common case,
+     * which is the dominant work of the merger over ~20K leaves.
      */
     private function verifyLeafAndGetMaxRowid(
         string $page,
         int $cell_count,
         int $inline_max,
     ): int {
-        $cell_ptr_array_offset = 8; // leaf pages: header is 8 bytes
-        $max_rowid = PHP_INT_MIN;
-        for ($i = 0; $i < $cell_count; $i++) {
-            $cell_offset = unpack('n', substr($page, $cell_ptr_array_offset + $i * 2, 2))[1];
-            $cell_offset = (int)$cell_offset;
-            [$payload_size, $sz_len] = Format::readVarint($page, $cell_offset);
+        // Cell pointer array: u16 BE offsets, packed contiguously
+        // starting at byte 8 (leaf header). Unpack the whole array in
+        // one native call instead of two ord() per cell.
+        /** @var array<int, int> $ptrs */
+        $ptrs = unpack("n{$cell_count}", $page, 8);
+        for ($i = 1; $i <= $cell_count; $i++) {
+            $cell_offset = $ptrs[$i];
+            $b0 = ord($page[$cell_offset]);
+            if ($b0 < 0x80) {
+                $payload_size = $b0;
+            } else {
+                $b1 = ord($page[$cell_offset + 1]);
+                if ($b1 < 0x80) {
+                    $payload_size = (($b0 & 0x7f) << 7) | $b1;
+                } else {
+                    [$payload_size, ] = Format::readVarint($page, $cell_offset);
+                }
+            }
             if ($payload_size > $inline_max) {
                 throw new OverflowNotSupportedException(
-                    "cell at offset {$cell_offset} has overflow chain (payload {$payload_size} > {$inline_max})"
+                    "cell at offset {$cell_offset} has overflow chain "
+                    . "(payload {$payload_size} > {$inline_max})"
                 );
             }
-            [$rowid, $_rowid_len] = Format::readVarint($page, $cell_offset + $sz_len);
-            if ($rowid > $max_rowid) {
-                $max_rowid = $rowid;
-            }
         }
+        // Last cell's rowid is the leaf's max rowid.
+        $last_offset = $ptrs[$cell_count];
+        [$_p, $sz_len] = Format::readVarint($page, $last_offset);
+        [$max_rowid, ] = Format::readVarint($page, $last_offset + $sz_len);
         return $max_rowid;
     }
 

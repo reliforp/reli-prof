@@ -776,9 +776,19 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $phase('createViews');
     }
 
+    /**
+     * Default-on toggle for the parallel CREATE INDEX path. Off only
+     * when explicitly disabled via `RELI_PARALLEL_INDEX=0`; the
+     * pre-flight inside {@see tryParallelCreateIndexes} already
+     * returns false on environments that can't support it (non-SQLite
+     * driver, FFI / pcntl missing), so callers fall back to the
+     * serial createIndexes path automatically. The env-var kill
+     * switch is kept so users hitting an unforeseen edge can opt
+     * back to serial without recompiling.
+     */
     private static function parallelIndexEnabled(): bool
     {
-        return getenv('RELI_PARALLEL_INDEX') === '1';
+        return getenv('RELI_PARALLEL_INDEX') !== '0';
     }
 
     /**
@@ -806,6 +816,31 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             return false;
         }
         $specs = self::userIndexSpecs();
+
+        // Skip indexes that already exist — format-direct L pre-
+        // creates the 3 integer indexes via IntegerIndexMerger, and
+        // a 2nd-or-later capture into the same DB carries the
+        // 0.13.x sqlite_master entries from previous runs. Either
+        // case would trip the writable_schema INSERT with a
+        // duplicate-name conflict.
+        $existing = [];
+        $existing_stmt = $db->query(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"
+        );
+        if ($existing_stmt !== false) {
+            /** @var array{name: string} $row */
+            foreach ($existing_stmt as $row) {
+                $existing[$row['name']] = true;
+            }
+        }
+        $specs = array_values(array_filter(
+            $specs,
+            static fn (array $s): bool => !isset($existing[$s['name']]),
+        ));
+        if ($specs === []) {
+            return true;
+        }
+
         $db_path = $this->driver->path();
 
         // Reservation budget per index, tuned to the largest source
@@ -1548,10 +1583,21 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 static fn (string $p): SqliteRawReader => SqliteRawReader::open($p),
                 array_values($shard_paths),
             );
+            // Open main once to resolve all 4 rootpages — used to be
+            // SqliteRawReader::open($main_path) per table iteration,
+            // which reread the whole main file 4 times. Cheap when
+            // main is empty-schema only, but extra ms per merge that
+            // we don't need to spend, and quadratic with re-ingest
+            // into a populated main DB.
+            $main_reader = SqliteRawReader::open($main_path);
+            $rootpages = [];
+            foreach ($tables as $table) {
+                $rootpages[$table] = $main_reader->tableRootpage($table);
+            }
+            unset($main_reader);
             $merger = new TableMerger($writer, $shard_readers);
             foreach ($tables as $table) {
-                $rootpage = SqliteRawReader::open($main_path)->tableRootpage($table);
-                $merger->merge($table, $rootpage);
+                $merger->merge($table, $rootpages[$table]);
             }
             $writer->close($main_path);
         } catch (OverflowNotSupportedException $_e) {
@@ -1569,15 +1615,17 @@ final class PdoMemoryOutput implements MemoryOutputInterface
 
         if (!$needs_sql_fallback) {
             // Format-direct table copy bypasses the b-tree machinery,
-            // so the auto-indexes that the PRIMARY KEYs maintain are
-            // still the empty leaves they were at CREATE TABLE time.
-            // REINDEX rebuilds them from the freshly-merged table
-            // data. Workers already wrote canonical run_id values,
-            // so no UPDATE round-trip is needed.
+            // so the auto-index of the only data table with a
+            // compound PK (context_nodes) is still the empty leaf it
+            // was at CREATE TABLE time and needs REINDEX. The other
+            // three data tables use `id INTEGER PRIMARY KEY`, which
+            // is a rowid alias with no separate autoindex, so they
+            // need nothing here. The summary tables (summary,
+            // location_types_summary, class_objects_summary) are
+            // populated through the regular SQLite INSERT path
+            // (allocateRun + the post-merge inserts below), so SQLite
+            // maintains their autoindexes itself.
             $db->exec('REINDEX context_nodes');
-            $db->exec('REINDEX summary');
-            $db->exec('REINDEX location_types_summary');
-            $db->exec('REINDEX class_objects_summary');
         }
 
         if ($needs_sql_fallback) {
@@ -1642,7 +1690,14 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         // derived like idx_context_nodes_canonical) get built the
         // normal way. CREATE INDEX IF NOT EXISTS on the integer
         // indexes is a no-op since they already exist.
-        $this->createIndexes($db);
+        if (self::parallelIndexEnabled() && $this->tryParallelCreateIndexes($db)) {
+            // Parallel CREATE INDEX via subset-cp shards landed all
+            // remaining indexes; format-direct L (if enabled) already
+            // pre-created the 3 integer ones and they were filtered
+            // out of the parallel batch.
+        } else {
+            $this->createIndexes($db);
+        }
         $this->createViews($db);
     }
 
