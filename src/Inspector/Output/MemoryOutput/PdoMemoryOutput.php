@@ -1473,8 +1473,10 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             // After the table data is in the shard, dump sort-run
             // files for each integer index. These get k-way merged
             // by the main process to skip the SQL CREATE INDEX
-            // sort phase entirely.
-            $this->dumpIntegerIndexSortRuns($shard, $shard_path);
+            // sort phase entirely. Worker also pre-encodes the leaf
+            // cell bytes against the freshly-allocated run_id so the
+            // merger doesn't have to re-encode in the critical path.
+            $this->dumpIntegerIndexSortRuns($shard, $shard_path, $run_id);
         } catch (\Throwable $e) {
             $shard->rollBack();
             throw $e;
@@ -1672,7 +1674,7 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         // through them see the real data.
         if (!$needs_sql_fallback && self::formatDirectIndexEnabled()) {
             unset($db);
-            $this->mergeIntegerIndexes($shard_paths, $main_path, $run_id);
+            $this->mergeIntegerIndexes($shard_paths, $main_path);
             $db = $this->driver->createConnection();
             $db->exec('PRAGMA synchronous = OFF');
             $db->exec('PRAGMA temp_store = MEMORY');
@@ -1741,10 +1743,13 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      *
      * @psalm-suppress MixedAssignment
      */
-    private function dumpIntegerIndexSortRuns(\PDO $shard, string $shard_path): void
+    private function dumpIntegerIndexSortRuns(\PDO $shard, string $shard_path, int $run_id): void
     {
         foreach (self::integerIndexSpecs() as [$index_name, $table, $key_column]) {
-            $writer = new SortRunWriter(self::sortRunPath($shard_path, $index_name));
+            $writer = new SortRunWriter(
+                self::sortRunPath($shard_path, $index_name),
+                $run_id,
+            );
             $stmt = $shard->prepare(
                 "SELECT {$key_column}, rowid FROM {$table} ORDER BY {$key_column}, rowid"
             );
@@ -1773,15 +1778,18 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     private function mergeIntegerIndexes(
         array $shard_paths,
         string $main_path,
-        int $run_id,
     ): void {
+        // Resolve all integer-index rootpages and collect sort runs
+        // up front so we can run a single open(main) → merge×3 →
+        // close(main) cycle. Per-index open/close used to read the
+        // 88 MB main file twice and rewrite it once per iteration —
+        // ~0.6 s of pure IO per index, dwarfing the actual merge.
+        $reader = SqliteRawReader::open($main_path);
+        /** @var list<array{rootpage: int, sort_runs: list<SortRunReader>}> $jobs */
+        $jobs = [];
         foreach (self::integerIndexSpecs() as [$index_name, $_table, $_key]) {
-            $reader = SqliteRawReader::open($main_path);
-            $rootpage = $reader->findSchemaEntry($index_name);
-            if ($rootpage === null) {
-                // Index wasn't created — caller bug. Skip rather than
-                // throw, so an unexpected schema doesn't prevent the
-                // rest of the merge from completing.
+            $entry = $reader->findSchemaEntry($index_name);
+            if ($entry === null) {
                 continue;
             }
             $sort_runs = [];
@@ -1794,19 +1802,28 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             if ($sort_runs === []) {
                 continue;
             }
-            $writer = SqliteRawWriter::open($main_path);
-            $merger = new IntegerIndexMerger($writer, $sort_runs, $run_id);
+            $jobs[] = ['rootpage' => $entry['rootpage'], 'sort_runs' => $sort_runs];
+        }
+        unset($reader);
+
+        if ($jobs === []) {
+            return;
+        }
+
+        $writer = SqliteRawWriter::open($main_path);
+        foreach ($jobs as $job) {
+            $merger = new IntegerIndexMerger($writer, $job['sort_runs']);
             try {
-                $merger->merge($rootpage['rootpage']);
+                $merger->merge($job['rootpage']);
             } catch (OverflowNotSupportedException $_e) {
-                // Should not happen for our 3-int payloads; if it
-                // does, leave SQLite's CREATE INDEX (run by
-                // createIndexes after this) build the index in the
-                // normal way.
+                // Leave SQLite's CREATE INDEX (run after this) build
+                // the index in the normal way; the failed merger
+                // didn't write anything to the rootpage so the
+                // skip-and-fall-through is safe.
                 continue;
             }
-            $writer->close($main_path);
         }
+        $writer->close($main_path);
     }
 
     /**
