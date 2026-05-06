@@ -888,15 +888,19 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         // any failure throws; we let those bubble up because the
         // serial fallback would write on top of orphan index pages
         // and break integrity_check.
-        // When a sidecar is attached, leave one CPU for it so the
-        // sidecar isn't time-sliced against the worker pool. Without
-        // this the L sidecar's wall-clock balloons (e.g. 0.85 s →
-        // 1.4 s on a 4-core box because 4 PIB workers + parent + L
-        // all compete for cores) and partly defeats the
-        // parallel-with-createIndexes win.
+        // When a sidecar is attached, leave CPU slots for it so it
+        // isn't time-sliced against the worker pool. Without this
+        // the L sidecar's wall-clock balloons (e.g. 0.85 s → 1.4 s
+        // on a 4-core box) and partly defeats the parallel win.
+        // The L sidecar may itself fork up to one process per
+        // integer index when parallel-L is enabled — reserve a
+        // matching number of CPU slots in that case.
         $worker_count = $this->defaultWorkerCount();
         if ($sidecar !== null) {
-            $worker_count = max(1, $worker_count - 1);
+            $reserve = self::lParallelEnabled()
+                ? count(self::integerIndexSpecs())
+                : 1;
+            $worker_count = max(1, $worker_count - $reserve);
         }
         $result = ParallelIndexBuilder::build(
             $db_path,
@@ -1940,45 +1944,196 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             return [];
         }
 
+        // Session mode with multiple jobs and enough cores: fork
+        // one sub-sidecar per integer index so they build in
+        // parallel. Each child claims its own pgno range from the
+        // shared counter and pwrites disjoint pages — the wall-
+        // clock collapses from sum(per-index times) to
+        // max(per-index time).
+        //
+        // Gated on a core threshold: on a 4-core box the 3 L sub-
+        // forks + 3 PIB workers exceed the core count, so the OS
+        // time-slices everything and the largest L job stretches
+        // from 0.5 s to 1.5 s+. The break-even moves below 4 cores
+        // only on small captures where PIB doesn't have much to
+        // do anyway. RELI_L_PARALLEL=1 force-enables; =0 force-
+        // disables.
+        if (
+            $counter_path !== null
+            && count($jobs) > 1
+            && function_exists('pcntl_fork')
+            && function_exists('pcntl_waitpid')
+            && self::lParallelEnabled()
+        ) {
+            return $this->mergeIntegerIndexesParallel($main_path, $counter_path, $jobs);
+        }
+
+        return $this->mergeIntegerIndexesSequential($main_path, $counter_path, $jobs);
+    }
+
+    /**
+     * True when the per-index L parallelisation should run. Defaults
+     * to on for >= 8 cores (3 L sub-forks + 4-5 PIB workers fits
+     * comfortably), off below that. Override with RELI_L_PARALLEL=1
+     * (force on) or RELI_L_PARALLEL=0 (force off).
+     */
+    private static function lParallelEnabled(): bool
+    {
+        $env = getenv('RELI_L_PARALLEL');
+        if ($env === '1') {
+            return true;
+        }
+        if ($env === '0') {
+            return false;
+        }
+        $cores = 4;
+        if (is_readable('/proc/cpuinfo')) {
+            $cpuinfo = @file_get_contents('/proc/cpuinfo');
+            if (is_string($cpuinfo) && $cpuinfo !== '') {
+                $cores = max(1, substr_count($cpuinfo, "\nprocessor\t") + 1);
+            }
+        }
+        return $cores >= 8;
+    }
+
+    /**
+     * Sequential (in-process) integer-index merge. One writer; one
+     * job after another. Used when there's only one job, when
+     * pcntl is unavailable, or when running outside the PIB
+     * session (no shared counter to coordinate parallel forks).
+     *
+     * @param list<array{name: string, sort_runs: list<SortRunReader>}> $jobs
+     * @return array<string, int>
+     */
+    private function mergeIntegerIndexesSequential(
+        string $main_path,
+        ?string $counter_path,
+        array $jobs,
+    ): array {
         $writer = $counter_path !== null
             ? SqliteRawWriter::openForPatchInSession($main_path, $counter_path)
             : SqliteRawWriter::openForPatch($main_path);
-        // Build a single empty-index-leaf placeholder (type 0x0a,
-        // 0 cells) we can re-use as the appendPage payload that
-        // claims each index's rootpage. The merger overwrites the
-        // placeholder via writePage immediately after, so the
-        // bytes never end up on disk; we just need a page-sized
-        // buffer that satisfies appendPage's strict size check.
-        $page_size = $writer->page_size;
-        $cc = $page_size === 65536 ? 0 : $page_size;
-        $empty_leaf = chr(SqliteRawFormat::BTREE_LEAF_INDEX)
-            . pack('n', 0)
-            . pack('n', 0)
-            . pack('n', $cc)
-            . "\x00"
-            . str_repeat("\x00", $page_size - 8);
+        $empty_leaf = self::emptyIndexLeafPage($writer->page_size);
         $populated = [];
         foreach ($jobs as $job) {
-            // Claim this index's rootpage. In session mode this
-            // pulls a pgno from the shared counter; in sequential
-            // mode it appends at end-of-file. Either way the
-            // merger writePage's the real root content over our
-            // placeholder before close().
             $rootpage = $writer->appendPage($empty_leaf);
             $merger = new IntegerIndexMerger($writer, $job['sort_runs']);
             try {
                 $merger->merge($rootpage);
                 $populated[$job['name']] = $rootpage;
             } catch (OverflowNotSupportedException $_e) {
-                // Caller's fallback path will rebuild the index via
-                // a normal CREATE INDEX. The placeholder leaf at
-                // $rootpage is harmless (it'll be left as a free
-                // leaf, no sqlite_master entry refers to it).
                 continue;
             }
         }
         $writer->close($main_path);
         return $populated;
+    }
+
+    /**
+     * Per-index parallel integer-index merge. One fork per job,
+     * each running a session-mode writer that claims pgnos from
+     * the same shared counter as the orchestrator's other cohort
+     * processes (PIB workers, when applicable). Children
+     * communicate their claimed rootpage back to the parent via
+     * a 4-byte big-endian temp file — small, no PHP serialise
+     * overhead.
+     *
+     * @param list<array{name: string, sort_runs: list<SortRunReader>}> $jobs
+     * @return array<string, int>
+     */
+    private function mergeIntegerIndexesParallel(
+        string $main_path,
+        string $counter_path,
+        array $jobs,
+    ): array {
+        /** @var list<array{int, int, string}> $pids [pid, job_index, job_name] */
+        $pids = [];
+        $result_paths = [];
+        foreach ($jobs as $i => $job) {
+            $result_paths[$i] = $main_path . '.l_sub_' . $i;
+            @unlink($result_paths[$i]);
+            $pid = pcntl_fork();
+            if ($pid === -1) {
+                foreach ($pids as [$running_pid, $_idx, $_name]) {
+                    posix_kill($running_pid, SIGTERM);
+                    pcntl_waitpid($running_pid, $_status);
+                }
+                foreach ($result_paths as $rp) {
+                    @unlink($rp);
+                }
+                throw new \RuntimeException('L sub-sidecar fork failed');
+            }
+            if ($pid === 0) {
+                $exit_code = 0;
+                try {
+                    $writer = SqliteRawWriter::openForPatchInSession($main_path, $counter_path);
+                    $empty_leaf = self::emptyIndexLeafPage($writer->page_size);
+                    $rootpage = $writer->appendPage($empty_leaf);
+                    $merger = new IntegerIndexMerger($writer, $job['sort_runs']);
+                    try {
+                        $merger->merge($rootpage);
+                        file_put_contents($result_paths[$i], pack('N', $rootpage));
+                    } catch (OverflowNotSupportedException $_e) {
+                        // Fall through with an empty result so the
+                        // caller knows this index didn't populate;
+                        // the placeholder leaf at $rootpage is
+                        // harmless (no sqlite_master entry refers
+                        // to it).
+                    }
+                    $writer->close($main_path);
+                } catch (\Throwable $e) {
+                    fwrite(STDERR, "L sub-sidecar {$job['name']}: " . $e->getMessage() . "\n");
+                    $exit_code = 1;
+                }
+                exit($exit_code);
+            }
+            $pids[] = [$pid, $i, $job['name']];
+        }
+
+        $populated = [];
+        $any_failure = false;
+        foreach ($pids as [$pid, $i, $name]) {
+            pcntl_waitpid($pid, $status);
+            $code = pcntl_wifexited($status) ? pcntl_wexitstatus($status) : 1;
+            if ($code !== 0) {
+                $any_failure = true;
+                @unlink($result_paths[$i]);
+                continue;
+            }
+            $data = file_exists($result_paths[$i])
+                ? (string)file_get_contents($result_paths[$i])
+                : '';
+            @unlink($result_paths[$i]);
+            if (strlen($data) >= 4) {
+                $rootpage = (int)unpack('N', substr($data, 0, 4))[1];
+                $populated[$name] = $rootpage;
+            }
+            // Empty $data means the merger threw OverflowNotSupported
+            // and the caller's fallback path will rebuild the index.
+        }
+
+        if ($any_failure) {
+            throw new \RuntimeException('L sub-sidecar failed');
+        }
+
+        return $populated;
+    }
+
+    /**
+     * One-time-built empty-index-leaf page (type 0x0a, 0 cells).
+     * Used as the placeholder bytes for `appendPage` when claiming
+     * a fresh rootpage — the merger immediately overwrites it via
+     * `writePage` so the placeholder bytes never end up on disk.
+     */
+    private static function emptyIndexLeafPage(int $page_size): string
+    {
+        $cc = $page_size === 65536 ? 0 : $page_size;
+        return chr(SqliteRawFormat::BTREE_LEAF_INDEX)
+            . pack('n', 0)
+            . pack('n', 0)
+            . pack('n', $cc)
+            . "\x00"
+            . str_repeat("\x00", $page_size - 8);
     }
 
     /**
