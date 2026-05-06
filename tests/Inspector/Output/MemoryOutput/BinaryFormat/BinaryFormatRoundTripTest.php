@@ -16,6 +16,7 @@ namespace Reli\Inspector\Output\MemoryOutput\BinaryFormat;
 use PHPUnit\Framework\TestCase;
 use Reli\Inspector\Output\MemoryOutput\BinaryMemoryOutput;
 use Reli\Inspector\Output\MemoryOutput\Report\ReportGenerator;
+use Reli\Inspector\Output\MemoryOutput\Report\Substrate\FfiCsrGraphSubstrate;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
@@ -541,5 +542,61 @@ class BinaryFormatRoundTripTest extends TestCase
             'same-shared-string',
             $examples['sample_value'] ?? null,
         );
+    }
+
+    /**
+     * Regression: when the writer's CSR slot space did not match the
+     * reader's, the FFI substrate ended up with a back edge from the
+     * sentinel slot to the root, and computeSubtreeSizesFfi grew its
+     * stack until OOM. ContextAnalyzer happens to emit dense
+     * `0..nodeCount-1` node_ids, which masked the bug; any caller
+     * that emits non-zero-based node_ids (e.g. test fixtures starting
+     * at 1) tripped it.
+     *
+     * The flat-tree shape is the smallest reproducer: a single root
+     * with N siblings produces both the off-by-one rowptr and the
+     * sentinel↔root cycle that turned the DFS exponential.
+     */
+    public function testFfiCsrLoadFromBinarySurvivesNonZeroNodeIds(): void
+    {
+        $sink = new BinaryContextTreeSink(batch_size: 10);
+
+        $sink->emitNode(
+            node_id: 1,
+            parent_node_id: null,
+            link_name: 'root',
+            type: 'RootContext',
+            locations: [new ZendObjectMemoryLocation(0x1000, 64, 1, 7, 'Root')],
+            attributes: [],
+        );
+        $n = 50;
+        for ($i = 2; $i <= $n; $i++) {
+            $sink->emitNode(
+                node_id: $i,
+                parent_node_id: 1,
+                link_name: "c{$i}",
+                type: 'ChildContext',
+                locations: [new ZendObjectMemoryLocation(0x1000 + $i * 64, 100, 1, 7, 'C')],
+                attributes: [],
+            );
+        }
+
+        $binary_output = new BinaryMemoryOutput($this->rmem_path);
+        $binary_output->finalizeStreaming($sink, [
+            ['zend_mm_heap_usage' => '1024', 'php_version' => '8.4'],
+        ]);
+
+        $reader = Reader::open($this->rmem_path);
+        $substrate = FfiCsrGraphSubstrate::loadFromBinary($reader, useCache: false);
+
+        $this->assertSame([1], $substrate->getRoots());
+
+        $children = $substrate->getChildren(1);
+        sort($children);
+        $this->assertSame(range(2, $n), $children);
+
+        // Subtree size of root = its 64 bytes + 49 children × 100 bytes.
+        $this->assertSame(64 + ($n - 1) * 100, $substrate->getSubtreeSize(1));
+        $this->assertSame(100, $substrate->getSubtreeSize(2));
     }
 }

@@ -14,45 +14,14 @@ declare(strict_types=1);
 namespace Reli\Inspector\Output\MemoryOutput;
 
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\MySqlDriver;
-use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\PostgreSqlDriver;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextTreeSink;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 
 final class MemoryOutputFactory
 {
-    /**
-     * Create a streaming sink that writes directly to the final output DB
-     * when the output format is a database, or to a temp SQLite otherwise.
-     *
-     * @return array{PdoMemoryOutput, PdoContextTreeSink, int, \PDO, string|null}
-     *         [pdo_output, sink, run_id, db, temp_path (null if writing to final DB)]
-     */
-    public function createStreamingSink(
-        MemoryProfilerSettings $settings,
-        ?RegionBoundaries $region_boundaries = null,
-    ): array {
-        $driver = $this->createPdoDriver($settings);
-        $temp_path = null;
-        if ($driver === null) {
-            // Non-DB format: use temp SQLite
-            $tmp_base = tempnam(sys_get_temp_dir(), 'reli_stream_');
-            if ($tmp_base === false) {
-                throw new \RuntimeException('Failed to create temporary file');
-            }
-            $temp_path = $tmp_base . '.sqlite3';
-            @unlink($tmp_base);
-            $driver = new SqliteDriver($temp_path);
-        }
-        $pdo_output = new PdoMemoryOutput($driver, $region_boundaries);
-        [$sink, $run_id, $db] = $pdo_output->createStreamingSink();
-        return [$pdo_output, $sink, $run_id, $db, $temp_path];
-    }
-
     public function create(
         MemoryProfilerSettings $settings,
         ?RegionBoundaries $region_boundaries = null,
@@ -123,56 +92,34 @@ final class MemoryOutputFactory
     }
 
     /**
-     * Create an rmem streaming sink.
-     *
-     * @return array{BinaryMemoryOutput, BinaryContextTreeSink}
+     * Check if the given output format writes directly to a database
+     * (sqlite3 / mysql / postgresql). DB formats keep the legacy
+     * PDO-based streaming path; everything else (json / report /
+     * report-json) routes through an rmem intermediate.
      */
-    public function createBinaryStreamingSink(
-        MemoryProfilerSettings $settings,
-        ?RegionBoundaries $region_boundaries = null,
-    ): array {
-        $output_path = $settings->output_path ?? throw new \RuntimeException(
-            '--output is required when using rmem format'
-        );
-        $binary_output = new BinaryMemoryOutput($output_path, $region_boundaries);
-        $sink = $binary_output->createStreamingSink();
-        return [$binary_output, $sink];
+    public static function isDbFormat(MemoryProfilerSettings $settings): bool
+    {
+        return match ($settings->output_format) {
+            'sqlite3', 'mysql', 'postgresql' => true,
+            default => false,
+        };
     }
 
     /**
-     * Returns a PdoDriver for DB output formats, or null for non-DB formats.
+     * Create a binary streaming sink that writes to a caller-provided
+     * temporary .rmem path. Used for non-DB, non-rmem output formats
+     * (json / report / report-json) where the rmem file is an
+     * intermediate that is converted to the final format and then
+     * deleted.
+     *
+     * @return array{BinaryMemoryOutput, BinaryContextTreeSink}
      */
-    private function createPdoDriver(MemoryProfilerSettings $settings): ?PdoDriverInterface
-    {
-        return match ($settings->output_format) {
-            'sqlite3' => new SqliteDriver(
-                $settings->output_path ?? throw new \RuntimeException(
-                    '--output is required when using sqlite3 format'
-                ),
-            ),
-            'mysql' => new MySqlDriver(
-                $settings->db_host,
-                $settings->db_port ?? 3306,
-                $settings->db_name ?? throw new \RuntimeException(
-                    '--db-name is required when using mysql format'
-                ),
-                $settings->db_user ?? throw new \RuntimeException(
-                    '--db-user is required when using mysql format'
-                ),
-                $settings->db_password ?? '',
-            ),
-            'postgresql' => new PostgreSqlDriver(
-                $settings->db_host,
-                $settings->db_port ?? 5432,
-                $settings->db_name ?? throw new \RuntimeException(
-                    '--db-name is required when using postgresql format'
-                ),
-                $settings->db_user ?? throw new \RuntimeException(
-                    '--db-user is required when using postgresql format'
-                ),
-                $settings->db_password ?? '',
-            ),
-            default => null,
-        };
+    public function createBinaryStreamingSinkAtPath(
+        string $output_path,
+        ?RegionBoundaries $region_boundaries = null,
+    ): array {
+        $binary_output = new BinaryMemoryOutput($output_path, $region_boundaries);
+        $sink = $binary_output->createStreamingSink();
+        return [$binary_output, $sink];
     }
 }

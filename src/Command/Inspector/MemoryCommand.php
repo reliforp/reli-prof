@@ -112,100 +112,104 @@ final class MemoryCommand extends ReliCommand
         $output_factory = new MemoryOutputFactory();
 
         if (MemoryOutputFactory::isRmemFormat($memory_profiler_settings)) {
-            [$binary_output, $sink] = $output_factory->createBinaryStreamingSink(
-                $memory_profiler_settings,
-            );
-
-            $collected_memories = $this->memory_locations_collector->collectAll(
+            $output_path = $memory_profiler_settings->output_path
+                ?? throw new \RuntimeException('--output is required when using rmem format');
+            [$binary_output, $sink] = $output_factory->createBinaryStreamingSinkAtPath($output_path);
+            $this->collectBinary(
                 $process_specifier,
                 $target_php_settings_version_decided,
                 $eg_address,
                 $cg_address,
-                $memory_profiler_settings->memory_exhaustion_error_details,
                 $bg_address,
+                $memory_profiler_settings,
+                $binary_output,
                 $sink,
             );
-
-            // RegionBoundaries is set on the sink by collectAll() before the
-            // emit loop, so location rows are written with region_id /
-            // bin_overhead inline. Compute sums directly from the location
-            // temp file — no SQL DB exists in the rmem path.
-            $region_result = $sink->computeRegionSumsAndOverhead();
-
-            $summary = $this->buildSummary(
-                $collected_memories,
-                $region_result['sums'],
-                $region_result['overhead'],
-                $target_php_settings_version_decided,
-            );
-            unset($collected_memories);
-
-            $binary_output->finalizeStreaming($sink, $summary);
-
             Log::info('end memory command');
             return 0;
         }
 
-        // Non-rmem path: for DB formats (sqlite3, mysql, postgresql)
-        // write directly to the output DB; for others use a temp SQLite.
-        [$pdo_output, $sink, $run_id, $db, $temp_path] = $output_factory->createStreamingSink(
-            $memory_profiler_settings,
-        );
-
+        // All non-rmem formats — DB (sqlite3 / mysql / postgresql) and
+        // export (json / report / report-json) — collect into a temp
+        // .rmem and then convert to the requested format. The DB path
+        // pays a one-time wall-clock cost over direct-write but cuts
+        // target pause time, since SQL INSERT and CREATE INDEX run
+        // after the target is resumed.
+        $tmp_base = tempnam(sys_get_temp_dir(), 'reli_mem_rmem_');
+        if ($tmp_base === false) {
+            throw new \RuntimeException('Failed to create temporary file for rmem intermediate');
+        }
+        $temp_rmem = $tmp_base . '.rmem';
+        @unlink($tmp_base);
         try {
-            $collected_memories = $this->memory_locations_collector->collectAll(
+            [$binary_output, $sink] = $output_factory->createBinaryStreamingSinkAtPath($temp_rmem);
+            $summary = $this->collectBinary(
                 $process_specifier,
                 $target_php_settings_version_decided,
                 $eg_address,
                 $cg_address,
-                $memory_profiler_settings->memory_exhaustion_error_details,
                 $bg_address,
+                $memory_profiler_settings,
+                $binary_output,
                 $sink,
             );
 
-            // Region classification happens inline at emit time (PdoContextTreeSink
-            // has RegionBoundaries set by the collector before the job loop).
-            // Query the DB for region sums — no backfill needed.
-            $sink->flush();
-            $region_result = RegionsSummary::queryRegionSums($db, $run_id);
-
-            $summary = $this->buildSummary(
-                $collected_memories,
-                $region_result['sums'],
-                $region_result['overhead'],
-                $target_php_settings_version_decided,
+            $result = new MemoryAnalysisResult(
+                summary: $summary,
+                context: null,
+                pre_populated_rmem_path: $temp_rmem,
             );
-
-            unset($collected_memories);
-
-            // Finalize the streaming DB (summary, indexes, views)
-            $pdo_output->finalizeStreaming($db, $run_id, $sink, $summary);
-
-            // For DB formats the data is already in the output DB; done.
-            // For JSON/report, stream from the temp SQLite DB.
-            if ($temp_path !== null) {
-                $result = new MemoryAnalysisResult(
-                    $summary,
-                    null,
-                    null,
-                    null,
-                    $db,
-                    $run_id,
-                );
-
-                $memory_output = $output_factory->create(
-                    $memory_profiler_settings,
-                );
-                $memory_output->output($result);
-            }
+            $memory_output = $output_factory->create($memory_profiler_settings);
+            $memory_output->output($result);
         } finally {
-            if ($temp_path !== null && file_exists($temp_path)) {
-                @unlink($temp_path);
+            if (file_exists($temp_rmem)) {
+                @unlink($temp_rmem);
             }
         }
 
         Log::info('end memory command');
         return 0;
+    }
+
+    /**
+     * Drive the binary streaming sink to completion. Returns the summary
+     * passed to finalizeStreaming.
+     *
+     * @param TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings
+     * @return array<int, array<string, mixed>>
+     */
+    private function collectBinary(
+        \Reli\Lib\Process\ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings,
+        int $eg_address,
+        int $cg_address,
+        ?int $bg_address,
+        \Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings $memory_profiler_settings,
+        \Reli\Inspector\Output\MemoryOutput\BinaryMemoryOutput $binary_output,
+        \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink $sink,
+    ): array {
+        $collected_memories = $this->memory_locations_collector->collectAll(
+            $process_specifier,
+            $target_php_settings,
+            $eg_address,
+            $cg_address,
+            $memory_profiler_settings->memory_exhaustion_error_details,
+            $bg_address,
+            $sink,
+        );
+
+        $region_result = $sink->computeRegionSumsAndOverhead();
+
+        $summary = $this->buildSummary(
+            $collected_memories,
+            $region_result['sums'],
+            $region_result['overhead'],
+            $target_php_settings,
+        );
+        unset($collected_memories);
+
+        $binary_output->finalizeStreaming($sink, $summary);
+        return $summary;
     }
 
     /**

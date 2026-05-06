@@ -22,7 +22,6 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\CollectedMemories;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\Result\RegionsSummary;
 use Reli\Lib\PhpProcessReader\PhpVersionDetector;
 use Reli\Lib\Process\ProcessSpecifier;
 use Reli\ReliProfiler;
@@ -73,7 +72,10 @@ final class CoreDumpReader
             return;
         }
 
-        $this->readPdo(
+        // All non-rmem formats — DB (sqlite3 / mysql / postgresql) and
+        // export (json / report / report-json) — collect into a temp .rmem
+        // and then convert to the requested format.
+        $this->readBinaryThenConvert(
             $process_specifier,
             $target_php_settings_version_decided,
             $eg_address,
@@ -81,94 +83,6 @@ final class CoreDumpReader
             $bg_address,
             $memory_profiler_settings,
         );
-    }
-
-    /**
-     * Original PDO-based streaming path (SQLite / MySQL / PostgreSQL / JSON / report).
-     *
-     * @param TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings
-     */
-    private function readPdo(
-        ProcessSpecifier $process_specifier,
-        TargetPhpSettings $target_php_settings,
-        int $eg_address,
-        int $cg_address,
-        ?int $bg_address,
-        MemoryProfilerSettings $memory_profiler_settings,
-    ): void {
-        $output_factory = new MemoryOutputFactory();
-        [$pdo_output, $sink, $run_id, $db, $temp_path] = $output_factory->createStreamingSink(
-            $memory_profiler_settings,
-        );
-
-        try {
-            $collected_memories = $this->memory_locations_collector->collectAll(
-                $process_specifier,
-                $target_php_settings,
-                $eg_address,
-                $cg_address,
-                $memory_profiler_settings->memory_exhaustion_error_details,
-                $bg_address,
-                $sink,
-            );
-
-            $region_boundaries = new RegionBoundaries(
-                $collected_memories->chunk_memory_locations,
-                $collected_memories->huge_memory_locations,
-                $collected_memories->vm_stack_memory_locations,
-                $collected_memories->compiler_arena_memory_locations,
-            );
-
-            $region_analyzer = new RegionAnalyzer(
-                $collected_memories->chunk_memory_locations,
-                $collected_memories->huge_memory_locations,
-                $collected_memories->vm_stack_memory_locations,
-                $collected_memories->compiler_arena_memory_locations,
-            );
-
-            $analyzed_regions = $region_analyzer->analyze(
-                $collected_memories->memory_locations,
-            );
-
-            $sink->flush();
-            $region_boundaries->backfillRegions($db, $run_id);
-            $_region_result = RegionsSummary::queryRegionSums($db, $run_id);
-            $region_sums = $_region_result['sums'];
-            $summary_base = $region_sums !== []
-                ? $analyzed_regions->summary->correctedToArray($region_sums)
-                : $analyzed_regions->summary->toArray();
-
-            $summary = $this->buildSummary(
-                $summary_base,
-                $collected_memories,
-                $target_php_settings,
-            );
-
-            unset($collected_memories, $analyzed_regions, $region_analyzer);
-
-            $pdo_output->finalizeStreaming($db, $run_id, $sink, $summary);
-
-            if ($temp_path !== null) {
-                $result = new MemoryAnalysisResult(
-                    $summary,
-                    null,
-                    null,
-                    null,
-                    $db,
-                    $run_id,
-                );
-
-                $memory_output = $output_factory->create(
-                    $memory_profiler_settings,
-                    $region_boundaries,
-                );
-                $memory_output->output($result);
-            }
-        } finally {
-            if ($temp_path !== null && file_exists($temp_path)) {
-                @unlink($temp_path);
-            }
-        }
     }
 
     /**
@@ -191,11 +105,94 @@ final class CoreDumpReader
         ?int $bg_address,
         MemoryProfilerSettings $memory_profiler_settings,
     ): void {
-        $output_factory = new MemoryOutputFactory();
-        [$binary_output, $sink] = $output_factory->createBinaryStreamingSink(
-            $memory_profiler_settings,
-        );
+        $output_path = $memory_profiler_settings->output_path
+            ?? throw new \RuntimeException('--output is required when using rmem format');
 
+        $output_factory = new MemoryOutputFactory();
+        [$binary_output, $sink] = $output_factory->createBinaryStreamingSinkAtPath($output_path);
+        $this->collectBinary(
+            $process_specifier,
+            $target_php_settings,
+            $eg_address,
+            $cg_address,
+            $bg_address,
+            $memory_profiler_settings,
+            $binary_output,
+            $sink,
+        );
+    }
+
+    /**
+     * Non-DB, non-rmem path (json / report / report-json).
+     *
+     * Streams the context tree into a temp .rmem file, then hands the
+     * path to the output backend. Replaces the previous SQLite
+     * intermediate: faster for JSON output (no N+1 SQL queries) and no
+     * CREATE INDEX cost on a throwaway DB.
+     *
+     * @param TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings
+     */
+    private function readBinaryThenConvert(
+        ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings,
+        int $eg_address,
+        int $cg_address,
+        ?int $bg_address,
+        MemoryProfilerSettings $memory_profiler_settings,
+    ): void {
+        $tmp_base = tempnam(sys_get_temp_dir(), 'reli_core_rmem_');
+        if ($tmp_base === false) {
+            throw new \RuntimeException('Failed to create temporary file for rmem intermediate');
+        }
+        $temp_path = $tmp_base . '.rmem';
+        @unlink($tmp_base);
+
+        try {
+            $output_factory = new MemoryOutputFactory();
+            [$binary_output, $sink] = $output_factory->createBinaryStreamingSinkAtPath($temp_path);
+            $summary = $this->collectBinary(
+                $process_specifier,
+                $target_php_settings,
+                $eg_address,
+                $cg_address,
+                $bg_address,
+                $memory_profiler_settings,
+                $binary_output,
+                $sink,
+            );
+
+            $result = new MemoryAnalysisResult(
+                summary: $summary,
+                context: null,
+                pre_populated_rmem_path: $temp_path,
+            );
+
+            $memory_output = $output_factory->create($memory_profiler_settings);
+            $memory_output->output($result);
+        } finally {
+            if (file_exists($temp_path)) {
+                @unlink($temp_path);
+            }
+        }
+    }
+
+    /**
+     * Drive the binary streaming sink to completion. Returns the summary
+     * passed to finalizeStreaming so callers can re-use it.
+     *
+     * @param TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings
+     * @return array<int, array<string, mixed>>
+     */
+    private function collectBinary(
+        ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings,
+        int $eg_address,
+        int $cg_address,
+        ?int $bg_address,
+        MemoryProfilerSettings $memory_profiler_settings,
+        \Reli\Inspector\Output\MemoryOutput\BinaryMemoryOutput $binary_output,
+        \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink $sink,
+    ): array {
         $collected_memories = $this->memory_locations_collector->collectAll(
             $process_specifier,
             $target_php_settings,
@@ -222,9 +219,6 @@ final class CoreDumpReader
             $collected_memories->memory_locations,
         );
 
-        // Region sums come from the location temp file rather than a
-        // SQL DB on this path; correctedToArray() applies them when
-        // available, falling back to the uncorrected analyser summary.
         $region_sums = $sink->computeRegionSumsAndOverhead()['sums'];
         $summary_base = $region_sums !== []
             ? $analyzed_regions->summary->correctedToArray($region_sums)
@@ -239,6 +233,7 @@ final class CoreDumpReader
         unset($collected_memories, $analyzed_regions, $region_analyzer);
 
         $binary_output->finalizeStreaming($sink, $summary);
+        return $summary;
     }
 
     /**

@@ -13,11 +13,12 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput;
 
-use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Inspector\Output\MemoryOutput\Report\Formatter\JsonReportFormatter;
 use Reli\Inspector\Output\MemoryOutput\Report\Formatter\ReportFormatterInterface;
 use Reli\Inspector\Output\MemoryOutput\Report\Formatter\TextReportFormatter;
 use Reli\Inspector\Output\MemoryOutput\Report\ReportGenerator;
+use Reli\Inspector\Output\MemoryOutput\Report\ReportResult;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
 
 final class ReportMemoryOutput implements MemoryOutputInterface
@@ -32,43 +33,34 @@ final class ReportMemoryOutput implements MemoryOutputInterface
     #[\Override]
     public function output(MemoryAnalysisResult $result): void
     {
-        if ($result->pre_populated_db !== null && $result->pre_populated_run_id !== null) {
+        if ($result->pre_populated_rmem_path !== null) {
             $generator = new ReportGenerator();
-            $report = $generator->generateFromDb($result->pre_populated_db, $result->pre_populated_run_id, true);
-            $formatted = $this->formatter->format($report);
-            if ($this->output_path !== null) {
-                file_put_contents($this->output_path, $formatted);
-            } else {
-                echo $formatted;
-            }
+            $report = $generator->generateFromBinary($result->pre_populated_rmem_path);
+            $this->writeFormatted($report);
             return;
         }
 
-        // Write to a temporary SQLite file first
-        $tmp_base = tempnam(sys_get_temp_dir(), 'reli_report_');
+        // No pre-populated rmem (typically a direct-construction
+        // result with an in-memory context tree). Stream the tree
+        // into a temp .rmem first, then run the same generator.
+        $tmp_base = tempnam(sys_get_temp_dir(), 'reli_report_rmem_');
         if ($tmp_base === false) {
             throw new \RuntimeException('Failed to create temporary file for report generation');
         }
-        $tmp_path = $tmp_base . '.sqlite3';
+        $tmp_path = $tmp_base . '.rmem';
         @unlink($tmp_base);
         try {
-            $sqlite_driver = new SqliteDriver($tmp_path);
-            $pdo_output = new PdoMemoryOutput($sqlite_driver, $this->region_boundaries);
-            $pdo_output->output($result);
-
-            // Now generate the report from the SQLite DB
-            $db = new \PDO("sqlite:{$tmp_path}");
-            $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+            $binary_output = new BinaryMemoryOutput($tmp_path, $this->region_boundaries);
+            $sink = $binary_output->createStreamingSink();
+            if ($result->context !== null) {
+                $analyzer = new ContextAnalyzer();
+                $analyzer->analyze($result->context, $sink);
+            }
+            $binary_output->finalizeStreaming($sink, $result->summary);
 
             $generator = new ReportGenerator();
-            $report = $generator->generateFromDb($db, 1);
-            $formatted = $this->formatter->format($report);
-
-            if ($this->output_path !== null) {
-                file_put_contents($this->output_path, $formatted);
-            } else {
-                echo $formatted;
-            }
+            $report = $generator->generateFromBinary($tmp_path);
+            $this->writeFormatted($report);
         } finally {
             if (file_exists($tmp_path)) {
                 @unlink($tmp_path);
@@ -89,5 +81,15 @@ final class ReportMemoryOutput implements MemoryOutputInterface
         ?string $output_path = null,
     ): self {
         return new self(new JsonReportFormatter($pretty_print), $region_boundaries, $output_path);
+    }
+
+    private function writeFormatted(ReportResult $report): void
+    {
+        $formatted = $this->formatter->format($report);
+        if ($this->output_path !== null) {
+            file_put_contents($this->output_path, $formatted);
+        } else {
+            echo $formatted;
+        }
     }
 }
