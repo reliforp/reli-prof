@@ -19,6 +19,7 @@ use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\CellTooLargeException;
+use Reli\Inspector\Output\MemoryOutput\SqliteRaw\Format as SqliteRawFormat;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\IntegerIndexMerger;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\OverflowNotSupportedException;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\ParallelIndexBuilder;
@@ -810,19 +811,17 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * shard, then page-relocates the index back into main via
      * shared mmap.
      */
-    private function tryParallelCreateIndexes(\PDO $db): bool
+    private function tryParallelCreateIndexes(\PDO $db, ?\Closure $sidecar = null): bool
     {
         if (!$this->driver instanceof SqliteDriver) {
             return false;
         }
         $specs = self::userIndexSpecs();
 
-        // Skip indexes that already exist — format-direct L pre-
-        // creates the 3 integer indexes via IntegerIndexMerger, and
-        // a 2nd-or-later capture into the same DB carries the
-        // 0.13.x sqlite_master entries from previous runs. Either
-        // case would trip the writable_schema INSERT with a
-        // duplicate-name conflict.
+        // Skip indexes that already exist — re-ingest into a
+        // populated 0.13.x DB carries sqlite_master entries from
+        // previous runs that would trip the writable_schema INSERT
+        // with a duplicate-name conflict.
         $existing = [];
         $existing_stmt = $db->query(
             "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"
@@ -833,11 +832,27 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 $existing[$row['name']] = true;
             }
         }
+        // When the format-direct integer-index sidecar is attached,
+        // it owns the 3 integer indexes — exclude them from the PIB
+        // worker specs so PIB doesn't build them in parallel and
+        // produce duplicate sqlite_master rows.
+        if ($sidecar !== null) {
+            foreach (self::integerIndexSpecs() as [$index_name, $_table, $_key]) {
+                $existing[$index_name] = true;
+            }
+        }
         $specs = array_values(array_filter(
             $specs,
             static fn (array $s): bool => !isset($existing[$s['name']]),
         ));
         if ($specs === []) {
+            // No PIB work to do. If a sidecar was supplied, run it
+            // serially here — we don't have a session to host it
+            // in. Caller's loop arranges the same fallback when
+            // PIB's pre-flight bails (FFI/pcntl unavailable).
+            if ($sidecar !== null) {
+                return false;
+            }
             return true;
         }
 
@@ -873,11 +888,22 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         // any failure throws; we let those bubble up because the
         // serial fallback would write on top of orphan index pages
         // and break integrity_check.
+        // When a sidecar is attached, leave one CPU for it so the
+        // sidecar isn't time-sliced against the worker pool. Without
+        // this the L sidecar's wall-clock balloons (e.g. 0.85 s →
+        // 1.4 s on a 4-core box because 4 PIB workers + parent + L
+        // all compete for cores) and partly defeats the
+        // parallel-with-createIndexes win.
+        $worker_count = $this->defaultWorkerCount();
+        if ($sidecar !== null) {
+            $worker_count = max(1, $worker_count - 1);
+        }
         $result = ParallelIndexBuilder::build(
             $db_path,
             $specs,
-            $this->defaultWorkerCount(),
+            $worker_count,
             $reservation,
+            $sidecar,
         );
         return $result !== null;
     }
@@ -1314,11 +1340,13 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $db->exec('PRAGMA synchronous = OFF');
         $db->exec('PRAGMA temp_store = MEMORY');
         $this->createTables($db);
-        if (self::formatDirectIndexEnabled()) {
-            foreach (self::integerIndexSpecs() as [$index_name, $table, $key]) {
-                $db->exec("CREATE INDEX IF NOT EXISTS {$index_name} ON {$table}(run_id, {$key})");
-            }
-        }
+        // Integer indexes (the L-path's pre-allocated rootpages)
+        // used to be created here. They are now created in
+        // mergeShards after summary inserts run, so the planner
+        // can't pick the empty rootpages for queries during the
+        // intervening summary phase. Moving the CREATE INDEX out
+        // also lets L run as a ParallelIndexBuilder sidecar
+        // concurrent with the C-side CREATE INDEX path.
         $db->beginTransaction();
         $run_id = $this->insertRun($db);
         $this->insertSummary($db, $run_id, $summary);
@@ -1664,22 +1692,6 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $db->commit();
         }
 
-        // Format-direct integer index merge (gated, off by default).
-        // When enabled, has to run BEFORE the summary inserts:
-        // the integer indexes' rootpages were pre-allocated but
-        // currently hold an empty leaf, and SQLite's planner
-        // happily uses them for queries like `SELECT ... WHERE
-        // run_id = ?`, which then returns zero rows. Populating
-        // the indexes first means subsequent SELECTs that route
-        // through them see the real data.
-        if (!$needs_sql_fallback && self::formatDirectIndexEnabled()) {
-            unset($db);
-            $this->mergeIntegerIndexes($shard_paths, $main_path);
-            $db = $this->driver->createConnection();
-            $db->exec('PRAGMA synchronous = OFF');
-            $db->exec('PRAGMA temp_store = MEMORY');
-        }
-
         $db->beginTransaction();
         $this->insertLocationTypesSummaryFromDb($db, $run_id);
         $this->insertClassObjectsSummaryFromDb($db, $run_id);
@@ -1688,19 +1700,119 @@ final class PdoMemoryOutput implements MemoryOutputInterface
 
         $this->driver->afterBulkInsert($db);
 
-        // The remaining indexes (text-keyed, partial, post-merge-
-        // derived like idx_context_nodes_canonical) get built the
-        // normal way. CREATE INDEX IF NOT EXISTS on the integer
-        // indexes is a no-op since they already exist.
-        if (self::parallelIndexEnabled() && $this->tryParallelCreateIndexes($db)) {
-            // Parallel CREATE INDEX via subset-cp shards landed all
-            // remaining indexes; format-direct L (if enabled) already
-            // pre-created the 3 integer ones and they were filtered
-            // out of the parallel batch.
+        // Pre-create the integer-index rootpages so the L path has
+        // somewhere to writePage() into. Done after summaries run
+        // so the empty rootpages don't mislead the planner during
+        // those queries. CREATE INDEX on a populated table is a
+        // real cost — but only when L is enabled, otherwise the
+        // serial createIndexes / parallel CREATE INDEX path below
+        // builds these indexes itself. Gate by $needs_sql_fallback
+        // because the SQL fallback path doesn't want format-direct
+        // anything.
+        $l_eligible = !$needs_sql_fallback && self::formatDirectIndexEnabled();
+
+        // L runs as a sidecar of ParallelIndexBuilder when both are
+        // available — its work overlaps with the C-side CREATE INDEX
+        // phase that builds the remaining 7 indexes, and both
+        // claim pgnos from the same shared atomic counter so their
+        // page allocations never collide. The sidecar emits its
+        // `index_name => rootpage` map to a temp file because the
+        // parent then has to register those rootpages in
+        // sqlite_master via writable_schema (skipping CREATE INDEX
+        // entirely avoids ~0.4 s of wasted C-side index build that
+        // L would just overwrite). Falls back to a sequential L
+        // before the serial createIndexes path when parallel-index
+        // can't run.
+        $sidecar = null;
+        $sidecar_result_path = null;
+        if ($l_eligible) {
+            $sidecar_result_path = $main_path . '.l_meta';
+            @unlink($sidecar_result_path);
+            $shard_paths_for_sidecar = $shard_paths;
+            $main_path_for_sidecar = $main_path;
+            $result_path_for_sidecar = $sidecar_result_path;
+            $sidecar = function (string $counter_path) use (
+                $shard_paths_for_sidecar,
+                $main_path_for_sidecar,
+                $result_path_for_sidecar
+            ): void {
+                $rootpages = $this->mergeIntegerIndexes(
+                    $shard_paths_for_sidecar,
+                    $main_path_for_sidecar,
+                    $counter_path,
+                );
+                file_put_contents(
+                    $result_path_for_sidecar,
+                    serialize($rootpages),
+                );
+            };
+        }
+
+        $parallel_landed = self::parallelIndexEnabled()
+            && $this->tryParallelCreateIndexes($db, $sidecar);
+
+        if ($parallel_landed) {
+            if (
+                $l_eligible
+                && $sidecar_result_path !== null
+                && file_exists($sidecar_result_path)
+            ) {
+                $payload = (string)file_get_contents($sidecar_result_path);
+                @unlink($sidecar_result_path);
+                /** @var array<string, int> $rootpages */
+                $rootpages = unserialize($payload);
+                $this->insertIntegerIndexSchemaEntries($db, $rootpages);
+            }
         } else {
+            // Serial path: run L sequentially first (claims its own
+            // rootpages and emits them back to us), then the serial
+            // createIndexes builds the remaining 7 indexes.
+            if ($l_eligible) {
+                unset($db);
+                $rootpages = $this->mergeIntegerIndexes($shard_paths, $main_path);
+                $db = $this->driver->createConnection();
+                $db->exec('PRAGMA synchronous = OFF');
+                $db->exec('PRAGMA temp_store = MEMORY');
+                $this->insertIntegerIndexSchemaEntries($db, $rootpages);
+            }
             $this->createIndexes($db);
         }
         $this->createViews($db);
+    }
+
+    /**
+     * Insert sqlite_master rows for the integer indexes L just
+     * populated. Mirrors {@see ParallelIndexBuilder}'s post-fork
+     * writable_schema step. Each entry's rootpage was claimed by
+     * the merger (sequential or session mode), and its name /
+     * tbl_name / sql come from {@see integerIndexSpecs}. The
+     * schema_cookie bumps as a side effect of writable_schema, so
+     * freshly-opened PDO connections re-parse and see the new
+     * indexes.
+     *
+     * @param array<string, int> $rootpages index_name => rootpage
+     */
+    private function insertIntegerIndexSchemaEntries(\PDO $db, array $rootpages): void
+    {
+        if ($rootpages === []) {
+            return;
+        }
+        $db->exec('PRAGMA writable_schema = ON');
+        try {
+            $stmt = $db->prepare(
+                'INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql)'
+                . ' VALUES (?, ?, ?, ?, ?)'
+            );
+            foreach (self::integerIndexSpecs() as [$index_name, $table, $key]) {
+                if (!isset($rootpages[$index_name])) {
+                    continue;
+                }
+                $sql = "CREATE INDEX {$index_name} ON {$table}(run_id, {$key})";
+                $stmt->execute(['index', $index_name, $table, $rootpages[$index_name], $sql]);
+            }
+        } finally {
+            $db->exec('PRAGMA writable_schema = OFF');
+        }
     }
 
     /**
@@ -1775,23 +1887,42 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      *
      * @param array<int, string> $shard_paths shard index => path
      */
+    /**
+     * Build the integer-only indexes from the per-shard sort runs.
+     *
+     * Always claims a fresh rootpage pgno for each index via the
+     * writer's `appendPage` (placeholder empty leaf, immediately
+     * overwritten by the merger), so the caller never has to pre-
+     * `CREATE INDEX` to allocate the rootpage — that CREATE INDEX
+     * would do the C-side index build only for L to overwrite the
+     * result, ~0.4 s of pure waste at our table sizes.
+     *
+     * Sequential mode (counter_path null): writer uses patch mode,
+     * appended pages are dense at the end of the file.
+     *
+     * Session mode (counter_path supplied): writer uses session
+     * mode, appended pages claim pgnos from the shared atomic
+     * counter so they don't collide with parallel cohort processes
+     * (typically {@see ParallelIndexBuilder} workers).
+     *
+     * Returns the `index_name => rootpage` map for indexes the
+     * merger populated. The caller is responsible for inserting
+     * the corresponding sqlite_master rows via writable_schema.
+     *
+     * @return array<string, int>
+     */
+    /**
+     * @param array<int, string> $shard_paths shard index => path
+     * @return array<string, int> index_name => rootpage
+     */
     private function mergeIntegerIndexes(
         array $shard_paths,
         string $main_path,
-    ): void {
-        // Resolve all integer-index rootpages and collect sort runs
-        // up front so we can run a single open(main) → merge×3 →
-        // close(main) cycle. Per-index open/close used to read the
-        // 88 MB main file twice and rewrite it once per iteration —
-        // ~0.6 s of pure IO per index, dwarfing the actual merge.
-        $reader = SqliteRawReader::open($main_path);
-        /** @var list<array{rootpage: int, sort_runs: list<SortRunReader>}> $jobs */
+        ?string $counter_path = null,
+    ): array {
+        /** @var list<array{name: string, sort_runs: list<SortRunReader>}> $jobs */
         $jobs = [];
         foreach (self::integerIndexSpecs() as [$index_name, $_table, $_key]) {
-            $entry = $reader->findSchemaEntry($index_name);
-            if ($entry === null) {
-                continue;
-            }
             $sort_runs = [];
             foreach ($shard_paths as $shard_path) {
                 $run_path = self::sortRunPath($shard_path, $index_name);
@@ -1802,28 +1933,52 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             if ($sort_runs === []) {
                 continue;
             }
-            $jobs[] = ['rootpage' => $entry['rootpage'], 'sort_runs' => $sort_runs];
+            $jobs[] = ['name' => $index_name, 'sort_runs' => $sort_runs];
         }
-        unset($reader);
 
         if ($jobs === []) {
-            return;
+            return [];
         }
 
-        $writer = SqliteRawWriter::openForPatch($main_path);
+        $writer = $counter_path !== null
+            ? SqliteRawWriter::openForPatchInSession($main_path, $counter_path)
+            : SqliteRawWriter::openForPatch($main_path);
+        // Build a single empty-index-leaf placeholder (type 0x0a,
+        // 0 cells) we can re-use as the appendPage payload that
+        // claims each index's rootpage. The merger overwrites the
+        // placeholder via writePage immediately after, so the
+        // bytes never end up on disk; we just need a page-sized
+        // buffer that satisfies appendPage's strict size check.
+        $page_size = $writer->page_size;
+        $cc = $page_size === 65536 ? 0 : $page_size;
+        $empty_leaf = chr(SqliteRawFormat::BTREE_LEAF_INDEX)
+            . pack('n', 0)
+            . pack('n', 0)
+            . pack('n', $cc)
+            . "\x00"
+            . str_repeat("\x00", $page_size - 8);
+        $populated = [];
         foreach ($jobs as $job) {
+            // Claim this index's rootpage. In session mode this
+            // pulls a pgno from the shared counter; in sequential
+            // mode it appends at end-of-file. Either way the
+            // merger writePage's the real root content over our
+            // placeholder before close().
+            $rootpage = $writer->appendPage($empty_leaf);
             $merger = new IntegerIndexMerger($writer, $job['sort_runs']);
             try {
-                $merger->merge($job['rootpage']);
+                $merger->merge($rootpage);
+                $populated[$job['name']] = $rootpage;
             } catch (OverflowNotSupportedException $_e) {
-                // Leave SQLite's CREATE INDEX (run after this) build
-                // the index in the normal way; the failed merger
-                // didn't write anything to the rootpage so the
-                // skip-and-fall-through is safe.
+                // Caller's fallback path will rebuild the index via
+                // a normal CREATE INDEX. The placeholder leaf at
+                // $rootpage is harmless (it'll be left as a free
+                // leaf, no sqlite_master entry refers to it).
                 continue;
             }
         }
         $writer->close($main_path);
+        return $populated;
     }
 
     /**
