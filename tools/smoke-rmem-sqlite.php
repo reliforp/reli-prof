@@ -1,22 +1,12 @@
 <?php
 
 /**
- * Smoke harness for PR #773 SQLite ingest paths.
+ * Smoke harness for the rmem→sqlite3 ingest paths added in #773 and #781.
  *
  * Builds a synthetic context tree large enough to exercise interior-page
  * formation and the parallel-shard merge, then drives every ingest path
- * the PR introduces:
- *
- *   - direct write (legacy, control)
- *   - ingestFromRmem default (parallel shard + format-direct merge)
- *   - ingestFromRmem with RELI_SHARED_MMAP_INGEST=1
- *   - ingestFromRmem with RELI_PARALLEL_INDEX=1
- *   - ingestFromRmem with RELI_FORMAT_DIRECT_INDEX=1
- *
- * For each output:
- *   1. PRAGMA integrity_check / foreign_key_check / quick_check
- *   2. Per-table row-set parity vs the direct-write control
- *      (excluding the auto-id surrogate columns)
+ * the PRs introduce, captures wall-clock + integrity_check + per-table
+ * row-set parity vs the direct-write control.
  */
 
 declare(strict_types=1);
@@ -27,7 +17,6 @@ use Reli\Inspector\Output\MemoryOutput\BinaryMemoryOutput;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Inspector\Output\MemoryOutput\PdoMemoryOutput;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\PdoContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
 
@@ -42,10 +31,6 @@ $summary = [[
     'zend_mm_heap_usage' => 8192,
 ]];
 
-/**
- * Emit a synthetic tree with a mix of objects and strings, plus a handful
- * of cross-edges (canonical-id alias paths) and shared-address pairs.
- */
 $emit = static function (object $sink, int $n): void {
     for ($i = 1; $i <= $n; $i++) {
         $parent = $i === 1 ? null : intdiv($i, 2);
@@ -79,7 +64,6 @@ $emit = static function (object $sink, int $n): void {
             attributes: $attrs,
         );
     }
-    // shared-ref edges
     for ($i = 0; $i < min(50, $n); $i++) {
         $a = max(1, intdiv($n, 4) + $i);
         $b = max(1, $n - $i);
@@ -92,7 +76,6 @@ $emit = static function (object $sink, int $n): void {
 $direct_db = "{$workdir}/direct.sqlite3";
 $rmem_path = "{$workdir}/cap.rmem";
 
-// --- 1. direct-write control --------------------------------------------
 fprintf(STDERR, "[direct] writing %s\n", $direct_db);
 $pdo = new PdoMemoryOutput(new SqliteDriver($direct_db));
 [$dsink, $run_id, $db] = $pdo->createStreamingSink();
@@ -100,18 +83,32 @@ $emit($dsink, $node_count);
 $pdo->finalizeStreaming($db, $run_id, $dsink, $summary);
 unset($pdo, $dsink, $db);
 
-// --- 2. capture rmem once, reuse for every ingest variant ---------------
 fprintf(STDERR, "[rmem]   writing %s\n", $rmem_path);
 $bin_sink = new BinaryContextTreeSink(batch_size: 256);
 $emit($bin_sink, $node_count);
 (new BinaryMemoryOutput($rmem_path))->finalizeStreaming($bin_sink, $summary);
 
-// --- 3. drive every ingest variant --------------------------------------
 $variants = [
-    'default'            => [],
-    'shared_mmap'        => ['RELI_SHARED_MMAP_INGEST' => '1'],
-    'parallel_index'     => ['RELI_PARALLEL_INDEX' => '1'],
-    'format_direct_idx'  => ['RELI_FORMAT_DIRECT_INDEX' => '1'],
+    'default'                       => [],
+    'shared_mmap'                   => ['RELI_SHARED_MMAP_INGEST' => '1'],
+    'parallel_index_off'            => ['RELI_PARALLEL_INDEX' => '0'],
+    'L_seq'                         => ['RELI_FORMAT_DIRECT_INDEX' => '1'],
+    'L_parallel'                    => ['RELI_FORMAT_DIRECT_INDEX' => '1', 'RELI_L_PARALLEL' => '1'],
+    'L_partition_4'                 => [
+        'RELI_FORMAT_DIRECT_INDEX' => '1',
+        'RELI_L_PARALLEL'          => '1',
+        'RELI_L_PARTITION_COUNT'   => '4',
+    ],
+    'L_seq_no_pib'                  => [
+        'RELI_FORMAT_DIRECT_INDEX' => '1',
+        'RELI_PARALLEL_INDEX'      => '0',
+    ],
+    'shared_mmap_plus_L_partition'  => [
+        'RELI_SHARED_MMAP_INGEST'  => '1',
+        'RELI_FORMAT_DIRECT_INDEX' => '1',
+        'RELI_L_PARALLEL'          => '1',
+        'RELI_L_PARTITION_COUNT'   => '4',
+    ],
 ];
 
 $results = [];
@@ -121,7 +118,12 @@ foreach ($variants as $name => $env) {
         putenv("{$k}={$v}");
         $_ENV[$k] = $v;
     }
-    fprintf(STDERR, "[ingest:%s] %s\n", $name, $db_path);
+    $env_str = $env === [] ? '(none)' : implode(' ', array_map(
+        static fn(string $k, string $v) => "{$k}={$v}",
+        array_keys($env),
+        array_values($env),
+    ));
+    fprintf(STDERR, "[ingest:%s] env=%s\n", $name, $env_str);
     try {
         $t0 = microtime(true);
         $out = new PdoMemoryOutput(new SqliteDriver($db_path));
@@ -142,20 +144,19 @@ foreach ($variants as $name => $env) {
     }
 }
 
-// --- 4. integrity + parity checks ---------------------------------------
 $tables_to_diff = [
-    'context_nodes'            => ['run_id', 'node_id'],
-    'context_edges'            => [
+    'context_nodes'           => ['run_id', 'node_id'],
+    'context_edges'           => [
         'run_id', 'parent_node_id', 'child_node_id', 'link_name', 'is_tree', 'strength',
     ],
-    'context_node_locations'   => [
+    'context_node_locations'  => [
         'run_id', 'node_id', 'address', 'size', 'location_type',
         'class_name', 'string_value', 'refcount', 'type_info', 'region',
     ],
-    'context_node_attributes'  => ['run_id', 'node_id', 'key', 'value'],
-    'summary'                  => ['run_id', 'key', 'value'],
-    'location_types_summary'   => ['run_id', 'type', 'count', 'memory_usage'],
-    'class_objects_summary'    => ['run_id', 'class_name', 'count', 'memory_usage'],
+    'context_node_attributes' => ['run_id', 'node_id', 'key', 'value'],
+    'summary'                 => ['run_id', 'key', 'value'],
+    'location_types_summary'  => ['run_id', 'type', 'count', 'memory_usage'],
+    'class_objects_summary'   => ['run_id', 'class_name', 'count', 'memory_usage'],
 ];
 
 $open = static function (string $p): PDO {
@@ -163,8 +164,6 @@ $open = static function (string $p): PDO {
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     return $pdo;
 };
-
-$direct = $open($direct_db);
 
 $run_pragma = static function (PDO $pdo, string $name): string {
     $rows = $pdo->query("PRAGMA {$name}")->fetchAll(PDO::FETCH_NUM);
@@ -178,26 +177,47 @@ $dump_table = static function (PDO $pdo, string $table, array $cols): array {
         ->fetchAll(PDO::FETCH_ASSOC) ?: [];
 };
 
-$report = ['direct' => ['integrity' => $run_pragma($direct, 'integrity_check')]];
+$direct = $open($direct_db);
 echo str_repeat('=', 70) . "\n";
-echo "DIRECT integrity_check: " . $report['direct']['integrity'] . "\n";
+echo "DIRECT integrity_check: " . $run_pragma($direct, 'integrity_check') . "\n";
 
+$summary_lines = [];
 foreach ($results as $name => $r) {
     echo str_repeat('=', 70) . "\n";
     echo "VARIANT: {$name}\n";
     if ($r['error'] !== null) {
         echo "  ingest FAILED: {$r['error']}\n";
+        $summary_lines[] = sprintf('%-30s  FAILED  %s', $name, $r['error']);
         continue;
     }
-    echo sprintf("  ingest ok in %.2fs (%s)\n", $r['elapsed'], $r['db']);
+    echo sprintf("  ingest ok in %.2fs\n", $r['elapsed']);
 
     $pdo = $open($r['db']);
     $integ = $run_pragma($pdo, 'integrity_check');
     $fk    = $run_pragma($pdo, 'foreign_key_check');
-    $quick = $run_pragma($pdo, 'quick_check');
     echo "  integrity_check    : {$integ}\n";
-    echo "  quick_check        : {$quick}\n";
     echo "  foreign_key_check  : " . ($fk === '' ? '(no rows)' : $fk) . "\n";
+
+    // verify each integer index actually returns rows for an INDEXED BY-pinned lookup
+    $idx_probes = [
+        'idx_context_edges_run_child' =>
+            "SELECT COUNT(*) FROM context_edges INDEXED BY idx_context_edges_run_child "
+                . "WHERE run_id=1 AND child_node_id=42",
+        'idx_context_node_locations_run_class' =>
+            "SELECT COUNT(*) FROM context_node_locations "
+                . "INDEXED BY idx_context_node_locations_run_class "
+                . "WHERE run_id=1 AND class_name='App\\Class7'",
+    ];
+    foreach ($idx_probes as $idx => $sql) {
+        try {
+            $a = (int)$direct->query($sql)->fetchColumn();
+            $b = (int)$pdo->query($sql)->fetchColumn();
+            $ok = ($a === $b);
+            echo "  idx {$idx}: " . ($ok ? "OK ({$b} rows)" : "DIFF (direct={$a}, ingest={$b})") . "\n";
+        } catch (\Throwable $e) {
+            echo "  idx {$idx}: ERROR " . $e->getMessage() . "\n";
+        }
+    }
 
     $diff_count = 0;
     foreach ($tables_to_diff as $t => $cols) {
@@ -208,7 +228,6 @@ foreach ($results as $name => $r) {
             $da = count($a);
             $db_n = count($b);
             echo "  table {$t}: DIFF (direct=$da rows, ingest=$db_n rows)\n";
-            // show first differing row
             $max = min($da, $db_n);
             for ($i = 0; $i < $max; $i++) {
                 if ($a[$i] !== $b[$i]) {
@@ -218,16 +237,31 @@ foreach ($results as $name => $r) {
                     break;
                 }
             }
-        } else {
-            echo "  table {$t}: OK (" . count($a) . " rows)\n";
         }
     }
     if ($diff_count === 0) {
         echo "  PARITY: OK (all " . count($tables_to_diff) . " tables match direct-write)\n";
+        $summary_lines[] = sprintf(
+            '%-30s  ok  %.2fs  parity OK  integrity %s',
+            $name,
+            $r['elapsed'],
+            $integ,
+        );
     } else {
         echo "  PARITY: {$diff_count} tables differ\n";
+        $summary_lines[] = sprintf(
+            '%-30s  ok  %.2fs  PARITY %d-DIFF  integrity %s',
+            $name,
+            $r['elapsed'],
+            $diff_count,
+            $integ,
+        );
     }
 }
 
 echo str_repeat('=', 70) . "\n";
+echo "SUMMARY\n";
+foreach ($summary_lines as $l) {
+    echo "  {$l}\n";
+}
 echo "workdir kept at {$workdir} for ad-hoc inspection (sqlite3 / sqldiff)\n";
