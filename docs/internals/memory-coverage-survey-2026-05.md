@@ -60,9 +60,9 @@ particular path." Until parity is restored, treat the live number
 as the optimistic bound and the offline number as the pessimistic
 bound; the truth is somewhere between.
 
-### G1. Live and offline paths disagree on heap size and "% analyzed"
+### G1. Overview "Heap" figure disagrees with the rest of the report
 
-Same target, same instant of capture, two paths, different numbers:
+Headline numbers across the surveyed targets:
 
 | Target            | Δ Heap        | Δ % analyzed |
 | ----------------- | ------------- | ------------ |
@@ -74,18 +74,63 @@ Same target, same instant of capture, two paths, different numbers:
 | json-config       | -1.86 MB      | -6.4 pp      |
 | wordpress         | -0.38 MB      | -8.5 pp      |
 
-The doctrine-entities case is the loudest: live says 10.21 MB / 88.6 %,
-offline says 5.65 MB / 49.0 %, on the exact same pid. Both paths run
-the same analyzer code over what's supposed to be the same heap
-content; the dump pipeline is dropping ~half the heap somewhere
-between `inspector:memory:dump` and `inspector:memory:analyze`. This
-shape is consistent with the dump pipeline missing one or more
-ZendMM chunks (or a subset of large allocations) — every target
-loses roughly 1–4 MB on the offline path, but doctrine-entities,
-which has 25k small objects packed into a few chunks, loses far
-more. Worth a focused investigation: dump a small target, diff
-which addresses the live walker reaches vs. what `analyze` finds in
-the dump.
+Naive read: the offline pipeline is dropping data. **That's wrong.**
+A focused replay on `hold-doctrine-entities.php` (target parked in
+`sleep(120)`, no userland allocations possible) makes the actual
+shape clear:
+
+| capture                            | Captured at | Heap   | % analyzed |
+| ---------------------------------- | ----------- | ------ | ---------- |
+| `inspector:memory -f rmem` #1      | T+0 s       | 10.21  | 88.6 %     |
+| `inspector:memory -f rmem` #2      | T+9 s       | 10.21  | 88.6 %     |
+| `inspector:memory:dump` + analyze  | T+14 s      |  5.65  | 49.0 %     |
+
+The two live snapshots 9 s apart are *byte-identical*, so timing
+isn't a factor. But the live and offline reports for the same target
+look like this when diffed:
+
+```
+$ diff de.live.report.txt de.analyzed.report.txt | wc -l
+12   # three lines change: Captured-at, the Overview Heap line, and one node id
+```
+
+Every other section is **byte-identical** between the two reports:
+
+- Type Breakdown — identical down to the row (`ZendObject 25,100 / 2.57 MB / 48.1 %`, …)
+- Top Classes by Memory — identical
+- ZendMM Bin Histogram including the leader line
+  `ZendMM live: 10.77 MB in 70,736 small slots across 21 bin classes
+  + 788.00 KB in 13 large runs (6 chunks walked)` — identical, on
+  *both* sides
+- Root Blame Allocation — identical including the per-root retained sums
+- All findings (bottleneck_path, choke_points, cycles, dedup,
+  ownership_pattern, …) — identical
+
+So both pipelines walk the same chunks, find the same slots, build
+the same node graph, and compute the same per-class / per-root
+totals. The bin walker even reports `10.77 MB + 788 KB = 11.55 MB`,
+which matches the target's own `memory_get_usage(true) = 12.00 MB`
+to within ZendMM rounding.
+
+The Overview line is the **only place** that disagrees:
+
+```
+live    : Heap: 10.21 MB (88.6% analyzed)   ← 1.16 MB unaccounted
+analyzed: Heap:  5.65 MB (49.0% analyzed)   ← 2.88 MB unaccounted
+```
+
+The Overview `Heap` figure is computed from a separate accounting
+path than the rest of the report, and that separate path is
+(a) buggy enough to disagree with itself between live and offline,
+and (b) the only thing the user sees first. The bin walker has
+already established the truth (~11.55 MB) — the Overview line
+should be derived from there or from the same node-set the rest
+of the report is built on, instead of whatever it's doing today.
+
+This also reframes G2 below: laravel's `105.8 % analyzed` isn't
+"reli double-counts allocations on the live path", it's the same
+broken Overview accounting tipping into the >100 % regime on
+particular heap shapes.
 
 ### G2. "% analyzed" can exceed 100 %
 
