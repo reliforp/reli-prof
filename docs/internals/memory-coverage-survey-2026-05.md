@@ -792,6 +792,38 @@ shape reli's report flagged most prominently for that target.
     loops with long-lived results, or file an upstream patch to
     extend the 8.4 fast paths to the rest of the formatter set.
 
+  **Cheap one-liner workaround: append (or prepend) `. ''`.** A
+  3v4l hand-test surfaced that `sprintf('%05d', 123) . ''` only
+  costs +32 B in `memory_get_usage` even on 8.3, where the bare
+  `sprintf('%05d', 123)` costs +320 B. Confirmed across 8.3 /
+  8.4 / 8.5RC for every oversize-triggering pattern in the table
+  above:
+
+  | operation                            | 8.3 / 8.4 / 8.5RC |
+  | ------------------------------------ | ----------------- |
+  | `sprintf('%05d', $i)`                | 361 B             |
+  | `sprintf('%05d', $i) . ''`           | **73 B**          |
+  | `'' . sprintf('%05d', $i)`           | **73 B**          |
+  | `(string) sprintf('%05d', $i)`       | 361 B             |
+  | `substr(sprintf('%05d', $i), 0)`     | 361 B             |
+  | `sprintf('SKU-%05d', $i) . ''`       | **81 B**          |
+
+  The trick is that `ZEND_CONCAT` unconditionally calls
+  `zend_string_alloc(len_a + len_b)`, so concat-with-`''` forces
+  a fresh, naturally-sized `zend_string` to be allocated, and
+  the oversized intermediate is freed by refcount when the
+  expression result is assigned. `(string)` cast and
+  `substr($s, 0)` are no-ops on string arguments (refcount-bump
+  the same `zend_string`) so they don't trigger the
+  reallocation.
+
+  Cost is one extra `emalloc` + `memcpy` per call, which is
+  negligible compared to the ~287 B of slot tail it reclaims on
+  every long-lived string. For codebases that can't easily
+  rewrite their `sprintf` formats but want to fix the memory
+  cost, dropping ` . ''` after every long-lived `sprintf(...)`
+  is a localised and reviewable change.
+
   **How often this matters in real code is an open question.**
   This survey did not catch a sprintf-driven OversizedTail in
   the four real GitHub apps (laravel, symfony-demo, composer,
