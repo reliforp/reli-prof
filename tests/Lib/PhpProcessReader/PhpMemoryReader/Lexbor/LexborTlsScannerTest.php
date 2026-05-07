@@ -199,7 +199,8 @@ final class LexborTlsScannerTest extends BaseTestCase
     /**
      * Build a synthetic PT_TLS image holding:
      *   - a 32-byte filler at offset 0,
-     *   - the 88-byte `lxb_unicode_normalizer_t`-shaped block at offset 32,
+     *   - the 72-byte `lxb_unicode_normalizer_t`-shaped block at offset 32
+     *     (upstream layout — see v85.h),
      *   - 32 bytes of filler,
      *   - the 24-byte `lexbor_mraw_t`-shaped block.
      */
@@ -207,19 +208,21 @@ final class LexborTlsScannerTest extends BaseTestCase
     {
         $tls = str_repeat("\0", 32);
 
-        // lxb_unicode_normalizer_t (the mock keeps unused fields zero).
-        $normalizer = pack('P', self::TEXT_FN1);                                   // decomposition
-        $normalizer .= pack('P', self::TEXT_FN2);                                  // composition
-        $normalizer .= pack('C', 0x06) . str_repeat("\0", 7);                      // quick_type + pad
-        $normalizer .= pack('P', 0);                                               // starter
-        $normalizer .= pack('P', 0);                                               // tmp_lenght
-        $normalizer .= pack('P', self::NORMALIZER_BUF);                            // buf
-        $normalizer .= pack('P', self::NORMALIZER_BUF + $normalizer_buf_size);     // end
-        $normalizer .= pack('P', self::NORMALIZER_BUF);                            // p
-        $normalizer .= pack('P', self::NORMALIZER_BUF);                            // ican
-        $normalizer .= pack('C', 0) . str_repeat("\0", 3);                         // quick_ccc + pad
-        $normalizer .= pack('V', 1024);                                            // flush_cp
-        // sizeof(lxb_unicode_normalizer_t) is 80 — no trailing pad.
+        // lxb_unicode_normalizer_t (upstream order; see v85.h):
+        $normalizer  = pack('P', self::TEXT_FN1);                              // 0  decomposition
+        $normalizer .= pack('P', self::TEXT_FN2);                              // 8  composition
+        $normalizer .= pack('P', 0);                                           // 16 starter (NULL idle)
+        $normalizer .= pack('P', self::NORMALIZER_BUF);                        // 24 buf
+        $normalizer .= pack('P', self::NORMALIZER_BUF + $normalizer_buf_size); // 32 end
+        $normalizer .= pack('P', self::NORMALIZER_BUF);                        // 40 p
+        $normalizer .= pack('P', self::NORMALIZER_BUF);                        // 48 ican
+        $normalizer .= str_repeat("\0", 4);                                    // 56 tmp[4]
+        $normalizer .= pack('C', 0);                                           // 60 tmp_lenght
+        $normalizer .= pack('C', 0);                                           // 61 quick_ccc
+        $normalizer .= pack('C', 0x06);                                        // 62 quick_type (NFC)
+        $normalizer .= "\0";                                                   // 63 pad
+        $normalizer .= pack('P', 1024);                                        // 64 flush_cp (size_t)
+        // sizeof = 72.
         $tls .= $normalizer;
 
         // 32 bytes of filler, then lexbor_mraw_t.

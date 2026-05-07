@@ -69,11 +69,22 @@ final class LexborTlsScanner
 
     /**
      * Window size in bytes when scanning for a `lxb_unicode_normalizer_t`
-     * fingerprint. The actual struct is 88 bytes once trailing padding
-     * is rounded to 8; we only need to read enough to cover `flush_cp`
-     * at offset 76.
+     * fingerprint. Upstream layout (see v85.h) is 72 bytes:
+     *   off  0: decomposition (8B fn ptr)
+     *   off  8: composition  (8B fn ptr)
+     *   off 16: starter      (8B ptr; NULL at idle)
+     *   off 24: buf          (8B ptr; ZendMM page-aligned)
+     *   off 32: end          (8B ptr; buf + 32768)
+     *   off 40: p            (8B ptr; == buf at idle)
+     *   off 48: ican         (8B ptr; == buf at idle)
+     *   off 56: tmp[4]       (4B)
+     *   off 60: tmp_lenght   (1B; 0 at idle)
+     *   off 61: quick_ccc    (1B; 0 at idle)
+     *   off 62: quick_type   (1B; 0x06 for NFC)
+     *   off 63: pad          (1B)
+     *   off 64: flush_cp     (8B size_t; 1024 at init)
      */
-    private const NORMALIZER_WINDOW_BYTES = 80;
+    private const NORMALIZER_WINDOW_BYTES = 72;
 
     /**
      * `lexbor_mraw_init`'s default chunk size (8192 + meta_size of 32 →
@@ -240,54 +251,52 @@ final class LexborTlsScanner
         $size = strlen($tls_image);
         $end = $size - self::NORMALIZER_WINDOW_BYTES;
         for ($offset = 0; $offset <= $end; $offset += 8) {
-            /** @var array{1: int, 2: int, 3: int, 4: int, 5: int, 6: int, 7: int, 8: int}|false $u */
-            $u = unpack('P8', $tls_image, $offset);
+            /** @var array{1: int, 2: int, 3: int, 4: int, 5: int, 6: int, 7: int}|false $u */
+            $u = unpack('P7', $tls_image, $offset);
             if ($u === false) {
                 break;
             }
-            $decomposition = $u[1];
-            $composition = $u[2];
-            // quick_type is at offset 16 within the struct (1 byte +
-            // 7 bytes padding). starter immediately follows at offset 24.
+            $decomposition = $u[1];  // offset  0
+            $composition   = $u[2];  // offset  8
+            $starter       = $u[3];  // offset 16; NULL at idle
+            $buf           = $u[4];  // offset 24
+            $end_ptr       = $u[5];  // offset 32
+            $p             = $u[6];  // offset 40
+            $ican          = $u[7];  // offset 48
             if ($decomposition === 0 || $composition === 0) {
                 continue;
             }
-            $quick_type = ord($tls_image[$offset + 16]);
-            if ($quick_type !== self::NORMALIZER_QUICK_TYPE_NFC) {
+            if ($starter !== 0) {
                 continue;
             }
-            // tmp_lenght (size_t) at offset 32, buf (ptr) at offset 40,
-            // end (ptr) at offset 48, p at 56, ican at 64.
-            $buf = $u[6];     // offset 40
-            $end_ptr = $u[7]; // offset 48
-            $p = $u[8];       // offset 56
             if ($buf === 0 || $end_ptr === 0) {
                 continue;
             }
             if (($end_ptr - $buf) !== self::NORMALIZER_BUFFER_BYTES) {
                 continue;
             }
-            // buf must be 8-byte aligned at minimum; ZendMM aligns LRUNs
-            // to a page (4096), so use that as a stronger sanity check.
+            // ZendMM aligns LRUNs to a page (4096); buf must land there.
             if (($buf & 0xfff) !== 0) {
                 continue;
             }
-            if ($p !== $buf) {
+            if ($p !== $buf || $ican !== $buf) {
                 continue;
             }
-            // ican is at offset 64 — beyond `P8`'s coverage (offsets
-            // 0,8,16,...,56). Read it explicitly.
-            /** @var array{1: int}|false $ican_u */
-            $ican_u = unpack('P', $tls_image, $offset + 64);
-            if ($ican_u === false) {
+            // tmp_lenght / quick_ccc / quick_type live in the byte triplet at
+            // offsets 60, 61, 62 (right after tmp[4]). All three are zero at
+            // idle except quick_type, which is fixed to 0x06 by the NFC init.
+            if (
+                $tls_image[$offset + 60] !== "\x00"
+                || $tls_image[$offset + 61] !== "\x00"
+            ) {
                 continue;
             }
-            if ($ican_u[1] !== $buf) {
+            if (ord($tls_image[$offset + 62]) !== self::NORMALIZER_QUICK_TYPE_NFC) {
                 continue;
             }
-            // flush_cp at offset 76 (after quick_ccc at 72 + 3 bytes pad).
+            // flush_cp is size_t (8B), set to 1024 by lxb_unicode_normalizer_init.
             /** @var array{1: int}|false $fc_u */
-            $fc_u = unpack('V', $tls_image, $offset + 76);
+            $fc_u = unpack('P', $tls_image, $offset + 64);
             if ($fc_u === false) {
                 continue;
             }

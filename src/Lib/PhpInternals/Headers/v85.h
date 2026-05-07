@@ -2082,19 +2082,22 @@ typedef struct lexbor_mraw {
 /* lxb_unicode_normalizer_t — see php-8.5.5/ext/lexbor/lexbor/unicode/base.h.
  * The decomposition/composition fields are typed pointers in the upstream
  * source; we declare them as void* here because reli only checks pointer
- * residency in [r-xp] segments and doesn't invoke them. */
+ * residency in [r-xp] segments and doesn't invoke them. Field order and
+ * sizes match upstream exactly; offsets in LexborTlsScanner depend on it. */
 typedef struct lxb_unicode_normalizer {
-	void                          *decomposition;
-	void                          *composition;
-	uint8_t                        quick_type;
-	void                          *starter;
-	size_t                         tmp_lenght;
-	void                          *buf;
-	const void                    *end;
-	void                          *p;
-	void                          *ican;
-	uint8_t                        quick_ccc;
-	uint32_t                       flush_cp;
+	void                          *decomposition;   /*  0 */
+	void                          *composition;     /*  8 */
+	void                          *starter;         /* 16 */
+	void                          *buf;             /* 24 */
+	const void                    *end;             /* 32 */
+	void                          *p;               /* 40 */
+	void                          *ican;            /* 48 */
+	uint8_t                        tmp[4];          /* 56 */
+	uint8_t                        tmp_lenght;      /* 60 */
+	uint8_t                        quick_ccc;       /* 61 */
+	uint8_t                        quick_type;      /* 62 */
+	/* implicit 1 byte pad to align flush_cp to 8 */
+	size_t                         flush_cp;        /* 64 (size_t, not uint32_t) */
 } lxb_unicode_normalizer_t;
 
 typedef struct lxb_unicode_idna {
