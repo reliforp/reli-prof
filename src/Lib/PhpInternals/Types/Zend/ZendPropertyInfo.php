@@ -34,6 +34,9 @@ final class ZendPropertyInfo implements CDataDereferencable
     /** @var Pointer<ZendString> */
     public ?Pointer $doc_comment;
 
+    /** @var Pointer<ZendClassEntry>|null */
+    public ?Pointer $ce;
+
     /**
      * @param CastedCData<\FFI\PhpInternals\zend_property_info> $casted_cdata
      * @param Pointer<self> $pointer
@@ -46,6 +49,7 @@ final class ZendPropertyInfo implements CDataDereferencable
         unset($this->flags);
         unset($this->name);
         unset($this->doc_comment);
+        unset($this->ce);
     }
 
     public function __get(string $field_name): mixed
@@ -67,7 +71,39 @@ final class ZendPropertyInfo implements CDataDereferencable
                 )
                 : null
             ,
+            'ce' => $this->ce = $this->casted_cdata->casted->ce !== null
+                ? Pointer::fromCData(
+                    ZendClassEntry::class,
+                    $this->casted_cdata->casted->ce,
+                )
+                : null
+            ,
         };
+    }
+
+    /**
+     * Visibility helpers. ZEND_ACC_PUBLIC / PROTECTED / PRIVATE moved across
+     * PHP 7.4: in 7.0–7.3 they sat in the upper byte (0x100 / 0x200 / 0x400);
+     * from 7.4 onward they live in the low bits (0x01 / 0x02 / 0x04). We
+     * mirror the version handling used by {@see isStatic} so the caller's
+     * existing `$php74_or_later` plumbing flows through.
+     */
+    public function isPublic(bool $php74_or_later = true): bool
+    {
+        $mask = $php74_or_later ? 0x01 : 0x100;
+        return (bool)($this->flags & $mask);
+    }
+
+    public function isProtected(bool $php74_or_later = true): bool
+    {
+        $mask = $php74_or_later ? 0x02 : 0x200;
+        return (bool)($this->flags & $mask);
+    }
+
+    public function isPrivate(bool $php74_or_later = true): bool
+    {
+        $mask = $php74_or_later ? 0x04 : 0x400;
+        return (bool)($this->flags & $mask);
     }
 
     /**

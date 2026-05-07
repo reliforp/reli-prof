@@ -283,6 +283,7 @@ class zend_property_info extends CData
     public int $flags;
     public ?CPointer $name;
     public ?CPointer $doc_comment;
+    public ?CPointer $ce;
 }
 
 class zend_refcounted_h extends CData

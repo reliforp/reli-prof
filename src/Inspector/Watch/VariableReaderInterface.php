@@ -28,6 +28,8 @@ interface VariableReaderInterface
     /**
      * @param list<VariableSpec> $specs
      * @param TargetPhpSettings<'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'|'v82'|'v83'|'v84'|'v85'> $target_php_settings
+     * @param VariableReadOptions|null $options recursion / size limits;
+     *     null preserves the legacy single-level behavior used by trace/watch.
      * @return array<string, VariableValue> keyed by `VariableSpec::$lookup_key`;
      *     specs that could not be resolved are omitted rather than being
      *     returned as a null or placeholder value.
@@ -38,5 +40,6 @@ interface VariableReaderInterface
         TargetPhpSettings $target_php_settings,
         int $eg_address,
         int $cg_address = 0,
+        ?VariableReadOptions $options = null,
     ): array;
 }
