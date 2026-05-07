@@ -44,6 +44,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\NativeSymbolResol
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\SymbolResolverInterface;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Lexbor\LexborTlsScanner;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\LexborStateContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ModulesContext;
 use Reli\Lib\PhpProcessReader\PhpTsrmLsCacheFinder;
 use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
@@ -336,10 +337,23 @@ final class MemoryLocationsCollector
         // Process "definition" branches before "usage" branches so the
         // canonical tree lives under the named globals/tables, not
         // buried inside a call frame.
+        // Pre-build the modules context so we can attach ext/uri's
+        // lexbor branch under it before EmitModulesJob emits the root.
+        // The scan itself happens after the queue is set up but before
+        // the DFS begins; lexbor data is independent of EG/CG state.
+        $modules_context = new ModulesContext();
+        $this->maybeAttachLexborState(
+            $process_specifier,
+            $target_php_settings,
+            $zend_type_reader,
+            $modules_context,
+            $memory_locations,
+        );
+
         $queue->push(new Collector\Job\EmitRegularListJob($eg->regular_list));
         $queue->push(new Collector\Job\EmitObjectsStoreJob($eg->objects_store));
         $queue->push(new Collector\Job\EmitCallFramesJob($eg));
-        $queue->push(new Collector\Job\EmitModulesJob($bg_address));
+        $queue->push(new Collector\Job\EmitModulesJob($bg_address, $modules_context));
         $queue->push(new Collector\Job\EmitGlobalCallbacksJob($eg));
         $queue->push(new Collector\Job\EmitIncludedFilesJob($eg->included_files));
         $queue->push(new Collector\Job\EmitGlobalConstantsJob($zend_constants));
@@ -437,62 +451,9 @@ final class MemoryLocationsCollector
             }
         }
 
-        // Tier-1 ext/uri lexbor scan. Only meaningful for PHP >= 8.5
-        // (ext/uri does not exist before then).
-        //
-        // ZEND_TLS expands to plain `static` on NTS builds (the common
-        // case for distro PHP CLI / FPM / mod_php — see Zend/zend_types.h),
-        // so lexbor_idna and friends live in the main binary's `.bss`,
-        // not in PT_TLS. On ZTS builds they're real `__thread` variables
-        // in the binary's PT_TLS image. Scan both candidate regions; the
-        // strict structural fingerprint (`end - buf == 32768`,
-        // `quick_type == 0x03`, `flush_cp == 1024`, two function pointers
-        // landing in `[r-xp]`) makes false matches effectively impossible.
-        //
-        // Best-effort and silently skipped when:
-        //   - process memory map isn't available;
-        //   - the binary's writable VMA can't be located;
-        //   - any pointer chase along the way fails.
-        // Conservative on purpose: we'd rather have a coverage_gap than
-        // spuriously credit a false location.
-        if (
-            $process_memory_map !== null
-            && !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V85)
-        ) {
-            try {
-                $ranges = $this->collectLexborScanRanges(
-                    $process_specifier,
-                    $target_php_settings,
-                    $process_memory_map,
-                );
-                if ($ranges !== []) {
-                    $state_context = new LexborStateContext();
-                    $scanner = new LexborTlsScanner($this->memory_reader);
-                    $emitted = $scanner->scan(
-                        $pid,
-                        $ranges,
-                        $process_memory_map,
-                        $memory_locations,
-                        $state_context,
-                    );
-                    if ($emitted > 0) {
-                        // Emit as a root branch so the structures count
-                        // toward `analyzed_percentage` via the streaming
-                        // sink's region_sums. They aren't reachable from
-                        // EG/CG, so a synthetic root is the right shape.
-                        $analyzer->analyzeSingleLink(
-                            'ext_uri_lexbor',
-                            $state_context,
-                            $sink,
-                            null,
-                        );
-                    }
-                }
-                unset($state_context);
-            } catch (\Throwable $e) {
-                Log::debug('LexborTlsScanner failed', ['exception' => $e]);
-            }
-        }
+        // ext/uri's lexbor branch was already attached to $modules_context
+        // before the queue ran (see maybeAttachLexborState), so it's been
+        // emitted as a child of `modules` along with `standard`.
 
         $context_pools->clear();
 
@@ -615,6 +576,62 @@ final class MemoryLocationsCollector
             }
         }
         return false;
+    }
+
+    /**
+     * Try to scan ext/uri's lexbor state and attach the matched
+     * MemoryLocations under the supplied `ModulesContext` as a child
+     * branch named `uri` (matching the module name reported by `php -m`).
+     *
+     * Best-effort and silently no-ops when:
+     *   - the target PHP version is < 8.5 (ext/uri does not exist);
+     *   - the process memory map can't be fetched;
+     *   - the binary's writable VMA can't be located;
+     *   - the scanner finds no fingerprint matches.
+     *
+     * @param TargetPhpSettings<VersionDecided> $target_php_settings
+     */
+    private function maybeAttachLexborState(
+        ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings,
+        ZendTypeReader $zend_type_reader,
+        ModulesContext $modules_context,
+        \Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations $memory_locations,
+    ): void {
+        if ($zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V85)) {
+            return;
+        }
+        try {
+            $process_memory_map = $this->process_memory_map_creator
+                ->getProcessMemoryMap($process_specifier->pid);
+        } catch (\Throwable $e) {
+            Log::debug('lexbor scan: process_memory_map fetch failed', ['exception' => $e]);
+            return;
+        }
+        $ranges = $this->collectLexborScanRanges(
+            $process_specifier,
+            $target_php_settings,
+            $process_memory_map,
+        );
+        if ($ranges === []) {
+            return;
+        }
+        $state_context = new LexborStateContext();
+        try {
+            $emitted = (new LexborTlsScanner($this->memory_reader))->scan(
+                $process_specifier->pid,
+                $ranges,
+                $process_memory_map,
+                $memory_locations,
+                $state_context,
+            );
+        } catch (\Throwable $e) {
+            Log::debug('LexborTlsScanner failed', ['exception' => $e]);
+            return;
+        }
+        if ($emitted > 0) {
+            $modules_context->add('uri', $state_context);
+        }
     }
 
     /**
