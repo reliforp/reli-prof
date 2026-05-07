@@ -268,6 +268,9 @@ final class IntegerIndexMerger
                     );
                     $this->main->writePage($prev_pgno, $merged_page);
                     $last_idx = count($leaves_with_dividers) - 1;
+                    \assert($last_idx >= 0); // $prev_pgno !== 0 implies the
+                    //                          loop already pushed at least
+                    //                          one leaf.
                     $leaves_with_dividers[$last_idx]['divider_payload']
                         = $promoted_payload;
                 } else {
