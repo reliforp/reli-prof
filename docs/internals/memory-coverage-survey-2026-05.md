@@ -209,6 +209,29 @@ would turn the current "you're missing 1.16 MB somewhere" warning
 into something the user can action. Worth a paragraph in
 `docs/internals/memory-report-architecture.md`.
 
+**Caveat — only works on stopped, single-snapshot capture.** A
+breakdown is only definable when the bin walker and the graph
+walker see the same graph. That holds for the default
+`--stop-process` case (this whole survey was taken that way). It
+does **not** hold for:
+
+- `--no-stop-process` snapshots, where the target keeps allocating
+  during the walk and an "unaccounted" slot may simply be one that
+  was alive during one phase and freed during the next. There is
+  no `(start, end)` to point at.
+- Multi-snapshot diff workflows (`inspector:memory:compare`,
+  future drift-over-time views), where the question
+  "where did the X MB drift go?" only has an answer for nodes
+  that *survived* between the two snapshots; for nodes that were
+  born or freed in the gap, the byte movement is real and
+  unlocalisable, not a reli bug.
+
+So the breakdown idea only fully fixes the stopped, single-snapshot
+case. For the live-running and diffing cases the right behaviour is
+probably to caveat the warning ("Y MB unaccounted, of which up to
+W MB may be due to allocator activity during the walk") rather than
+promise a breakdown that can't exist.
+
 ### G6. "Heap" denominator vs. `memory_get_usage()` is undocumented
 
 For doctrine-entities the report says
