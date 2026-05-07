@@ -228,9 +228,24 @@ runs (ASLR randomises the base, allocation order shifts with tiny
 non-determinisms). For comparing yesterday's run to today's, or
 two builds of the same app, the only realistic options are:
 
-- **graph-structural matching** (subgraph isomorphism / approximate
-  matching). Most semantically faithful but NP-hard in general
-  and expensive even with heuristics at 70 k+ nodes.
+- **graph-structural matching** — most semantically faithful.
+  Pure subgraph isomorphism *is* NP-hard, but heap-graph matching
+  isn't pure: every node carries a type label (class name,
+  ZendString, ZendArray-of-N), every edge carries a label
+  (property / array key), and the graph has natural roots
+  (`class_table`, `global_variables`, …). With rich labels,
+  matching reduces to "walk both rooted trees in parallel,
+  match by (parent-edge label, type label, signature), recurse"
+  — essentially O(n) for the parts of the heap where the labels
+  are informative, which is most of it. The two real pain points
+  are (a) structural duplicates (e.g., 15 000 OrderLine instances
+  — give up on per-instance identity, fall back to aggregate
+  matching for the cluster) and (b) hash-keyed arrays where
+  insertion order shifted between runs. memlab (V8) does
+  rooted-retainer-path matching, Java MAT diffs at the
+  dominator-tree level, and both work in practice. Heavy to
+  implement, but it isn't the complexity-theoretic monster the
+  "NP-hard" label suggests.
 - **aggregate comparison** — what `inspector:memory:compare` does
   today: per-class counts, per-type byte totals, per-root retained
   sums. Lossy by construction (can say "OrderLine grew by 5 000
@@ -242,12 +257,10 @@ two builds of the same app, the only realistic options are:
   insertion sequence and rehash thresholds, and for `ObjectsStore`
   slot numbering.
 
-Other-runtime profilers (Python's heapy, V8's memlab, Java
-HPROF tooling) all converge on aggregate diff + dominator-tree
-summary as the practical compromise. Reli's existing aggregate
-compare is the right shape for cross-execution; the address-based
-identity above is the right shape for same-process. They solve
-different problems and shouldn't be conflated.
+Reli's existing aggregate compare is the right shape for
+cross-execution; the address-based identity above is the right
+shape for same-process. They solve different problems and
+shouldn't be conflated.
 
 ### G5. "Only X% of heap analyzed — Y MB unaccounted" has no breakdown
 
