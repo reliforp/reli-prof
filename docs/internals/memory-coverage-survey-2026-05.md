@@ -62,6 +62,17 @@ bound; the truth is somewhere between.
 
 ### G1. Overview "Heap" figure disagrees with the rest of the report
 
+> **Status: fixed on `claude/fix-report-feature-Guu6o` (commit `7d193c3`,
+> `fix(memory-report): make Overview Heap/% analyzed match the rest of
+> the report`).** The fix sources Heap from
+> `SUM(memory_usage) over location_types_summary` (the per-type table
+> that was already byte-identical between live and offline) and uses
+> `memory_get_usage(false)` as the denominator. Re-running the report
+> command from that branch on every captured `.rmem` in this survey
+> reproduces the convergence target-for-target — see "Verification
+> after fix" at the end of this section. The investigation below is
+> kept as a record of how the gap was characterised.
+
 Headline numbers across the surveyed targets:
 
 | Target            | Δ Heap        | Δ % analyzed |
@@ -168,7 +179,63 @@ rather than the user-visible counter, since the numerator
 includes overhead), or one of the five terms is double-counting
 on the live side. Pure speculation until somebody instruments it.
 
+**Verification after fix (`claude/fix-report-feature-Guu6o` /
+`7d193c3`).** Re-rendering the report on the same `.rmem` files
+captured for this survey, with the fix applied:
+
+| Target            | live (before)    | offline (before) | live (fixed) | offline (fixed) | match? |
+| ----------------- | ---------------- | ---------------- | ------------ | --------------- | ------ |
+| laravel           | 24.68 / **105.8 %** | 22.64 / 97.0 % | 22.56 / 96.7 % | 22.56 / 96.7 % | ✓ |
+| symfony-demo      | 30.67 /  94.7 %  | 27.63 / 85.3 %  | 27.72 / 85.6 % | 27.72 / 85.6 % | ✓ |
+| composer          |  9.95 /  97.0 %  |  8.94 / 87.2 %  |  8.71 / 85.0 % |  8.71 / 85.0 % | ✓ |
+| phpstan           | 29.98 /  88.6 %  | 27.09 / 80.1 %  | 26.87 / 79.4 % | 26.87 / 79.4 % | ✓ |
+| doctrine-entities | 10.21 /  88.6 %  | **5.65 / 49.0 %** |  5.34 / 46.4 % |  5.34 / 46.4 % | ✓ |
+| json-config       | 29.26 / 100.0 %  | 27.40 / 93.6 %  | 27.08 / 92.6 % | 27.08 / 92.6 % | ✓ |
+| wordpress         |  3.65 /  81.9 %  |  3.27 / 73.4 %  |  2.98 / 66.9 % |  2.98 / 66.9 % | ✓ |
+
+7/7 targets converge to one number per target across both pipelines,
+laravel's >100 % is gone, doctrine-entities's 39.6 pp gap is closed.
+The fixed numbers are mostly *lower* than the previous "live" ones
+because the new accounting drops the alloc-overhead-as-numerator
+component — it reports only bytes whose owner reli's pointer
+tracer actually placed. This is the conservative honest reading,
+and matches the framing in the fix commit
+("bin walker total deliberately not used here").
+
+**What the new "% analyzed" actually means.** With the fix, "% analyzed"
+is `attributed user-visible bytes / memory_get_usage(false)`. Numbers
+like doctrine-entities's 46.4 % look low at first read but are not a
+coverage failure — they reflect the structural gap between
+"user-visible byte size" (numerator) and "ZendMM slot bytes the user
+process actually paid for" (which approximates the denominator).
+For doctrine-entities the gap of 6.18 MB breaks down approximately:
+
+| component (doctrine-entities) | est. bytes | source |
+| ----------------------------- | ---------- | ------ |
+| bin-slot rounding (`OrderLine` 120 B → 320 B bin) | ~3.0 MB | bin 16 × 15,006 |
+| ZendString small-slot rounding (~24-40 B → 128 B) | ~1.6 MB | bin 11 × 20,000 |
+| internal-class unmodeled state (DateTimeImmutable's `php_date_obj`/`timelib_time`) | ~500 KB | bin 15 × 5,001 |
+| hash-bucket capacity headroom + other slot rounding | ~1 MB | rest |
+
+So the canonical "is the gap reli failing to model internal classes?"
+hypothesis explains roughly 8 % of doctrine-entities's gap — the
+DateTimeImmutable component. The other ~92 % is bin-slot rounding,
+which is structural to ZendMM and not reli's to fix. A future
+"unaccounted breakdown" feature (G5) would be most useful if it
+splits the gap into (a) bin-slot rounding waste, (b) unmodeled
+internal-class state, (c) anything else, so that the genuine
+reli-coverage portion (b) can be tracked separately from the
+allocator-structural portion (a).
+
 ### G2. "% analyzed" can exceed 100 %
+
+> **Status: fixed by the same commit as G1
+> (`claude/fix-report-feature-Guu6o` / `7d193c3`).** The new accounting
+> divides attributed user-visible bytes by `memory_get_usage(false)`
+> (also a user-visible-byte counter), so the ratio cannot exceed 100 %
+> as a side effect of slot-rounding overhead being added to the
+> numerator. Verified in the post-fix table above: laravel goes from
+> 105.8 % to 96.7 %.
 
 `laravel.live` reports `Heap: 24.68 MB (105.8% analyzed)`. The
 denominator (presumably `memory_get_usage(true)` = 24.00 MB on
