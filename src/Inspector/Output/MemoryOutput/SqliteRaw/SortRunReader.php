@@ -101,7 +101,7 @@ final class SortRunReader
         $samples = [];
         for ($i = 0; $i < $sample_count; $i++) {
             // 1-indexed array; pick uniformly across the run.
-            $idx = (int)floor(((float)$i + 0.5) * $this->count / $sample_count) + 1;
+            $idx = (int)floor(((float)$i + 0.5) * (float)$this->count / (float)$sample_count) + 1;
             if ($idx > $this->count) {
                 $idx = $this->count;
             }
