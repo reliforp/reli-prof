@@ -700,6 +700,34 @@ shape reli's report flagged most prominently for that target.
   shared, so collapsing OrderLine to a struct-of-fields keyed on
   the parent order would save the per-line ZendObject overhead
   (~120 B × 15 000 = 1.72 MB).
+- **`sprintf` always allocates a 320 B slot regardless of result
+  length** — `OrderLine::$sku = sprintf('SKU-%05d', $j)` produces
+  a 9-char string but lands the resulting `zend_string` in a
+  320 B bin slot (header + content occupies ~34 B, the remaining
+  ~287 B is unused tail). Empirically reproduced on PHP 8.4.19
+  with 7 allocation patterns × 200 strings each:
+
+  | pattern                                | len  | actual bin     |
+  | -------------------------------------- | ---- | -------------- |
+  | `sprintf('SKU-%05d', $i)`              | 9    | **16 (320 B)** |
+  | `sprintf('%05d', $i)`                  | 5    | **16 (320 B)** |
+  | `sprintf('%032d', $i)`                 | 32   | **16 (320 B)** |
+  | `sprintf('%s-%d', 'X', $i)`            | 3-5  | **16 (320 B)** |
+  | `'SKU-' . str_pad((string)$i, 5, …)`   | 9    | 4 (40 B)       |
+  | `str_pad((string)$i, 9, …)`            | 9    | 4 (40 B)       |
+  | `number_format($i, 2)`                 | 4-6  | 3 (32 B)       |
+
+  Only `sprintf`-derived strings end up oversized; direct
+  concatenation, `str_pad`, `number_format`, and `(string)` cast
+  all land in the natural bin. Cause is almost certainly that
+  `spprintf` allocates through `smart_str` with a non-trivial
+  initial buffer that becomes the backing capacity of the
+  resulting `zend_string`. Cost in doctrine-entities:
+  `15 000 × ~287 B ≈ 4.2 MB` of effectively unused slot tail
+  for SKU strings alone — replacing the `sprintf` with
+  `'SKU-' . str_pad(...)` would drop that to zero. This is the
+  loudest concrete instance of the OversizedTail category
+  proposed under G1.
 
 ### WordPress (bootstrapped to wp_die, ~3.6 MB)
 
