@@ -169,26 +169,39 @@ Either way, `inspector:memory -f rmem` should produce a snapshot
 that round-trips through `inspector:memory:report` with the same
 fields as `inspector:memory:dump` → `…:analyze -f rmem` → `…:report`.
 
-### G4. Node IDs are not stable across snapshots of the same target
+### G4. Node IDs drift between live and offline snapshots of an idle target
 
 Every report ends each finding with
-`Explore: rmem:explore --node=N`. For composer:
+`Explore: rmem:explore --node=N`. For composer (target parked in
+`sleep(120)`, so the graph is provably unchanged between captures):
 
 ```
 live     : rmem:explore --node=33144   (cycle on $composer->locker->lockDataCache['packages'])
 analyzed : rmem:explore --node=42335   (same logical cycle)
 ```
 
-Same logical object, different node IDs. That makes diff workflows
-("did this allocation grow between snapshots?") harder than they
-need to be — the user has to re-resolve the path each time. Not a
-correctness bug, but a usability one if reli ever wants stable
-diffing on top of `inspector:memory:compare`.
+Same logical object — verified by both reports printing identical
+type-breakdown / bin-histogram / root-blame numbers, see G1 — yet
+different node IDs.
+
+**Scope of the gap.** Across two snapshots of a target whose graph
+genuinely *changed* (allocs and frees in between), node-id drift is
+unavoidable: a node that didn't exist in snapshot A can't share an
+id with anything; a node that was freed and whose slot was reused
+is genuinely a different node. So this gap is *not* "node ids
+should be stable across arbitrary snapshots." The narrow gap is:
+when the same pid is captured twice with no graph mutation in
+between, the two reports should still agree on which `--node=N`
+points where. Today they don't, on either pipeline pair (live↔live
+node-ids also drift; live↔offline drift more).
 
 A keyed identifier (e.g. content-hash of the path-from-root, or
-the target-process address mod chunk-base) would let
-`rmem:explore --node=` mean the same thing across runs against
-unchanged static data.
+the chunk-relative offset of the target-process address) would
+let `rmem:explore --node=` mean the same thing across runs *on
+the unchanged sub-graph*. Newly-allocated or freed nodes still
+get fresh ids, as they should — that's correct, not a regression.
+This is a usability gap, not a correctness one; worth doing only
+if reli wants stable diffing on top of `inspector:memory:compare`.
 
 ### G5. "Only X% of heap analyzed — Y MB unaccounted" has no breakdown
 
