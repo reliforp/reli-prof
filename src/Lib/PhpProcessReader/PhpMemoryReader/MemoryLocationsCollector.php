@@ -43,6 +43,7 @@ use Reli\Lib\File\PathResolver\ProcessPathResolver;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\NativeSymbolResolverAdapter;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\SymbolResolverInterface;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Lexbor\LexborTlsScanner;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\LexborStateContext;
 use Reli\Lib\PhpProcessReader\PhpTsrmLsCacheFinder;
 use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
@@ -436,38 +437,58 @@ final class MemoryLocationsCollector
             }
         }
 
-        // Tier-1 ext/uri lexbor TLS scan. Only meaningful for PHP >= 8.5
-        // (ext/uri does not exist before then). The scan is best-effort
-        // and silently skipped when:
-        //   - the TSRM/TLS finder isn't wired (constructor arg null,
-        //     i.e. an offline test harness);
-        //   - the binary has no PT_TLS image (NTS build that didn't link
-        //     any thread-locals — uncommon but possible);
+        // Tier-1 ext/uri lexbor scan. Only meaningful for PHP >= 8.5
+        // (ext/uri does not exist before then).
+        //
+        // ZEND_TLS expands to plain `static` on NTS builds (the common
+        // case for distro PHP CLI / FPM / mod_php — see Zend/zend_types.h),
+        // so lexbor_idna and friends live in the main binary's `.bss`,
+        // not in PT_TLS. On ZTS builds they're real `__thread` variables
+        // in the binary's PT_TLS image. Scan both candidate regions; the
+        // strict structural fingerprint (`end - buf == 32768`,
+        // `quick_type == 0x03`, `flush_cp == 1024`, two function pointers
+        // landing in `[r-xp]`) makes false matches effectively impossible.
+        //
+        // Best-effort and silently skipped when:
         //   - process memory map isn't available;
+        //   - the binary's writable VMA can't be located;
         //   - any pointer chase along the way fails.
         // Conservative on purpose: we'd rather have a coverage_gap than
         // spuriously credit a false location.
         if (
-            $this->tsrm_ls_cache_finder !== null
-            && $process_memory_map !== null
+            $process_memory_map !== null
             && !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V85)
         ) {
             try {
-                $tls_block = $this->tsrm_ls_cache_finder->resolveTlsBlock(
+                $ranges = $this->collectLexborScanRanges(
                     $process_specifier,
                     $target_php_settings,
+                    $process_memory_map,
                 );
-                if ($tls_block !== null) {
-                    [$tls_block_address, $tls_block_size,] = $tls_block;
+                if ($ranges !== []) {
+                    $state_context = new LexborStateContext();
                     $scanner = new LexborTlsScanner($this->memory_reader);
-                    $scanner->scan(
+                    $emitted = $scanner->scan(
                         $pid,
-                        $tls_block_address,
-                        $tls_block_size,
+                        $ranges,
                         $process_memory_map,
                         $memory_locations,
+                        $state_context,
                     );
+                    if ($emitted > 0) {
+                        // Emit as a root branch so the structures count
+                        // toward `analyzed_percentage` via the streaming
+                        // sink's region_sums. They aren't reachable from
+                        // EG/CG, so a synthetic root is the right shape.
+                        $analyzer->analyzeSingleLink(
+                            'ext_uri_lexbor',
+                            $state_context,
+                            $sink,
+                            null,
+                        );
+                    }
                 }
+                unset($state_context);
             } catch (\Throwable $e) {
                 Log::debug('LexborTlsScanner failed', ['exception' => $e]);
             }
@@ -594,6 +615,102 @@ final class MemoryLocationsCollector
             }
         }
         return false;
+    }
+
+    /**
+     * Compute the address ranges to scan for lexbor struct fingerprints.
+     *
+     * On NTS builds ext/uri's `ZEND_TLS lexbor_idna` etc. expand to plain
+     * `static`, so the variables live in the main PHP binary's `.bss`.
+     * The Linux loader maps the binary's RW LOAD segment file-backed up
+     * to the file-backed end and uses an anonymous mapping immediately
+     * after for any BSS pages that don't fit. We scan both.
+     *
+     * On ZTS builds the variables are `__thread` in the binary's PT_TLS
+     * image; the live thread's TLS block address comes from the same
+     * resolver TSRM-cache lookup uses. We add it as an additional range
+     * so a single scanner pass covers both build flavours.
+     *
+     * Returns an empty list when neither region can be located, in which
+     * case the caller no-ops the scan (preferring a coverage_gap to a
+     * speculative match).
+     *
+     * @param TargetPhpSettings<VersionDecided> $target_php_settings
+     * @return list<array{int, int}>
+     */
+    private function collectLexborScanRanges(
+        ProcessSpecifier $process_specifier,
+        TargetPhpSettings $target_php_settings,
+        ProcessMemoryMap $process_memory_map,
+    ): array {
+        $ranges = [];
+
+        $binary_areas = $process_memory_map->findByNameRegex(
+            $target_php_settings->php_regex,
+        );
+        if ($binary_areas !== []) {
+            // Find the writable file-backed mapping (`.data` + the file-backed
+            // start of `.bss`).
+            $rw_lo = null;
+            $rw_hi = null;
+            foreach ($binary_areas as $area) {
+                if (
+                    $area->attribute->read
+                    && $area->attribute->write
+                    && !$area->attribute->execute
+                ) {
+                    $rw_lo = (int)hexdec($area->begin);
+                    $rw_hi = (int)hexdec($area->end);
+                    break;
+                }
+            }
+            if ($rw_lo !== null && $rw_hi !== null && $rw_hi > $rw_lo) {
+                $ranges[] = [$rw_lo, $rw_hi - $rw_lo];
+                // The loader fills the BSS tail with an anonymous mapping
+                // that starts at the file-backed end. Detect it by walking
+                // the full memory map for an `rw-p` anon area whose `begin`
+                // equals our `rw_hi`.
+                foreach ($process_memory_map->findByNameRegex('.*') as $area) {
+                    if (
+                        $area->name !== ''
+                        || !$area->attribute->read
+                        || !$area->attribute->write
+                        || $area->attribute->execute
+                    ) {
+                        continue;
+                    }
+                    $lo = (int)hexdec($area->begin);
+                    $hi = (int)hexdec($area->end);
+                    if ($lo === $rw_hi && $hi > $lo) {
+                        $ranges[] = [$lo, $hi - $lo];
+                        break;
+                    }
+                }
+            }
+        }
+
+        // ZTS path: also scan the live thread's PT_TLS image when it
+        // exists (resolveTlsBlock returns null on NTS builds). On NTS
+        // this contributes nothing; on ZTS it covers the case where
+        // ZEND_TLS expands to `__thread`.
+        if ($this->tsrm_ls_cache_finder !== null) {
+            try {
+                $tls_block = $this->tsrm_ls_cache_finder->resolveTlsBlock(
+                    $process_specifier,
+                    $target_php_settings,
+                );
+                if ($tls_block !== null) {
+                    [$tls_address, $tls_size,] = $tls_block;
+                    if ($tls_size > 0) {
+                        $ranges[] = [$tls_address, $tls_size];
+                    }
+                }
+            } catch (\Throwable) {
+                // Best-effort: a missing TLS block is fine on NTS.
+            }
+        }
+
+        return $ranges;
     }
 
     private function collectRealCallStackOnMemoryLimitViolation(

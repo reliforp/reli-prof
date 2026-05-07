@@ -68,8 +68,7 @@ final class LexborTlsScannerTest extends BaseTestCase
 
         $emitted = $scanner->scan(
             pid: 1234,
-            tls_block_address: self::TLS_BASE,
-            tls_block_size: strlen($tls),
+            ranges: [[self::TLS_BASE, strlen($tls)]],
             process_memory_map: $process_memory_map,
             memory_locations: $memory_locations,
         );
@@ -129,8 +128,7 @@ final class LexborTlsScannerTest extends BaseTestCase
 
         $emitted = $scanner->scan(
             pid: 1234,
-            tls_block_address: self::TLS_BASE,
-            tls_block_size: 1024,
+            ranges: [[self::TLS_BASE, 1024]],
             process_memory_map: $process_memory_map,
             memory_locations: $memory_locations,
         );
@@ -155,8 +153,7 @@ final class LexborTlsScannerTest extends BaseTestCase
 
         $emitted = $scanner->scan(
             pid: 1234,
-            tls_block_address: self::TLS_BASE,
-            tls_block_size: strlen($tls),
+            ranges: [[self::TLS_BASE, strlen($tls)]],
             process_memory_map: $process_memory_map,
             memory_locations: $memory_locations,
         );
@@ -184,8 +181,7 @@ final class LexborTlsScannerTest extends BaseTestCase
 
         $emitted = $scanner->scan(
             pid: 1234,
-            tls_block_address: self::TLS_BASE,
-            tls_block_size: strlen($tls),
+            ranges: [[self::TLS_BASE, strlen($tls)]],
             process_memory_map: $process_memory_map,
             memory_locations: $memory_locations,
         );
@@ -219,7 +215,7 @@ final class LexborTlsScannerTest extends BaseTestCase
         $normalizer .= str_repeat("\0", 4);                                    // 56 tmp[4]
         $normalizer .= pack('C', 0);                                           // 60 tmp_lenght
         $normalizer .= pack('C', 0);                                           // 61 quick_ccc
-        $normalizer .= pack('C', 0x06);                                        // 62 quick_type (NFC)
+        $normalizer .= pack('C', 0x03);                                        // 62 quick_type (NFC = NFC_NO|NFC_MAYBE = 0x02|0x01)
         $normalizer .= "\0";                                                   // 63 pad
         $normalizer .= pack('P', 1024);                                        // 64 flush_cp (size_t)
         // sizeof = 72.

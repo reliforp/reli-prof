@@ -18,6 +18,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\LexborBstPoolMemory
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\LexborMrawChunkMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\LexborUnicodeNormalizerBufferMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\LexborStateContext;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
@@ -56,9 +57,12 @@ final class LexborTlsScanner
     /**
      * `lxb_unicode_quick_type_t LXB_UNICODE_QUICK_NFC_NO | LXB_UNICODE_QUICK_NFC_MAYBE`
      * — the value `lxb_unicode_idna_init` writes into `quick_type` for
-     * NFC-mode normalization. (NFD/NFKC/NFKD use different bit patterns.)
+     * NFC-mode normalization. The enum (php-8.5.5/ext/lexbor/lexbor/
+     * unicode/base.h) defines NFC_MAYBE = 1<<0 = 0x01 and NFC_NO = 1<<1
+     * = 0x02, so the OR is 0x03. NFD/NFKC/NFKD use different bit
+     * patterns, so this single byte rules them out.
      */
-    private const NORMALIZER_QUICK_TYPE_NFC = 0x06;
+    private const NORMALIZER_QUICK_TYPE_NFC = 0x03;
 
     /**
      * `LXB_UNICODE_FLUSH_CP` — the constant ext/uri's lexbor build sets
@@ -140,50 +144,72 @@ final class LexborTlsScanner
     }
 
     /**
-     * Scan the TLS image and emit MemoryLocations for any matched
-     * lexbor structures.
+     * Scan one or more memory ranges for lexbor struct fingerprints and
+     * emit MemoryLocations for matches.
+     *
+     * `$ranges` is a list of `[start_address, size_in_bytes]` pairs.
+     * Both NTS (BSS) and ZTS (PT_TLS image) targets are supported by the
+     * caller passing the appropriate ranges:
+     *
+     *   NTS: the binary's `rw-p` VMA, plus the immediately following anon
+     *        mapping if `.bss` extends past the file-backed end (the
+     *        loader uses anonymous pages for the BSS tail).
+     *   ZTS: the live thread's PT_TLS image (`tls_block_address`,
+     *        `tls_block_size`).
      *
      * Returns the number of locations added. Any read or parse failure
-     * is swallowed (logged via `$on_failure` if provided) so the caller
-     * can run this opportunistically on every collect without breaking
-     * the analyze pass.
+     * is swallowed so the caller can run this opportunistically on every
+     * collect without breaking the analyze pass.
+     *
+     * @param list<array{int, int}> $ranges
      */
     public function scan(
         int $pid,
-        int $tls_block_address,
-        int $tls_block_size,
+        array $ranges,
         ProcessMemoryMap $process_memory_map,
         MemoryLocations $memory_locations,
+        ?LexborStateContext $state_context = null,
     ): int {
-        if ($tls_block_size <= 0 || $tls_block_size > 8 * 1024 * 1024) {
-            // Sanity: PT_TLS images are typically a few KB to a few hundred
-            // KB. >8 MB is implausible and almost certainly a misread that
-            // would make the linear scan below take forever.
-            return 0;
-        }
-        try {
-            $tls_image = $this->readTlsImage($pid, $tls_block_address, $tls_block_size);
-        } catch (MemoryReaderException) {
-            return 0;
-        }
-
         $this->indexExecutableSegments($process_memory_map);
 
         $emitted = 0;
-        $emitted += $this->scanForNormalizer($pid, $tls_image, $memory_locations);
-        $emitted += $this->scanForMraw($pid, $tls_image, $memory_locations);
+        foreach ($ranges as [$address, $size]) {
+            if ($size <= 0 || $size > 8 * 1024 * 1024) {
+                // Sanity: BSS / TLS images are typically a few KB to a few
+                // hundred KB. >8 MB is implausible and almost certainly a
+                // misread that would make the linear scan take forever.
+                continue;
+            }
+            try {
+                $image = $this->readImage($pid, $address, $size);
+            } catch (MemoryReaderException) {
+                continue;
+            }
+            $emitted += $this->scanForNormalizer(
+                $pid,
+                $image,
+                $memory_locations,
+                $state_context,
+            );
+            $emitted += $this->scanForMraw(
+                $pid,
+                $image,
+                $memory_locations,
+                $state_context,
+            );
+        }
         return $emitted;
     }
 
     /**
-     * Read the entire TLS image as a binary string. We read in chunks of
+     * Read a memory image as a binary string. We read in chunks of
      * 64 KB to keep individual `process_vm_readv` calls bounded and to
      * avoid pathological behaviour if the kernel returns a partial read
      * around an unmapped page boundary.
      *
      * @throws MemoryReaderException
      */
-    private function readTlsImage(int $pid, int $address, int $size): string
+    private function readImage(int $pid, int $address, int $size): string
     {
         $chunk_size = 65536;
         $buffer = '';
@@ -246,6 +272,7 @@ final class LexborTlsScanner
         int $pid,
         string $tls_image,
         MemoryLocations $memory_locations,
+        ?LexborStateContext $state_context,
     ): int {
         $emitted = 0;
         $size = strlen($tls_image);
@@ -315,6 +342,7 @@ final class LexborTlsScanner
             );
             if (!$memory_locations->has($buf)) {
                 $memory_locations->add($location);
+                $state_context?->addLocation($location);
                 $emitted++;
             }
             // There is exactly one normalizer per worker; don't waste cycles
@@ -340,6 +368,7 @@ final class LexborTlsScanner
         int $pid,
         string $tls_image,
         MemoryLocations $memory_locations,
+        ?LexborStateContext $state_context,
     ): int {
         $emitted = 0;
         $size = strlen($tls_image);
@@ -367,6 +396,7 @@ final class LexborTlsScanner
                     $mem_ptr,
                     $cache_ptr,
                     $memory_locations,
+                    $state_context,
                 );
             } catch (MemoryReaderException) {
                 continue;
@@ -383,6 +413,7 @@ final class LexborTlsScanner
         int $mem_ptr,
         int $cache_ptr,
         MemoryLocations $memory_locations,
+        ?LexborStateContext $state_context,
     ): int {
         $emitted = 0;
         // lexbor_mem_t = { chunk, chunk_first, chunk_min_size, chunk_length }
@@ -430,13 +461,13 @@ final class LexborTlsScanner
         }
 
         if (!$memory_locations->has($data_ptr)) {
-            $memory_locations->add(
-                new LexborMrawChunkMemoryLocation($data_ptr, $data_size),
-            );
+            $location = new LexborMrawChunkMemoryLocation($data_ptr, $data_size);
+            $memory_locations->add($location);
+            $state_context?->addLocation($location);
             $emitted++;
         }
 
-        $emitted += $this->tryFollowBst($pid, $cache_ptr, $memory_locations);
+        $emitted += $this->tryFollowBst($pid, $cache_ptr, $memory_locations, $state_context);
         return $emitted;
     }
 
@@ -447,6 +478,7 @@ final class LexborTlsScanner
         int $pid,
         int $bst_ptr,
         MemoryLocations $memory_locations,
+        ?LexborStateContext $state_context,
     ): int {
         // lexbor_bst_t = { dobject, root, tree_length }
         $bst = $this->tryRead($pid, $bst_ptr, 24);
@@ -517,9 +549,9 @@ final class LexborTlsScanner
                         && $pool_size <= 1024 * 1024
                         && !$memory_locations->has($pool_data)
                     ) {
-                        $memory_locations->add(
-                            new LexborBstPoolMemoryLocation($pool_data, $pool_size),
-                        );
+                        $location = new LexborBstPoolMemoryLocation($pool_data, $pool_size);
+                        $memory_locations->add($location);
+                        $state_context?->addLocation($location);
                         $emitted++;
                     }
                 }
@@ -541,12 +573,12 @@ final class LexborTlsScanner
                 && $array_length === 0
                 && !$memory_locations->has($list_ptr)
             ) {
-                $memory_locations->add(
-                    new LexborBstCacheMemoryLocation(
-                        $list_ptr,
-                        self::BST_CACHE_SIZE * 8,
-                    ),
+                $location = new LexborBstCacheMemoryLocation(
+                    $list_ptr,
+                    self::BST_CACHE_SIZE * 8,
                 );
+                $memory_locations->add($location);
+                $state_context?->addLocation($location);
                 $emitted++;
             }
         }
