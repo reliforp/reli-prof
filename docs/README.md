@@ -9,6 +9,7 @@ this file links out to a dedicated doc or a section of the top-level
 
 - **New here?** [getting-started.md](getting-started.md) walks you from install to your first trace in 5 minutes.
 - **Just want copy-paste commands for a common task?** [recipes.md](recipes.md) — profile a php-fpm pool, investigate memory growth, capture `memory_limit` crashes, profile FrankenPHP.
+- **Migrating to a long-running app server (FrankenPHP worker mode, RoadRunner, Laravel Octane, Symfony Runtime, Swoole, ReactPHP)?** [long-running-server-migration.md](long-running-server-migration.md) — checklist of what typically goes wrong (leaks, state bleed, resource exhaustion, warm-up cliffs) and a step-by-step diagnostic playbook mapping each symptom to the reli command that finds it.
 - Docker wrapper (`reli` / `reli-view` installed via `eval "$(... docker:print-wrapper)"`) — [docker-wrapper.md](docker-wrapper.md)
 - How it works (architecture overview) — [README § How it works](../README.md#how-it-works)
 - Supported PHP versions and platforms — [getting-started.md § Requirements](getting-started.md#requirements)
