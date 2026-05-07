@@ -209,37 +209,79 @@ returns the per-allocation user-byte sum, *not* the ZendMM slot-byte
 sum (`(true)` is the OS-chunk-rounded view, which differs from
 `(false)` only by chunk-end slack: 12.00 MB vs 11.52 MB on
 doctrine-entities). So the gap between numerator and denominator
-is not bin-slot rounding — it's literally user-byte allocations
-that ZendMM handed out and that reli's pointer tracer did not
-label.
+is literally user-byte allocations that ZendMM handed out and that
+reli's typed-node tally **either missed entirely or undercounted in
+size**.
 
 For doctrine-entities that gap is 6.18 MB out of 11.52 MB —
-**~54 % of the live user-byte heap that the pointer tracer doesn't
-visit.** Slot-count corroboration: the bin walker enumerates
-70,736 small slots, while reli's typed entries (ZendObject 25,100
-\+ ZendString 20,364 + ZendArray 10,111 + ZendArrayTable 5,111
-\+ ZendArrayTableOverhead 5,106 = 65,792) cover ~93 % of the
-slots; ~5,000 small slots stay un-typed.
+~54 % of the live user-byte heap. Slot-count corroboration: the
+bin walker enumerates 70,736 small slots, while reli's typed entries
+(ZendObject 25,100 + ZendString 20,364 + ZendArray 10,111
+\+ ZendArrayTable 5,111 + ZendArrayTableOverhead 5,106 = 65,792)
+cover ~93 % of the slots — so the gap is mostly *size* drift, not
+*count* drift.
 
-Plausible suspects (not verified — would need instrumentation):
+**Verifying with the bin-walk + peek workflow.** Reli already ships
+the tools to investigate this. `inspector:memory:bin-query` lists
+sample addresses per bin together with the bin walker's inferred
+shape, and `inspector:memory:peek --rdump` reads raw bytes back from
+the dump file at any address. Running both on doctrine-entities's
+bin 16 (320 B × 15,006 slots, the largest single contributor):
 
-- internal-class additional struct beyond the bare `ZendObject`
-  header — for `DateTimeImmutable` that's `php_date_obj`'s
-  embedded `timelib_time` plus its timezone-string allocations,
-  one set per instance × 5 000 instances
-- the bytes behind dynamic-property `HashTable`s when reli walks
-  the parent object but not the spilled bag
-- internal-engine bookkeeping that user code "paid for" through
-  ZendMM but doesn't have an obvious user-visible owner
-  (`zend_string` interns spawned by extensions, etc.)
+```
+$ reli inspector:memory:bin-query -b 16 --shape='zend_string(len=9)' …
+  zend_string(len=9)  [MEDIUM]  count=14822  orphan=0  reachable=14822
+    0x00007f1c8686b780 …
 
-A future "unaccounted breakdown" feature (see G5) would
-ideally walk the typed slots and the un-typed slots side by
-side and report the difference per bin and per likely owner,
-so this gap can be split into "missing internal-class layouts"
-(reli should fix) vs "engine-internal allocations with no
-user-visible owner" (reli probably can't, but should at least
-label).
+$ reli inspector:memory:peek --rdump=de.dump.rdump -a 0x7f1c8686b780 -l 96
+  00007f1c8686b780  01 00 00 00 16 00 00 00  00 00 00 00 00 00 00 00
+  00007f1c8686b790  09 00 00 00 00 00 00 00  53 4b 55 2d 30 30 30 30   ........SKU-0000
+  00007f1c8686b7a0  30 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00   0...............
+  00007f1c8686b7b0  …                                                    [256 B of zeros]
+```
+
+That's a real `zend_string` (refcount=1, type_info=0x16 = IS_STRING,
+len=9, content `SKU-00000\0`) sitting in a 320 B bin slot with
+~287 B of slot tail unused. These are doctrine-entities's
+`sprintf('SKU-%05d', $j)` × 15 000 results: PHP's `spprintf` allocates
+through `smart_str`, which ends up with a 320 B-class capacity even
+when the final string is 9 chars, and that capacity becomes the
+backing allocation of the resulting `zend_string`. The `reachable`
+column from bin-query confirms reli's pointer tracer *did* find
+all 14 822 of them (`orphan=0`); they're listed in the typed-node
+tally. The accounting bug is that **reli's `ZendString` size is
+computed as `header (24) + len + 1`** (so 34 B per SKU, 477 KB
+total) **instead of the actual ZendMM allocation size** (320 B per
+SKU, 4.52 MB total). Per-string undercount: ~287 B; total undercount
+on this single bin: **~4.2 MB**, roughly two-thirds of the entire
+6.18 MB gap.
+
+Sampling bin 11 the same way confirms the OrderLine ZendObjects sit
+in 128 B slots holding 120 B of object — 8 B slot rounding × 15 000
+≈ 117 KB, negligible. So the doctrine-entities gap factors
+approximately as:
+
+| component | est. bytes | basis |
+| --------- | ---------- | ----- |
+| `ZendString` size = `header + len + 1` ignores actual slot for sprintf-allocated strings | ~4.2 MB | bin 16, peek-confirmed |
+| `DateTimeImmutable` `php_date_obj`/`timelib_time` internal struct beyond bare ZendObject | ~500 KB | unverified, plausible from bin 15 |
+| ZendArray buckets + hash-bucket capacity headroom + misc | ~1.5 MB | residue |
+
+So the canonical "is the gap reli failing to model internal classes?"
+hypothesis explains roughly the second row. The first row is the
+loud one — and it's a concrete reli bug rather than a structural
+limitation: **`ZendString` should be sized by the actual ZendMM
+allocation size, not by `header + len + 1`.** That would close
+~4 MB of doctrine-entities's gap and would also help on json-config
+(which has 60 k+ json-decoded strings).
+
+The `--bin-detail` flag on `inspector:memory:report` already prints
+shape-detector results in `=== Per-bin Shape Detection ===` /
+`=== ZendMM Periodic Groups ===`, with an `orphan/reachable` split
+per shape. It is the right plumbing for a future "unaccounted
+breakdown" — the column to grow is "for each `reachable` shape
+group, expected typed-node bytes vs actual slot bytes", which makes
+the SKU-style undercount visible directly in the report.
 
 ### G2. "% analyzed" can exceed 100 %
 
