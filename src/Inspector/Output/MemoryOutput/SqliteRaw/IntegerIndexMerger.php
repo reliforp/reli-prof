@@ -123,6 +123,14 @@ final class IntegerIndexMerger
         /** @var list<string> $payloads */
         $payloads = [];
         $cells_size = 0;
+        // Most-recent flushed leaf — kept around so the tail block
+        // can re-absorb the previously-promoted cell + the lone tail
+        // cell back into it when a non-rightmost partition's tail
+        // ends up with exactly one cell. See the bug-B note in the
+        // tail block below.
+        /** @var list<string>|null $prev_full_cells */
+        $prev_full_cells = null;
+        $prev_pgno = 0;
 
         foreach ($this->mergeStream() as [$key, $_rowid, $cell]) {
             if ($low_inclusive !== null && $key < $low_inclusive) {
@@ -167,6 +175,12 @@ final class IntegerIndexMerger
                 $promoted_payload = $payloads[count($payloads) - 1];
                 $promoted_cell = $cells[count($cells) - 1];
                 $promoted_cell_size = strlen($promoted_cell);
+                // Snapshot the full cell list (still including the
+                // promoted cell) so the tail block can put it back
+                // into the leaf if it ends up with a single tail
+                // cell that would otherwise duplicate as both leaf
+                // entry and interior divider.
+                $full_cells_before_pop = $cells;
                 $cells_size -= $promoted_cell_size;
                 array_pop($cells);
                 array_pop($payloads);
@@ -194,6 +208,8 @@ final class IntegerIndexMerger
                         'divider_payload' => $promoted_payload,
                     ];
                 }
+                $prev_full_cells = $full_cells_before_pop;
+                $prev_pgno = $pgno;
                 $cells = [];
                 $payloads = [];
                 $cells_size = 0;
@@ -219,21 +235,61 @@ final class IntegerIndexMerger
                 $promoted_cell_size = strlen($promoted_cell);
                 array_pop($cells);
                 array_pop($payloads);
-                if ($cells === []) {
-                    // Single-cell-leaf case: keep the only cell in
-                    // the leaf and use it as the divider too. The
-                    // next partition's first cell strictly compares
-                    // greater, so the divider key is correctly
-                    // "max key in left subtree".
-                    $cells[] = $promoted_cell;
-                    $payloads[] = $promoted_payload;
+                if ($cells === [] && $prev_full_cells !== null) {
+                    // Bug B: when a non-rightmost partition's
+                    // entry count is (272 * k + 1) for k ≥ 1 — i.e.
+                    // a full leaf cycle plus one orphan cell — the
+                    // tail is exactly one cell. Promoting it as
+                    // the divider and also keeping it in the leaf
+                    // (the old fallback) writes the same cell twice
+                    // into the b-tree (once in the leaf, once in
+                    // the parent interior page) and trips
+                    // PRAGMA integrity_check with "wrong # of
+                    // entries in index". The cell is also visible
+                    // to a full-table scan as an extra row whose
+                    // rowid duplicates an existing one — silent
+                    // table corruption everything except
+                    // integrity_check happily ignores.
+                    //
+                    // Fix: re-absorb the lone cell into the
+                    // previously-flushed leaf. The old leaf had
+                    // 271 cells in the page + 1 promoted divider
+                    // = 272 entries; we re-build it with all 272
+                    // cells in the page, overwrite the leaf at the
+                    // same pgno, and let the lone tail cell take
+                    // over as the new divider. Total entries are
+                    // unchanged (271 + 1 → 272 + 1, but the
+                    // previously-promoted cell got moved from
+                    // interior back into the leaf so the count is
+                    // identical).
+                    $merged_page = $this->buildLeafPage(
+                        $prev_full_cells,
+                        $page_size,
+                    );
+                    $this->main->writePage($prev_pgno, $merged_page);
+                    $last_idx = count($leaves_with_dividers) - 1;
+                    $leaves_with_dividers[$last_idx]['divider_payload']
+                        = $promoted_payload;
+                } else {
+                    if ($cells === []) {
+                        // Single-cell-leaf with no previous leaf to
+                        // merge into: the partition has exactly one
+                        // entry. Keep the cell in the leaf and use
+                        // it as the divider too — produces the same
+                        // +1 inflation as the legacy fallback, but
+                        // the partition-with-1-entry corner is rare
+                        // in practice (would need the boundary
+                        // sampler to bracket a 1-key range).
+                        $cells[] = $promoted_cell;
+                        $payloads[] = $promoted_payload;
+                    }
+                    $page = $this->buildLeafPage($cells, $page_size);
+                    $pgno = $this->main->appendPage($page);
+                    $leaves_with_dividers[] = [
+                        'pgno' => $pgno,
+                        'divider_payload' => $promoted_payload,
+                    ];
                 }
-                $page = $this->buildLeafPage($cells, $page_size);
-                $pgno = $this->main->appendPage($page);
-                $leaves_with_dividers[] = [
-                    'pgno' => $pgno,
-                    'divider_payload' => $promoted_payload,
-                ];
             }
         }
 
