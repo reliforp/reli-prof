@@ -42,6 +42,8 @@ use Reli\Lib\Elf\Process\BinaryAnalysisCache;
 use Reli\Lib\File\PathResolver\ProcessPathResolver;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\NativeSymbolResolverAdapter;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\Detector\SymbolResolverInterface;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\Lexbor\LexborTlsScanner;
+use Reli\Lib\PhpProcessReader\PhpTsrmLsCacheFinder;
 use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
@@ -64,6 +66,7 @@ final class MemoryLocationsCollector
         private ProcessMemoryMapCreatorInterface $process_memory_map_creator,
         private BinaryAnalysisCache $binary_analysis_cache,
         private ProcessPathResolver $process_path_resolver,
+        private ?PhpTsrmLsCacheFinder $tsrm_ls_cache_finder = null,
     ) {
     }
 
@@ -430,6 +433,43 @@ final class MemoryLocationsCollector
                 );
             } catch (\Throwable $e) {
                 Log::debug('ZendMmBinWalker failed', ['exception' => $e]);
+            }
+        }
+
+        // Tier-1 ext/uri lexbor TLS scan. Only meaningful for PHP >= 8.5
+        // (ext/uri does not exist before then). The scan is best-effort
+        // and silently skipped when:
+        //   - the TSRM/TLS finder isn't wired (constructor arg null,
+        //     i.e. an offline test harness);
+        //   - the binary has no PT_TLS image (NTS build that didn't link
+        //     any thread-locals — uncommon but possible);
+        //   - process memory map isn't available;
+        //   - any pointer chase along the way fails.
+        // Conservative on purpose: we'd rather have a coverage_gap than
+        // spuriously credit a false location.
+        if (
+            $this->tsrm_ls_cache_finder !== null
+            && $process_memory_map !== null
+            && !$zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V85)
+        ) {
+            try {
+                $tls_block = $this->tsrm_ls_cache_finder->resolveTlsBlock(
+                    $process_specifier,
+                    $target_php_settings,
+                );
+                if ($tls_block !== null) {
+                    [$tls_block_address, $tls_block_size,] = $tls_block;
+                    $scanner = new LexborTlsScanner($this->memory_reader);
+                    $scanner->scan(
+                        $pid,
+                        $tls_block_address,
+                        $tls_block_size,
+                        $process_memory_map,
+                        $memory_locations,
+                    );
+                }
+            } catch (\Throwable $e) {
+                Log::debug('LexborTlsScanner failed', ['exception' => $e]);
             }
         }
 
