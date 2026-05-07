@@ -1771,6 +1771,18 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             // Serial path: run L sequentially first (claims its own
             // rootpages and emits them back to us), then the serial
             // createIndexes builds the remaining 7 indexes.
+            //
+            // After L's writable_schema INSERT we close + reopen the
+            // PDO handle before createIndexes runs. Reason: SQLite's
+            // schema-cache lives on the PDO connection, and a
+            // writable_schema INSERT made via the same connection
+            // *doesn't* update that connection's cache. The next
+            // CREATE INDEX IF NOT EXISTS would then see the cache
+            // saying "missing", try to create, and trip a
+            // sqlite_master duplicate-name violation against the
+            // row L just inserted — surfaced as
+            // `malformed database schema (...) - index ... already
+            // exists` on the next DB open.
             if ($l_eligible) {
                 unset($db);
                 $rootpages = $this->mergeIntegerIndexes($shard_paths, $main_path);
@@ -1778,6 +1790,10 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 $db->exec('PRAGMA synchronous = OFF');
                 $db->exec('PRAGMA temp_store = MEMORY');
                 $this->insertIntegerIndexSchemaEntries($db, $rootpages);
+                unset($db);
+                $db = $this->driver->createConnection();
+                $db->exec('PRAGMA synchronous = OFF');
+                $db->exec('PRAGMA temp_store = MEMORY');
             }
             $this->createIndexes($db);
         }
