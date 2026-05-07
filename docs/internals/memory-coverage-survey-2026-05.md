@@ -269,11 +269,39 @@ approximately as:
 
 So the canonical "is the gap reli failing to model internal classes?"
 hypothesis explains roughly the second row. The first row is the
-loud one — and it's a concrete reli bug rather than a structural
-limitation: **`ZendString` should be sized by the actual ZendMM
-allocation size, not by `header + len + 1`.** That would close
-~4 MB of doctrine-entities's gap and would also help on json-config
-(which has 60 k+ json-decoded strings).
+loud one — but blanket-replacing `ZendString` size with the slot
+size would just shift the distortion: a normal
+`zend_string_init(s, 9)` lands the string in bin 4 (40 B) with a
+6 B harmless slot tail, and lumping that 6 B into "ZendString"
+double-counts allocator structure as the type's own footprint.
+
+A cleaner shape: keep the type-line at the conceptual cost, but
+add a column for the *abnormal* slot tail. Concretely a per-type
+three-column tally derived by joining typed-node addresses with
+the bin walker's slot sizes:
+
+| column | definition | source |
+| ------ | ---------- | ------ |
+| Conceptual | `header + len + 1` (today's number) | typed-node tally |
+| SlotRounding | tail to the *naturally-fitting* bin (`next_bin_for(conceptual)`) | join: bin walker × node |
+| OversizedTail | slot tail beyond the naturally-fitting bin | same join |
+
+For doctrine-entities's SKU strings the table reads
+`Conceptual ≈ 477 KB / SlotRounding ≈ 60 KB / OversizedTail ≈ 4.2 MB`,
+making the abnormal slot-tail loud and attributable. Sum of the
+three columns matches `memory_get_usage(false)` (which is itself a
+slot-byte sum, not a user-byte sum, because ZendMM increments
+`heap->size` by `bin_data_size[bin_num]` on every allocation), so
+"% analyzed" can in principle reach 100 %.
+
+The actionable category is OversizedTail: it surfaces
+`spprintf`/`smart_str` capacity remnants, dynamic-property bags
+with empty bucket headroom, and arena slack — all things the
+user can reasonably investigate. SlotRounding is structural to
+ZendMM and only worth aggregating for context. A minimal-effort
+implementation could ship just `OversizedTail` first (no
+threshold tuning needed for the line "natural bin"), bin-walker
+join cost permitting.
 
 The `--bin-detail` flag on `inspector:memory:report` already prints
 shape-detector results in `=== Per-bin Shape Detection ===` /
