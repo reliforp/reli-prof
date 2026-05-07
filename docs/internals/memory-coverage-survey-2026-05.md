@@ -195,11 +195,30 @@ between, the two reports should still agree on which `--node=N`
 points where. Today they don't, on either pipeline pair (live↔live
 node-ids also drift; live↔offline drift more).
 
-A keyed identifier (e.g. content-hash of the path-from-root, or
-the chunk-relative offset of the target-process address) would
-let `rmem:explore --node=` mean the same thing across runs *on
-the unchanged sub-graph*. Newly-allocated or freed nodes still
-get fresh ids, as they should — that's correct, not a regression.
+**Cheapest fix shape: surface the source address.** Within a single
+process's lifetime, ZendMM does not relocate live allocations — a
+node at virtual address `0x7f1a4b3e0a40` in snapshot A is the same
+allocation at the same address in snapshot B, *if it's still alive*.
+Reli already reads from those addresses to build the snapshot in the
+first place, so it has the data; it just doesn't surface it in the
+report. The minimum change is:
+
+- print the source address alongside the node id in each finding —
+  `Explore: rmem:explore --node=33144  (@0x7f1a4b3e0a40)`
+- accept `rmem:explore --addr=0x…` as an alternative lookup key
+
+Then "is this the same allocation as last time?" is a simple grep
+across two reports. No content-hashing, no graph-keyed identifier,
+no schema migration. Newly-allocated or freed nodes are obvious
+(address present in only one of the two reports), as they should be.
+
+The footgun is cross-process misuse — addresses from snapshot of
+pid A mean nothing in snapshot of pid B. The snapshot header
+already carries the pid and capture time; `rmem:explore --addr=…`
+can refuse to resolve when the user mixes snapshots from different
+pids (or, more realistically, from the same pid but across an
+exec/fork boundary detected by start-time).
+
 This is a usability gap, not a correctness one; worth doing only
 if reli wants stable diffing on top of `inspector:memory:compare`.
 
