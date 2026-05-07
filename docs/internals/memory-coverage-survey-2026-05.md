@@ -748,28 +748,49 @@ shape reli's report flagged most prominently for that target.
   | `number_format($i, 2)`                | 73 B   | 73 B   | 73 B     | 73 B     |
   | `'SKU-' . (string)$i`                 | 73 B   | 73 B   | 73 B     | 73 B     |
 
-  Cross-checked against a separate hand-test on 3v4l.org showing
-  the same shape: `sprintf('%s%d%s', 'a', 123, 'b')` causes a
-  +320 B `memory_get_usage` step on PHP 8.3 and earlier, then
-  drops to +32 B in 8.4 and 8.5. So the `%s`-substitution path
-  of `spprintf` was optimised in PHP 8.4. **But the numeric-only
-  path (`%d`, `%05d`, `%032d`, …) still produces 320 B slots even
-  on 8.5RC3** — same root cause (`smart_str` initial buffer
-  flowing through to the result `zend_string`), but the fix only
-  covered the `%s` branch. The `OrderLine::$sku` line in our
-  fixture is `sprintf('SKU-%05d', $i)`, numeric-only, so it
-  remains oversized on every modern PHP through 8.5RC.
+  Cross-checked against two separate 3v4l.org hand-tests:
+  `sprintf('%s%d%s', 'a', 123, 'b')` is +320 B on 8.3 / +32 B
+  on 8.4-8.5; **`sprintf('%d', 123)` is already +32 B on 8.4-8.5
+  too**. That ruled out the simpler "8.4 only fixed the `%s`
+  branch" story and forced a finer-grained drill on which format
+  specifiers actually still oversize. Per-element results on
+  8.4.20 / 8.5.6RC3:
 
-  So the precise advice is narrower than "avoid sprintf for hot
-  loops":
+  | format                              | result_len | per-element | path     |
+  | ----------------------------------- | ---------- | ----------- | -------- |
+  | `sprintf('%d', $i)` (no width)      | 1          |  72 B       | natural  |
+  | `sprintf('SKU-%d', $i)` (no width)  | 5          |  73 B       | natural  |
+  | `sprintf('%s', 'X')`                | 1          |  41 B       | natural  |
+  | `sprintf('%05d', $i)` (width)       | 5          | **361 B**   | oversize |
+  | `sprintf('%032d', $i)` (width)      | 32         | **361 B**   | oversize |
+  | `sprintf('SKU-%05d', $i)` (width)   | 9          | **361 B**   | oversize |
+  | `sprintf('%x', $i)` (hex)           | 1-2        | **361 B**   | oversize |
+  | `sprintf('%f', $i)` (float)         | 8          | **361 B**   | oversize |
+  | `sprintf('%.2f', $i)` (precision)   | 4-5        | **361 B**   | oversize |
 
-  - `sprintf` with at least one `%s` substitution → fine on 8.4+,
-    oversized on 8.3 and earlier
-  - `sprintf` with numeric formatters only (`%d`, `%05d`, etc.) →
-    still oversized on 8.5RC. Replace with concat + `str_pad` /
-    `number_format` / `(string)` cast for hot loops with
-    long-lived results, or file an upstream patch to extend
-    the 8.4 fix to the numeric-only branch.
+  So the 8.4 fast path is narrower than "%s was fixed": **only
+  `%s` and bare `%d` got fast paths**. Everything else stays on
+  the `smart_str`-with-256B-initial-buffer route and oversizes:
+
+  - any **width specifier** (`%05d`, `%5d`, `%032d`, …)
+  - any **precision specifier** (`%.2f`, `%.5g`, …)
+  - any formatter besides `%s` and bare `%d` (`%x`, `%o`, `%b`,
+    `%f`, `%e`, `%c`, …)
+
+  The `OrderLine::$sku` line in our fixture is `sprintf('SKU-%05d', $i)`,
+  width-bearing, so it falls in the oversize bucket on every
+  modern PHP through 8.5RC.
+
+  So the precise advice is narrower still than "avoid sprintf
+  for hot loops":
+
+  - `sprintf` with only bare `%s` and/or bare `%d` formatters →
+    fine on 8.4+ (oversized on 8.3 and earlier)
+  - `sprintf` with width / precision / non-`%s%d` formatters →
+    still oversized on 8.5RC; replace with concat + `str_pad` /
+    `number_format` / `(string)` cast / `dechex` etc. for hot
+    loops with long-lived results, or file an upstream patch to
+    extend the 8.4 fast paths to the rest of the formatter set.
 
   **How often this matters in real code is an open question.**
   This survey did not catch a sprintf-driven OversizedTail in
