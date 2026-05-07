@@ -16,6 +16,8 @@ namespace Reli\Command\PhpSpy;
 use Reli\Inspector\RetryingLoopProvider;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
 use Reli\Inspector\Settings\InspectorSettingsException;
+use Reli\Inspector\Settings\OutputSettings\OutputSettings;
+use Reli\Inspector\Settings\PhpSpySettings\PhpSpyOutputSettingsFromConsoleInput;
 use Reli\Inspector\Settings\PhpSpySettings\PhpSpySettings;
 use Reli\Inspector\Settings\PhpSpySettings\PhpSpySettingsFromConsoleInput;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettingsFromConsoleInput;
@@ -52,6 +54,7 @@ final class PhpSpyTraceCommand extends ReliCommand
         private GetTraceSettingsFromConsoleInput $get_trace_settings_from_console_input,
         private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
         private PhpSpySettingsFromConsoleInput $phpspy_settings_from_console_input,
+        private PhpSpyOutputSettingsFromConsoleInput $output_settings_from_console_input,
         private TargetProcessResolver $target_process_resolver,
         private RetryingLoopProvider $retrying_loop_provider,
         private BinaryAnalysisCache $binary_analysis_cache,
@@ -72,26 +75,8 @@ final class PhpSpyTraceCommand extends ReliCommand
         $this->get_trace_settings_from_console_input->setOptions($this);
         $this->target_php_settings_from_console_input->setOptions($this);
         $this->phpspy_settings_from_console_input->setOptions($this);
+        $this->output_settings_from_console_input->setOptions($this);
         $this->addOption('no-cache', null, InputOption::VALUE_NONE, 'disable the binary analysis cache');
-        $this->addOption(
-            'output',
-            'o',
-            InputOption::VALUE_REQUIRED,
-            'output file path (default: stdout)'
-        );
-        $this->addOption(
-            'format',
-            'F',
-            InputOption::VALUE_REQUIRED,
-            'output format: phpspy (passthrough, default) or rbt',
-            'phpspy',
-        );
-        $this->addOption(
-            'compress',
-            null,
-            InputOption::VALUE_NONE,
-            'gzip-compress the output (rbt format only)',
-        );
         $this->addMemoryLimitOption();
     }
 
@@ -149,19 +134,26 @@ final class PhpSpyTraceCommand extends ReliCommand
             '<info>starting phpspy for pid ' . $process_specifier->pid . '...</info>'
         );
 
-        /** @var string|null $output_path */
-        $output_path = $input->getOption('output');
-        /** @var string $format */
-        $format = $input->getOption('format');
-        $compress = (bool) $input->getOption('compress');
-
-        if ($format !== 'phpspy' && $format !== 'rbt') {
+        $output_settings = $this->output_settings_from_console_input->createSettings($input);
+        if ($output_settings->output_format === 'rbt-bundled') {
             throw new \InvalidArgumentException(
-                "unknown format '{$format}': expected 'phpspy' or 'rbt'"
+                "--output-format=rbt-bundled is daemon-only;"
+                . " phpspy:trace samples a single PID, use rbt instead"
             );
         }
-        if ($compress && $format !== 'rbt') {
-            throw new \InvalidArgumentException('--compress requires --format=rbt');
+        if ($output_settings->output_format !== 'phpspy' && $output_settings->output_format !== 'rbt') {
+            throw new \InvalidArgumentException(
+                "unknown --output-format '{$output_settings->output_format}':"
+                . " expected 'phpspy' or 'rbt'"
+            );
+        }
+        if (
+            $output_settings->output_format === 'phpspy'
+            && ($output_settings->rbt_compress || $output_settings->hasRbtTimestamps())
+        ) {
+            throw new \InvalidArgumentException(
+                '--rbt-compress / --rbt-timestamps require --output-format=rbt'
+            );
         }
 
         $interrupted = false;
@@ -172,15 +164,14 @@ final class PhpSpyTraceCommand extends ReliCommand
             $interrupted = true;
         });
 
-        if ($format === 'rbt') {
+        if ($output_settings->isBinaryTrace()) {
             return $this->runRbt(
                 $process_specifier->pid,
                 $eg_address,
                 $sg_address,
                 $get_trace_settings->depth,
                 $phpspy_settings,
-                $output_path,
-                $compress,
+                $output_settings,
                 $interrupted,
             );
         }
@@ -191,7 +182,7 @@ final class PhpSpyTraceCommand extends ReliCommand
             $sg_address,
             $get_trace_settings->depth,
             $phpspy_settings,
-            $output_path,
+            $output_settings->output_path,
             $interrupted,
         );
     }
@@ -247,17 +238,18 @@ final class PhpSpyTraceCommand extends ReliCommand
         int $sg_address,
         int $depth,
         PhpSpySettings $phpspy_settings,
-        ?string $output_path,
-        bool $compress,
+        OutputSettings $output_settings,
         bool &$interrupted,
     ): int {
         $sink = new PhpSpyRbtSink(
-            $output_path,
-            $compress,
+            $output_settings->output_path,
+            $output_settings->rbt_compress,
             PhpSpyRbtSink::derivePeriodUs($phpspy_settings),
+            $output_settings->hasRbtTimestamps(),
         );
         $writer = $sink->getWriter();
         $parser = new StreamingPhpSpyParser();
+        $delta_clock = $output_settings->hasRbtTimestamps() ? new HrtimeDeltaClock() : null;
 
         $this->phpspy_process->start(
             $pid,
@@ -267,13 +259,17 @@ final class PhpSpyTraceCommand extends ReliCommand
             $phpspy_settings,
         );
 
+        $consume = static function (string $chunk) use ($parser, $writer, $delta_clock): void {
+            foreach ($parser->feed($chunk) as $trace) {
+                $writer->writeTrace($trace, $delta_clock?->advance() ?? 0);
+            }
+        };
+
         try {
             while ($this->phpspy_process->isRunning() && !$interrupted) {
                 $chunk = $this->phpspy_process->readAvailable();
                 if ($chunk !== '') {
-                    foreach ($parser->feed($chunk) as $trace) {
-                        $writer->writeTrace($trace);
-                    }
+                    $consume($chunk);
                 }
                 pcntl_signal_dispatch();
                 usleep(1000);
@@ -282,12 +278,10 @@ final class PhpSpyTraceCommand extends ReliCommand
             // Drain anything remaining on the pipe.
             $chunk = $this->phpspy_process->readAvailable();
             if ($chunk !== '') {
-                foreach ($parser->feed($chunk) as $trace) {
-                    $writer->writeTrace($trace);
-                }
+                $consume($chunk);
             }
             foreach ($parser->flush() as $trace) {
-                $writer->writeTrace($trace);
+                $writer->writeTrace($trace, $delta_clock?->advance() ?? 0);
             }
         } finally {
             $this->phpspy_process->stop();

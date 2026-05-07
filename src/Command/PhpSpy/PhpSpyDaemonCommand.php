@@ -22,6 +22,9 @@ use Reli\Inspector\Settings\DaemonSettings\DaemonSettings;
 use Reli\Inspector\Settings\DaemonSettings\DaemonSettingsFromConsoleInput;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettings;
 use Reli\Inspector\Settings\GetTraceSettings\GetTraceSettingsFromConsoleInput;
+use Reli\Inspector\Settings\OutputSettings\OutputSettings;
+use Reli\Inspector\Settings\OutputSettings\TraceOutputPathResolver;
+use Reli\Inspector\Settings\PhpSpySettings\PhpSpyOutputSettingsFromConsoleInput;
 use Reli\Inspector\Settings\PhpSpySettings\PhpSpySettings;
 use Reli\Inspector\Settings\PhpSpySettings\PhpSpySettingsFromConsoleInput;
 use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
@@ -48,6 +51,7 @@ final class PhpSpyDaemonCommand extends ReliCommand
         private GetTraceSettingsFromConsoleInput $get_trace_settings_from_console_input,
         private TargetPhpSettingsFromConsoleInput $target_php_settings_from_console_input,
         private PhpSpySettingsFromConsoleInput $phpspy_settings_from_console_input,
+        private PhpSpyOutputSettingsFromConsoleInput $output_settings_from_console_input,
     ) {
         parent::__construct();
     }
@@ -65,26 +69,8 @@ final class PhpSpyDaemonCommand extends ReliCommand
         $this->get_trace_settings_from_console_input->setOptions($this);
         $this->target_php_settings_from_console_input->setOptions($this);
         $this->phpspy_settings_from_console_input->setOptions($this);
+        $this->output_settings_from_console_input->setOptions($this);
         $this->addOption('no-cache', null, InputOption::VALUE_NONE, 'disable the binary analysis cache');
-        $this->addOption(
-            'output',
-            'o',
-            InputOption::VALUE_REQUIRED,
-            'output file path (default: stdout)'
-        );
-        $this->addOption(
-            'format',
-            'F',
-            InputOption::VALUE_REQUIRED,
-            'output format: phpspy (passthrough, default) or rbt',
-            'phpspy',
-        );
-        $this->addOption(
-            'compress',
-            null,
-            InputOption::VALUE_NONE,
-            'gzip-compress the output (rbt format only)',
-        );
         $this->addMemoryLimitOption();
     }
 
@@ -97,48 +83,57 @@ final class PhpSpyDaemonCommand extends ReliCommand
         $get_trace_settings = $this->get_trace_settings_from_console_input->createSettings($input);
         $target_php_settings = $this->target_php_settings_from_console_input->createSettings($input);
         $phpspy_settings = $this->phpspy_settings_from_console_input->createSettings($input);
+        $output_settings = $this->output_settings_from_console_input->createSettings($input);
+
+        $allowed_formats = ['phpspy', 'rbt', 'rbt-bundled'];
+        if (!in_array($output_settings->output_format, $allowed_formats, true)) {
+            throw new \InvalidArgumentException(
+                "unknown --output-format '{$output_settings->output_format}':"
+                . " expected 'phpspy', 'rbt' or 'rbt-bundled'"
+            );
+        }
+        if (
+            $output_settings->output_format === 'phpspy'
+            && ($output_settings->rbt_compress || $output_settings->hasRbtTimestamps())
+        ) {
+            throw new \InvalidArgumentException(
+                '--rbt-compress / --rbt-timestamps require --output-format=rbt or rbt-bundled'
+            );
+        }
 
         // Verify phpspy is available before starting
         $phpspy_path = $this->phpspy_finder->find($phpspy_settings->phpspy_path);
         $output->writeln('<info>using phpspy: ' . $phpspy_path . '</info>');
 
-        /** @var string|null $output_path */
-        $output_path = $input->getOption('output');
-        /** @var string $format */
-        $format = $input->getOption('format');
-        $compress = (bool) $input->getOption('compress');
-
-        if ($format !== 'phpspy' && $format !== 'rbt') {
-            throw new \InvalidArgumentException(
-                "unknown format '{$format}': expected 'phpspy' or 'rbt'"
-            );
-        }
-        if ($compress && $format !== 'rbt') {
-            throw new \InvalidArgumentException('--compress requires --format=rbt');
-        }
-
-        if ($format === 'rbt') {
-            return $this->runRbt(
+        return match ($output_settings->output_format) {
+            'rbt' => $this->runRbtPerWorker(
                 $output,
                 $no_cache,
                 $daemon_settings,
                 $get_trace_settings,
                 $target_php_settings,
                 $phpspy_settings,
-                $output_path,
-                $compress,
-            );
-        }
-
-        return $this->runPassthrough(
-            $output,
-            $no_cache,
-            $daemon_settings,
-            $get_trace_settings,
-            $target_php_settings,
-            $phpspy_settings,
-            $output_path,
-        );
+                $output_settings,
+            ),
+            'rbt-bundled' => $this->runRbtBundled(
+                $output,
+                $no_cache,
+                $daemon_settings,
+                $get_trace_settings,
+                $target_php_settings,
+                $phpspy_settings,
+                $output_settings,
+            ),
+            default => $this->runPassthrough(
+                $output,
+                $no_cache,
+                $daemon_settings,
+                $get_trace_settings,
+                $target_php_settings,
+                $phpspy_settings,
+                $output_settings->output_path,
+            ),
+        };
     }
 
     private function runPassthrough(
@@ -182,24 +177,25 @@ final class PhpSpyDaemonCommand extends ReliCommand
         return 0;
     }
 
-    private function runRbt(
+    private function runRbtBundled(
         OutputInterface $output,
         bool $no_cache,
         DaemonSettings $daemon_settings,
         GetTraceSettings $get_trace_settings,
         TargetPhpSettings $target_php_settings,
         PhpSpySettings $phpspy_settings,
-        ?string $output_path,
-        bool $compress,
+        OutputSettings $output_settings,
     ): int {
         $sink = new PhpSpyRbtSink(
-            $output_path,
-            $compress,
+            $output_settings->output_path,
+            $output_settings->rbt_compress,
             PhpSpyRbtSink::derivePeriodUs($phpspy_settings),
+            $output_settings->hasRbtTimestamps(),
         );
         $writer = $sink->getWriter();
-        $write_sample = static function (int $pid, ParsedCallTrace $trace) use ($writer): void {
-            $writer->writePidTrace($trace, $pid);
+        $delta_clock = $output_settings->hasRbtTimestamps() ? new HrtimeDeltaClock() : null;
+        $write_sample = static function (int $pid, ParsedCallTrace $trace) use ($writer, $delta_clock): void {
+            $writer->writePidTrace($trace, $pid, $delta_clock?->advance() ?? 0);
         };
 
         $process_pool = new PhpSpyProcessPool($this->phpspy_finder);
@@ -222,6 +218,92 @@ final class PhpSpyDaemonCommand extends ReliCommand
         } finally {
             $process_pool->stopAll();
             $sink->close();
+        }
+
+        return 0;
+    }
+
+    private function runRbtPerWorker(
+        OutputInterface $output,
+        bool $no_cache,
+        DaemonSettings $daemon_settings,
+        GetTraceSettings $get_trace_settings,
+        TargetPhpSettings $target_php_settings,
+        PhpSpySettings $phpspy_settings,
+        OutputSettings $output_settings,
+    ): int {
+        $output_dir = TraceOutputPathResolver::resolveRbtOutputDir($output_settings->output_path);
+        if ($output instanceof \Symfony\Component\Console\Output\ConsoleOutputInterface) {
+            $output->getErrorOutput()->writeln("rbt output: {$output_dir}");
+        } else {
+            $output->writeln("<info>rbt output: {$output_dir}</info>");
+        }
+
+        $period_us = PhpSpyRbtSink::derivePeriodUs($phpspy_settings);
+        $has_timestamps = $output_settings->hasRbtTimestamps();
+        $compress = $output_settings->rbt_compress;
+        $ext = $compress ? '.rbt.gz' : '.rbt';
+
+        /** @var array<int, PhpSpyRbtSink> pid => sink */
+        $sinks = [];
+        /** @var array<int, HrtimeDeltaClock> pid => clock */
+        $clocks = [];
+
+        $write_sample = static function (
+            int $pid,
+            ParsedCallTrace $trace,
+        ) use (
+            &$sinks,
+            &$clocks,
+            $output_dir,
+            $ext,
+            $compress,
+            $period_us,
+            $has_timestamps,
+        ): void {
+            if (!isset($sinks[$pid])) {
+                $path = rtrim($output_dir, '/') . "/target_{$pid}{$ext}";
+                $sinks[$pid] = new PhpSpyRbtSink($path, $compress, $period_us, $has_timestamps);
+                $sinks[$pid]->getWriter()->writeMetadata('pid', (string)$pid);
+                $clocks[$pid] = new HrtimeDeltaClock();
+            }
+            $sinks[$pid]->getWriter()->writeTrace($trace, $clocks[$pid]->advance());
+        };
+
+        $process_pool = new PhpSpyProcessPool($this->phpspy_finder);
+        $interrupted = $this->installSignalHandlers();
+        $this->startSearcher($daemon_settings, $target_php_settings, $no_cache);
+
+        $output->writeln('<info>searching for target processes...</info>');
+
+        $close_finished_workers = static function () use (&$sinks, &$clocks, $process_pool): void {
+            foreach ($sinks as $pid => $sink) {
+                if (!$process_pool->hasProcess($pid)) {
+                    $sink->close();
+                    unset($sinks[$pid], $clocks[$pid]);
+                }
+            }
+        };
+
+        try {
+            while (!$interrupted->value) {
+                pcntl_signal_dispatch();
+                $this->reconcileTargets($output, $process_pool, $get_trace_settings, $phpspy_settings);
+                $process_pool->consumeAll($write_sample);
+                $close_finished_workers();
+                usleep(1000);
+            }
+
+            $output->writeln('<info>stopping all phpspy processes...</info>');
+            $process_pool->consumeAll($write_sample);
+            $process_pool->flushParsers($write_sample);
+        } finally {
+            $process_pool->stopAll();
+            // Anything still open belongs to a worker that never observed a
+            // not-running transition (e.g. interrupted mid-stream).
+            foreach ($sinks as $sink) {
+                $sink->close();
+            }
         }
 
         return 0;
