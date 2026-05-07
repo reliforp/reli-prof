@@ -267,12 +267,18 @@ final class IntegerIndexMerger
                         $page_size,
                     );
                     $this->main->writePage($prev_pgno, $merged_page);
-                    $last_idx = count($leaves_with_dividers) - 1;
-                    \assert($last_idx >= 0); // $prev_pgno !== 0 implies the
-                    //                          loop already pushed at least
-                    //                          one leaf.
-                    $leaves_with_dividers[$last_idx]['divider_payload']
-                        = $promoted_payload;
+                    // Replace the previous leaf's divider payload by
+                    // popping the old entry and re-pushing with the
+                    // lone tail cell as the new divider. Pop+push
+                    // preserves the `list<…>` shape psalm tracks; an
+                    // indexed `[…]['divider_payload'] = …` write
+                    // widens it to `array<int, …>` and breaks the
+                    // declared return type.
+                    array_pop($leaves_with_dividers);
+                    $leaves_with_dividers[] = [
+                        'pgno' => $prev_pgno,
+                        'divider_payload' => $promoted_payload,
+                    ];
                 } else {
                     if ($cells === []) {
                         // Single-cell-leaf with no previous leaf to
