@@ -108,7 +108,7 @@ final class ReportGenerator
         $class_objects = $this->loadClassObjects($db, $run_id);
 
         $findings = [];
-        $findings = array_merge($findings, (new OverviewPass($summary))->analyze());
+        $findings = array_merge($findings, (new OverviewPass($summary, $location_types))->analyze());
         $findings = array_merge($findings, (new TypeBreakdownPass($location_types))->analyze());
         $findings = array_merge($findings, (new ClassRankingPass($class_objects))->analyze());
         $findings = array_merge($findings, (new CompanionDetectionPass($class_objects))->analyze());
@@ -342,7 +342,7 @@ final class ReportGenerator
 
         // Phase 1: Summary-based passes
         $findings = [];
-        $findings = array_merge($findings, (new OverviewPass($summary))->analyze());
+        $findings = array_merge($findings, (new OverviewPass($summary, $location_types))->analyze());
         $findings = array_merge($findings, (new TypeBreakdownPass($location_types))->analyze());
         $findings = array_merge($findings, (new ClassRankingPass($class_objects))->analyze());
         $findings = array_merge($findings, (new CompanionDetectionPass($class_objects))->analyze());
