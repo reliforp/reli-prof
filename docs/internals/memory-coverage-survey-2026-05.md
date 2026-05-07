@@ -222,6 +222,33 @@ exec/fork boundary detected by start-time).
 This is a usability gap, not a correctness one; worth doing only
 if reli wants stable diffing on top of `inspector:memory:compare`.
 
+**Out of scope: cross-execution comparison.** Source addresses
+are stable within one process's lifetime but not between separate
+runs (ASLR randomises the base, allocation order shifts with tiny
+non-determinisms). For comparing yesterday's run to today's, or
+two builds of the same app, the only realistic options are:
+
+- **graph-structural matching** (subgraph isomorphism / approximate
+  matching). Most semantically faithful but NP-hard in general
+  and expensive even with heuristics at 70 k+ nodes.
+- **aggregate comparison** — what `inspector:memory:compare` does
+  today: per-class counts, per-type byte totals, per-root retained
+  sums. Lossy by construction (can say "OrderLine grew by 5 000
+  instances" but not "*these specific* instances did") but robust
+  and cheap.
+- **path-from-root comparison** as a middle ground. Works for
+  ordered access paths (`$customers[42]->orders[3]->lines[1]`)
+  but breaks for hash-keyed containers whose order depends on
+  insertion sequence and rehash thresholds, and for `ObjectsStore`
+  slot numbering.
+
+Other-runtime profilers (Python's heapy, V8's memlab, Java
+HPROF tooling) all converge on aggregate diff + dominator-tree
+summary as the practical compromise. Reli's existing aggregate
+compare is the right shape for cross-execution; the address-based
+identity above is the right shape for same-process. They solve
+different problems and shouldn't be conflated.
+
 ### G5. "Only X% of heap analyzed — Y MB unaccounted" has no breakdown
 
 When reli warns that some of the heap is unaccounted-for, it gives
