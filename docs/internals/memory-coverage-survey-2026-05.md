@@ -60,45 +60,7 @@ particular path." Until parity is restored, treat the live number
 as the optimistic bound and the offline number as the pessimistic
 bound; the truth is somewhere between.
 
-### G1. `inspector:memory:report` errors poorly on a raw RDUMP file
-
-`inspector:memory:dump` writes the **RDUMP** format (header magic
-`RDUM`); `inspector:memory:analyze -f rmem` and
-`inspector:memory -f rmem` write the **rmem snapshot** format
-(different magic). The project's docs are consistent — every
-example in `docs/README.md`, `docs/recipes.md`,
-`docs/memory/memory-dump.md`, `docs/monitoring/watch-command.md`,
-and `docs/internals/memory-dump-inspect.md` writes the dump to
-`*.rdump` and the snapshot to `*.rmem`. So a reader of the docs
-won't conflate them.
-
-A reader of `--help` alone might. `inspector:memory:dump --help`'s
-`--output` line is just `output file path for the memory dump` —
-no suggested extension, no mention of the downstream `.rmem`
-distinction. If the user picks `.rmem` for the dump and then
-hands it to `inspector:memory:report` (or to `rmem:explore`, etc.),
-the failure mode depends on which extension they used:
-
-```
-$ inspector:memory:report dump.rmem      # extension matches the snapshot branch
-  Invalid rmem magic: 5244554d           # "RDUM" — at least mentions rmem
-$ inspector:memory:report dump.rdump     # extension trips the SQLite branch
-  SQLSTATE[HY000]: General error: 26 file is not a database
-```
-
-The second case is the bad one: the user is told "not a SQLite DB"
-when the real diagnosis is "this is an RDUMP, run analyze first."
-
-**Fix shape**: in `MemoryReportCommand`, sniff the first 8 bytes
-before dispatching on extension, and on `RDUM` either
-(a) error with `"this is an RDUMP — run inspector:memory:analyze first"`
-or (b) auto-pipe through analyze. Cheap to detect, sidesteps the
-SQLite-error confusion entirely. A second cheap improvement:
-have `inspector:memory:dump --help`'s `--output` description
-suggest `.rdump`, the same way `inspector:memory --help` already
-documents the `.rmem`/`.sqlite3` extension routing.
-
-### G2. Live and offline paths disagree on heap size and "% analyzed"
+### G1. Live and offline paths disagree on heap size and "% analyzed"
 
 Same target, same instant of capture, two paths, different numbers:
 
@@ -125,7 +87,7 @@ more. Worth a focused investigation: dump a small target, diff
 which addresses the live walker reaches vs. what `analyze` finds in
 the dump.
 
-### G3. "% analyzed" can exceed 100 %
+### G2. "% analyzed" can exceed 100 %
 
 `laravel.live` reports `Heap: 24.68 MB (105.8% analyzed)`. The
 denominator (presumably `memory_get_usage(true)` = 24.00 MB on
@@ -138,7 +100,7 @@ ZendMM has handed out").
 Until this is fixed, the "% analyzed" line is misleading whenever
 it appears near 100 %.
 
-### G4. The two snapshot formats aren't symmetrical
+### G3. The two snapshot formats aren't symmetrical
 
 The offline-path overview line includes fields the live-path line
 omits:
@@ -162,7 +124,7 @@ Either way, `inspector:memory -f rmem` should produce a snapshot
 that round-trips through `inspector:memory:report` with the same
 fields as `inspector:memory:dump` → `…:analyze -f rmem` → `…:report`.
 
-### G5. Node IDs are not stable across snapshots of the same target
+### G4. Node IDs are not stable across snapshots of the same target
 
 Every report ends each finding with
 `Explore: rmem:explore --node=N`. For composer:
@@ -183,7 +145,7 @@ the target-process address mod chunk-base) would let
 `rmem:explore --node=` mean the same thing across runs against
 unchanged static data.
 
-### G6. "Only X% of heap analyzed — Y MB unaccounted" has no breakdown
+### G5. "Only X% of heap analyzed — Y MB unaccounted" has no breakdown
 
 When reli warns that some of the heap is unaccounted-for, it gives
 the byte count and stops. The report has every other ingredient to
@@ -202,7 +164,7 @@ would turn the current "you're missing 1.16 MB somewhere" warning
 into something the user can action. Worth a paragraph in
 `docs/internals/memory-report-architecture.md`.
 
-### G7. "Heap" denominator vs. `memory_get_usage()` is undocumented
+### G6. "Heap" denominator vs. `memory_get_usage()` is undocumented
 
 For doctrine-entities the report says
 `memory_get_usage(): 11.52 MB | memory_get_usage(true): 12.00 MB | Heap: 10.21 MB`.
@@ -213,7 +175,7 @@ counts only allocated user bytes, not bin slot rounding; that's
 fine, but it should be one line of report text, not Bayesian
 reasoning by the user.
 
-### G8. `shared_fanin` rows show `?` for unresolved class names
+### G7. `shared_fanin` rows show `?` for unresolved class names
 
 ```
 [shared_fanin] Symfony\Component\Console\Command\HelpCommand::$name -> ? (11,812 refs -> 2,844 targets, 4.2 each)
@@ -230,7 +192,7 @@ formatter. Pick a stable rendering ("&lt;ZendString&gt;",
 "@string", whatever) so users can tell "reli knew but suppressed"
 from "reli didn't know."
 
-### G9. `Top Arrays` row #0 (`interned_strings`) and similar pseudo-roots have no gloss
+### G8. `Top Arrays` row #0 (`interned_strings`) and similar pseudo-roots have no gloss
 
 Every report's `Top Arrays` lists pseudo-roots like
 `global_variables`, `interned_strings`, `class_table`,
@@ -250,7 +212,7 @@ streamed") is wrong for this case. The pseudo-root list should
 suppress the choke_point finding for known unbounded-by-design
 roots, or at least caveat it.
 
-### G10. `cycle_cluster` `Per cycle:` (no class list) for hash-table cycles
+### G9. `cycle_cluster` `Per cycle:` (no class list) for hash-table cycles
 
 Several reports (laravel, composer, json-config) emit:
 
@@ -267,7 +229,7 @@ say something like `(arrays-only cycle)` or print the back-edge
 shape (e.g., `$root[k]['parent']` ↔ `$root[k]`) so the user
 can act on it.
 
-### G11. Cold attach starts the rmem analyzer overhead clock late
+### G10. Cold attach starts the rmem analyzer overhead clock late
 
 `inspector:memory -f rmem` (live) on json-config took 33 s wall;
 `inspector:memory:dump` + `inspector:memory:analyze -f rmem` on the
@@ -277,7 +239,7 @@ doing work between samples that the offline path skips, or the
 live path holds the target stopped longer than needed. Either way,
 for big heaps the offline path is a factor of ~1.7 faster end-to-end.
 
-### G12. WordPress dies before the heap gets interesting
+### G11. WordPress dies before the heap gets interesting
 
 WordPress can't be bootstrapped to a representative idle state
 without a working DB; with no DB, `wp_check_php_mysql_versions()`
