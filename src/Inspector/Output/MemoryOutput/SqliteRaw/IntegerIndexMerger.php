@@ -69,8 +69,43 @@ final class IntegerIndexMerger
     ) {
     }
 
+    /**
+     * Build the index and write its root at `$main_index_rootpage`.
+     */
     public function merge(int $main_index_rootpage): void
     {
+        ['leaves' => $leaves_with_dividers, 'rightmost_pgno' => $rightmost_pgno] =
+            $this->extractLeavesForRange(null, null, true);
+        $this->assembleInteriorTree(
+            $leaves_with_dividers,
+            $rightmost_pgno,
+            $main_index_rootpage,
+        );
+    }
+
+    /**
+     * Build leaves for the (key, rowid) entries that fall inside
+     * `[$low_inclusive, $high_exclusive)`, using the existing k-way
+     * merge over the supplied sort runs and the same SQLite leaf
+     * encoding that {@see merge} uses. Used for the parallel-
+     * partition path: each partition worker invokes this with its
+     * own key window and emits its leaves to the shared writer.
+     *
+     * `$is_global_rightmost` controls how the partition's last leaf
+     * is treated:
+     *   - true : the last leaf is the global rightmost, no
+     *            promotion (returned via `rightmost_pgno`).
+     *   - false: the last leaf gets its last cell promoted as the
+     *            divider into the next partition (added to the
+     *            `leaves` list, `rightmost_pgno` is null).
+     *
+     * @return array{leaves: list<array{pgno: int, divider_payload: string}>, rightmost_pgno: ?int}
+     */
+    public function extractLeavesForRange(
+        ?int $low_inclusive,
+        ?int $high_exclusive,
+        bool $is_global_rightmost,
+    ): array {
         $page_size = $this->main->page_size;
         $inline_max = $page_size - 35;
 
@@ -89,7 +124,16 @@ final class IntegerIndexMerger
         $payloads = [];
         $cells_size = 0;
 
-        foreach ($this->mergeStream() as [$_key, $_rowid, $cell]) {
+        foreach ($this->mergeStream() as [$key, $_rowid, $cell]) {
+            if ($low_inclusive !== null && $key < $low_inclusive) {
+                continue;
+            }
+            if ($high_exclusive !== null && $key >= $high_exclusive) {
+                // Sort runs are sorted by (key, rowid), so once we
+                // pass `$high_exclusive` no later entry can fall
+                // back into our window.
+                break;
+            }
             // $cell is the worker-encoded leaf cell:
             //   varint(payload_size) + payload(record bytes).
             // Strip the size varint to get the payload bytes — we
@@ -159,24 +203,71 @@ final class IntegerIndexMerger
             $cells_size += $cell_len;
         }
 
-        // Final partial buffer becomes the rightmost leaf; no
-        // promotion (the rightmost has no divider in the interior
-        // page — the rightmost-child pointer lives in the page
-        // header instead).
-        $rightmost_pgno = 0;
+        // Final partial buffer. If this is the global rightmost
+        // partition the last leaf carries no divider (its content
+        // is the rightmost-child pointer in the parent interior
+        // page); otherwise we promote its last cell as the divider
+        // into the next partition.
+        $rightmost_pgno = null;
         if (count($cells) > 0) {
-            $page = $this->buildLeafPage($cells, $page_size);
-            $rightmost_pgno = $this->main->appendPage($page);
+            if ($is_global_rightmost) {
+                $page = $this->buildLeafPage($cells, $page_size);
+                $rightmost_pgno = $this->main->appendPage($page);
+            } else {
+                $promoted_payload = $payloads[count($payloads) - 1];
+                $promoted_cell = $cells[count($cells) - 1];
+                $promoted_cell_size = strlen($promoted_cell);
+                array_pop($cells);
+                array_pop($payloads);
+                if ($cells === []) {
+                    // Single-cell-leaf case: keep the only cell in
+                    // the leaf and use it as the divider too. The
+                    // next partition's first cell strictly compares
+                    // greater, so the divider key is correctly
+                    // "max key in left subtree".
+                    $cells[] = $promoted_cell;
+                    $payloads[] = $promoted_payload;
+                }
+                $page = $this->buildLeafPage($cells, $page_size);
+                $pgno = $this->main->appendPage($page);
+                $leaves_with_dividers[] = [
+                    'pgno' => $pgno,
+                    'divider_payload' => $promoted_payload,
+                ];
+            }
         }
 
-        if ($leaves_with_dividers === [] && $rightmost_pgno === 0) {
-            // No data — leave the empty leaf in place.
-            return;
-        }
+        return ['leaves' => $leaves_with_dividers, 'rightmost_pgno' => $rightmost_pgno];
+    }
 
-        if ($leaves_with_dividers === [] && $rightmost_pgno !== 0) {
+    /**
+     * Build the interior tree on top of an already-laid-out leaf
+     * level, write the resulting root at `$main_index_rootpage`.
+     *
+     * `$leaves_with_dividers` is the ordered list of non-rightmost
+     * leaves with their promoted divider payloads. `$rightmost_pgno`
+     * is the global rightmost leaf (or null if the entire range
+     * is empty).
+     *
+     * @param list<array{pgno: int, divider_payload: string}> $leaves_with_dividers
+     */
+    public function assembleInteriorTree(
+        array $leaves_with_dividers,
+        ?int $rightmost_pgno,
+        int $main_index_rootpage,
+    ): void {
+        $page_size = $this->main->page_size;
+
+        if ($leaves_with_dividers === []) {
+            if ($rightmost_pgno === null) {
+                // No data — leave the empty leaf in place.
+                return;
+            }
             // Only one leaf; copy it over the rootpage.
-            $this->main->writePage($main_index_rootpage, $this->main->readPage($rightmost_pgno));
+            $this->main->writePage(
+                $main_index_rootpage,
+                $this->main->readPage($rightmost_pgno),
+            );
             return;
         }
 
@@ -184,9 +275,18 @@ final class IntegerIndexMerger
         // the leaves, then recurse upward.
         /** @var list<array{pgno: int, divider_payload: string}> $level */
         $level = $leaves_with_dividers;
-        // The very last child of this level is the rightmost leaf
-        // (which has no divider).
-        $rightmost = $rightmost_pgno;
+        // The very last child of this level is the rightmost leaf.
+        // If a non-rightmost-only partition trail returned no
+        // explicit rightmost, fall back to treating the last entry
+        // in $leaves_with_dividers as it (its divider becomes
+        // unused at the top of the tree).
+        if ($rightmost_pgno === null) {
+            $last = array_pop($level);
+            \assert($last !== null);
+            $rightmost = $last['pgno'];
+        } else {
+            $rightmost = $rightmost_pgno;
+        }
 
         $max_children = $this->maxInteriorCellCount($page_size);
         while (count($level) >= $max_children) {

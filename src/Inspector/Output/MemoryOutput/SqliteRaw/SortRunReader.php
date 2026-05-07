@@ -85,6 +85,31 @@ final class SortRunReader
         }
     }
 
+    /**
+     * Sample up to `$sample_count` keys uniformly across this sort
+     * run. Used by the parallel-partition path to derive global
+     * key boundaries by combining samples from every shard.
+     *
+     * @return list<int>
+     */
+    public function sampleKeys(int $sample_count): array
+    {
+        if ($this->count === 0 || $sample_count <= 0) {
+            return [];
+        }
+        $sample_count = min($sample_count, $this->count);
+        $samples = [];
+        for ($i = 0; $i < $sample_count; $i++) {
+            // 1-indexed array; pick uniformly across the run.
+            $idx = (int)floor(((float)$i + 0.5) * $this->count / $sample_count) + 1;
+            if ($idx > $this->count) {
+                $idx = $this->count;
+            }
+            $samples[] = $this->keys[$idx];
+        }
+        return $samples;
+    }
+
     public function count(): int
     {
         return $this->count;

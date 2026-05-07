@@ -2030,6 +2030,24 @@ final class PdoMemoryOutput implements MemoryOutputInterface
     }
 
     /**
+     * How many partitions to split the largest integer index into
+     * when the inner-partition path is enabled. Default off
+     * (`= 1` ↔ no partitioning); `RELI_L_PARTITION_COUNT=4` etc.
+     * lights it. Only kicks in for the partition-eligible (largest)
+     * index; the smaller integer indexes remain a single sub-fork
+     * each — they finish quickly enough that splitting them costs
+     * more in fork + sampling overhead than it saves.
+     */
+    private static function lPartitionCount(): int
+    {
+        $env = getenv('RELI_L_PARTITION_COUNT');
+        if (is_string($env) && ctype_digit($env)) {
+            return max(1, (int)$env);
+        }
+        return 1;
+    }
+
+    /**
      * Per-index parallel integer-index merge. One fork per job,
      * each running a session-mode writer that claims pgnos from
      * the same shared counter as the orchestrator's other cohort
@@ -2046,6 +2064,28 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         string $counter_path,
         array $jobs,
     ): array {
+        // If inner-partition is enabled, identify the largest job
+        // by total sort-run row count and route just that one
+        // through the partitioned path. The other jobs stay one-
+        // sub-sidecar-per-job because they're small enough that
+        // the per-partition fork + sampling + assembly overhead
+        // would exceed the savings.
+        $partition_count = self::lPartitionCount();
+        $partition_target_idx = -1;
+        if ($partition_count > 1) {
+            $max_rows = 0;
+            foreach ($jobs as $i => $job) {
+                $total = 0;
+                foreach ($job['sort_runs'] as $run) {
+                    $total += $run->count();
+                }
+                if ($total > $max_rows) {
+                    $max_rows = $total;
+                    $partition_target_idx = $i;
+                }
+            }
+        }
+
         /** @var list<array{int, int, string}> $pids [pid, job_index, job_name] */
         $pids = [];
         $result_paths = [];
@@ -2066,21 +2106,23 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             if ($pid === 0) {
                 $exit_code = 0;
                 try {
-                    $writer = SqliteRawWriter::openForPatchInSession($main_path, $counter_path);
-                    $empty_leaf = self::emptyIndexLeafPage($writer->page_size);
-                    $rootpage = $writer->appendPage($empty_leaf);
-                    $merger = new IntegerIndexMerger($writer, $job['sort_runs']);
-                    try {
-                        $merger->merge($rootpage);
-                        file_put_contents($result_paths[$i], pack('N', $rootpage));
-                    } catch (OverflowNotSupportedException $_e) {
-                        // Fall through with an empty result so the
-                        // caller knows this index didn't populate;
-                        // the placeholder leaf at $rootpage is
-                        // harmless (no sqlite_master entry refers
-                        // to it).
+                    if ($i === $partition_target_idx && $partition_count > 1) {
+                        $rootpage = $this->mergeOneIndexPartitioned(
+                            $main_path,
+                            $counter_path,
+                            $job,
+                            $partition_count,
+                        );
+                    } else {
+                        $rootpage = $this->mergeOneIndex(
+                            $main_path,
+                            $counter_path,
+                            $job,
+                        );
                     }
-                    $writer->close($main_path);
+                    if ($rootpage !== null) {
+                        file_put_contents($result_paths[$i], pack('N', $rootpage));
+                    }
                 } catch (\Throwable $e) {
                     fwrite(STDERR, "L sub-sidecar {$job['name']}: " . $e->getMessage() . "\n");
                     $exit_code = 1;
@@ -2105,8 +2147,10 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 : '';
             @unlink($result_paths[$i]);
             if (strlen($data) >= 4) {
-                $rootpage = (int)unpack('N', substr($data, 0, 4))[1];
-                $populated[$name] = $rootpage;
+                $unpacked = unpack('N', substr($data, 0, 4));
+                if ($unpacked !== false) {
+                    $populated[$name] = (int)$unpacked[1];
+                }
             }
             // Empty $data means the merger threw OverflowNotSupported
             // and the caller's fallback path will rebuild the index.
@@ -2117,6 +2161,188 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         }
 
         return $populated;
+    }
+
+    /**
+     * Build one integer index in-process. Returns the claimed
+     * rootpage, or null if the merger bailed (overflow / no data).
+     *
+     * @param array{name: string, sort_runs: list<SortRunReader>} $job
+     */
+    private function mergeOneIndex(
+        string $main_path,
+        string $counter_path,
+        array $job,
+    ): ?int {
+        $writer = SqliteRawWriter::openForPatchInSession($main_path, $counter_path);
+        $empty_leaf = self::emptyIndexLeafPage($writer->page_size);
+        $rootpage = $writer->appendPage($empty_leaf);
+        $merger = new IntegerIndexMerger($writer, $job['sort_runs']);
+        $populated = null;
+        try {
+            $merger->merge($rootpage);
+            $populated = $rootpage;
+        } catch (OverflowNotSupportedException $_e) {
+            // Fall through; the placeholder leaf at $rootpage is
+            // harmless (no sqlite_master entry refers to it).
+        }
+        $writer->close($main_path);
+        return $populated;
+    }
+
+    /**
+     * Build one integer index by partitioning the (key, rowid)
+     * stream across `$partition_count` forked workers and
+     * assembling the resulting leaf list into a single interior
+     * tree at the end.
+     *
+     * Phases:
+     *   1. Sample 64 keys from each sort run, combine, sort, pick
+     *      the (`partition_count - 1`) quantile boundaries — the
+     *      key range each partition will own.
+     *   2. Fork one worker per partition; each builds its leaves
+     *      via {@see IntegerIndexMerger::extractLeavesForRange}.
+     *      Workers share the same SharedPgnoCounter so their
+     *      claimed leaf pgnos never collide. Each emits a
+     *      serialised `{leaves, rightmost_pgno}` payload to a
+     *      temp file.
+     *   3. Wait, collect leaves from every partition into one
+     *      ordered list (concatenation works because the key-
+     *      range boundaries make partitions key-disjoint and
+     *      already in global order).
+     *   4. Claim a fresh rootpage and call
+     *      {@see IntegerIndexMerger::assembleInteriorTree} to
+     *      build the interior level on top of the merged leaves.
+     *
+     * Theoretical wall-clock for the single index: max(per-
+     * partition merge times) instead of sum. The smaller integer
+     * indexes don't get this treatment — the gain wouldn't pay
+     * for the per-fork overhead at their size.
+     *
+     * @param array{name: string, sort_runs: list<SortRunReader>} $job
+     */
+    private function mergeOneIndexPartitioned(
+        string $main_path,
+        string $counter_path,
+        array $job,
+        int $partition_count,
+    ): ?int {
+        // Phase 1: sample boundaries.
+        /** @var list<int> $samples */
+        $samples = [];
+        foreach ($job['sort_runs'] as $run) {
+            foreach ($run->sampleKeys(64) as $k) {
+                $samples[] = $k;
+            }
+        }
+        if (count($samples) < $partition_count) {
+            // Not enough data to partition meaningfully — fall
+            // back to single-process merge.
+            return $this->mergeOneIndex($main_path, $counter_path, $job);
+        }
+        sort($samples);
+        $boundaries = [];
+        $samples_count = count($samples);
+        for ($p = 1; $p < $partition_count; $p++) {
+            $idx = (int)floor($samples_count * $p / $partition_count);
+            if ($idx >= $samples_count) {
+                $idx = $samples_count - 1;
+            }
+            $boundaries[] = $samples[$idx];
+        }
+        // Deduplicate adjacent boundaries — if the dataset has
+        // fewer distinct keys than partitions, some boundaries
+        // collapse and the affected partition would be empty.
+        $boundaries = array_values(array_unique($boundaries));
+        $effective_partition_count = count($boundaries) + 1;
+        if ($effective_partition_count < 2) {
+            return $this->mergeOneIndex($main_path, $counter_path, $job);
+        }
+
+        // Phase 2: fork partition workers.
+        /** @var array<int, int> $part_pids partition_idx => pid */
+        $part_pids = [];
+        $partition_paths = [];
+        for ($p = 0; $p < $effective_partition_count; $p++) {
+            $partition_paths[$p] = $main_path . '.l_part_' . $job['name'] . '_' . $p;
+            @unlink($partition_paths[$p]);
+            $low = $p === 0 ? null : $boundaries[$p - 1];
+            $high = $p === $effective_partition_count - 1 ? null : $boundaries[$p];
+            $is_global_rightmost = $p === $effective_partition_count - 1;
+            $pid = pcntl_fork();
+            if ($pid === -1) {
+                foreach ($part_pids as $running_pid) {
+                    posix_kill($running_pid, SIGTERM);
+                    pcntl_waitpid($running_pid, $_status);
+                }
+                foreach ($partition_paths as $pp) {
+                    @unlink($pp);
+                }
+                throw new \RuntimeException('L partition fork failed');
+            }
+            if ($pid === 0) {
+                $exit_code = 0;
+                try {
+                    $writer = SqliteRawWriter::openForPatchInSession($main_path, $counter_path);
+                    $merger = new IntegerIndexMerger($writer, $job['sort_runs']);
+                    $result = $merger->extractLeavesForRange($low, $high, $is_global_rightmost);
+                    $writer->close($main_path);
+                    file_put_contents($partition_paths[$p], serialize($result));
+                } catch (\Throwable $e) {
+                    fwrite(
+                        STDERR,
+                        "L partition {$job['name']}#{$p}: " . $e->getMessage() . "\n",
+                    );
+                    $exit_code = 1;
+                }
+                exit($exit_code);
+            }
+            $part_pids[$p] = $pid;
+        }
+
+        // Phase 3: collect leaves in partition order.
+        /** @var list<array{pgno: int, divider_payload: string}> $all_leaves */
+        $all_leaves = [];
+        $rightmost_pgno = null;
+        $any_failure = false;
+        for ($p = 0; $p < $effective_partition_count; $p++) {
+            pcntl_waitpid($part_pids[$p], $status);
+            $code = pcntl_wifexited($status) ? pcntl_wexitstatus($status) : 1;
+            if ($code !== 0) {
+                $any_failure = true;
+                @unlink($partition_paths[$p]);
+                continue;
+            }
+            $payload = file_exists($partition_paths[$p])
+                ? (string)file_get_contents($partition_paths[$p])
+                : '';
+            @unlink($partition_paths[$p]);
+            if ($payload === '') {
+                continue;
+            }
+            /** @var array{leaves: list<array{pgno: int, divider_payload: string}>, rightmost_pgno: ?int} $result */
+            $result = unserialize($payload);
+            foreach ($result['leaves'] as $leaf) {
+                $all_leaves[] = $leaf;
+            }
+            if ($result['rightmost_pgno'] !== null) {
+                $rightmost_pgno = $result['rightmost_pgno'];
+            }
+        }
+        if ($any_failure) {
+            throw new \RuntimeException('L partition worker failed for ' . $job['name']);
+        }
+
+        // Phase 4: claim rootpage, assemble interior tree.
+        $writer = SqliteRawWriter::openForPatchInSession($main_path, $counter_path);
+        $empty_leaf = self::emptyIndexLeafPage($writer->page_size);
+        $rootpage = $writer->appendPage($empty_leaf);
+        // Empty merger (no sort runs) — assembleInteriorTree only
+        // touches the writer.
+        $merger = new IntegerIndexMerger($writer, []);
+        $merger->assembleInteriorTree($all_leaves, $rightmost_pgno, $rootpage);
+        $writer->close($main_path);
+        return $rootpage;
     }
 
     /**
