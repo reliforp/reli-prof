@@ -60,29 +60,43 @@ particular path." Until parity is restored, treat the live number
 as the optimistic bound and the offline number as the pessimistic
 bound; the truth is somewhere between.
 
-### G1. `.rmem` extension is overloaded between two incompatible formats
+### G1. `inspector:memory:report` errors poorly on a raw RDUMP file
 
 `inspector:memory:dump` writes the **RDUMP** format (header magic
 `RDUM`); `inspector:memory:analyze -f rmem` and
 `inspector:memory -f rmem` write the **rmem snapshot** format
-(different magic). Both files are commonly named `*.rmem`. Feeding
-the dump to `inspector:memory:report` produces:
+(different magic). The project's docs are consistent — every
+example in `docs/README.md`, `docs/recipes.md`,
+`docs/memory/memory-dump.md`, `docs/monitoring/watch-command.md`,
+and `docs/internals/memory-dump-inspect.md` writes the dump to
+`*.rdump` and the snapshot to `*.rmem`. So a reader of the docs
+won't conflate them.
+
+A reader of `--help` alone might. `inspector:memory:dump --help`'s
+`--output` line is just `output file path for the memory dump` —
+no suggested extension, no mention of the downstream `.rmem`
+distinction. If the user picks `.rmem` for the dump and then
+hands it to `inspector:memory:report` (or to `rmem:explore`, etc.),
+the failure mode depends on which extension they used:
 
 ```
-$ inspector:memory:report dump.rmem
-  Invalid rmem magic: 5244554d   # "RDUM"
-$ inspector:memory:report dump.rdump
+$ inspector:memory:report dump.rmem      # extension matches the snapshot branch
+  Invalid rmem magic: 5244554d           # "RDUM" — at least mentions rmem
+$ inspector:memory:report dump.rdump     # extension trips the SQLite branch
   SQLSTATE[HY000]: General error: 26 file is not a database
 ```
 
-The second error is especially bad because the `.rdump` extension
-trips the SQLite branch and the user lands in a SQL diagnostic for
-what is really a "wrong file type, run analyze first" condition.
+The second case is the bad one: the user is told "not a SQLite DB"
+when the real diagnosis is "this is an RDUMP, run analyze first."
 
 **Fix shape**: in `MemoryReportCommand`, sniff the first 8 bytes
-before opening as SQLite or rmem, and on `RDUM` either
+before dispatching on extension, and on `RDUM` either
 (a) error with `"this is an RDUMP — run inspector:memory:analyze first"`
-or (b) auto-pipe through analyze. Cheap to detect, very high UX win.
+or (b) auto-pipe through analyze. Cheap to detect, sidesteps the
+SQLite-error confusion entirely. A second cheap improvement:
+have `inspector:memory:dump --help`'s `--output` description
+suggest `.rdump`, the same way `inspector:memory --help` already
+documents the `.rmem`/`.sqlite3` extension routing.
 
 ### G2. Live and offline paths disagree on heap size and "% analyzed"
 
