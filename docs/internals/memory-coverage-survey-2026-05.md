@@ -122,15 +122,51 @@ analyzed: Heap:  5.65 MB (49.0% analyzed)   ← 2.88 MB unaccounted
 The Overview `Heap` figure is computed from a separate accounting
 path than the rest of the report, and that separate path is
 (a) buggy enough to disagree with itself between live and offline,
-and (b) the only thing the user sees first. The bin walker has
-already established the truth (~11.55 MB) — the Overview line
-should be derived from there or from the same node-set the rest
-of the report is built on, instead of whatever it's doing today.
+and (b) the only thing the user sees first.
 
-This also reframes G2 below: laravel's `105.8 % analyzed` isn't
-"reli double-counts allocations on the live path", it's the same
-broken Overview accounting tipping into the >100 % regime on
-particular heap shapes.
+**The actual code path.** Both pipelines run the same formula
+(`heap_memory_analyzed_percentage = zend_mm_heap_usage /
+memory_get_usage_size * 100` —
+`MemoryCommand.php:278`, `MemoryDumpReader.php:221`). And the
+shape of `zend_mm_heap_usage` is the same five-term sum on both
+sides:
+
+```
+live    (MemoryCommand.php:237):
+  chunk_usage    + huge_usage    + vm_stack_total + compiler_arena_total + allocation_overhead
+offline (RegionsSummary.php correctedToArray):
+  db_chunk_usage + db_huge_usage + vm_stack_total + compiler_arena_total + possible_allocation_overhead_total
+```
+
+What differs is the *source* of two of those five terms:
+
+- live's `chunk_usage` comes straight from the in-memory analyzer
+  tally; offline's `db_chunk_usage` comes from `SUM(size)` over
+  the `context_node_locations` table after the analyzer's results
+  have been persisted to SQLite
+- live's `allocation_overhead` is a single in-memory accumulator;
+  offline's `possible_allocation_overhead_total` is recomputed by
+  `correctedToArray` from the persisted region summary
+
+So the live↔offline disagreement is **not** "the dump pipeline
+loses heap content" (the bin-walker output proves they see the
+same chunks) and **not** a structural-categorisation bug. It's the
+much narrower "same five-term formula; one of `chunk_usage` /
+`allocation_overhead` (or both) round-trips through the
+in-memory path and the DB-SUM path with a different total." Worth
+diffing the two persistence layers on a small target to identify
+which term drifts and by how much.
+
+This also constrains G2 below: laravel's `105.8 % analyzed` is the
+*live* path overshooting the denominator (which is just
+`memory_get_usage(true)` = 24 MB on that run). On the live side,
+`chunk_usage + huge_usage + vm_stack + compiler_arena + alloc_overhead`
+is summing to more than `memory_get_usage(true)`. Either the
+denominator is the wrong choice (it should probably be
+"total bytes ZendMM has handed out incl. internal overhead"
+rather than the user-visible counter, since the numerator
+includes overhead), or one of the five terms is double-counting
+on the live side. Pure speculation until somebody instruments it.
 
 ### G2. "% analyzed" can exceed 100 %
 
