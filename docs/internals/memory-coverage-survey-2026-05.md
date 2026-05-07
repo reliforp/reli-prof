@@ -732,6 +732,38 @@ shape reli's report flagged most prominently for that target.
   `'SKU-' . str_pad(...)` drops that to zero on the same
   fixture.
 
+  **Version dependence (PHP 8.2 / 8.3 / 8.4).** The same 200-string
+  test, but measured by `memory_get_usage()` delta (allocation
+  cost per string, including the `$keep` array bucket overhead
+  ~41 B/element), across all three modern versions:
+
+  | pattern                             | 8.2.30   | 8.3.30   | 8.4.19   |
+  | ----------------------------------- | -------- | -------- | -------- |
+  | `sprintf('SKU-%05d', $i)` (numeric) | 361 B    | 361 B    | 361 B    |
+  | `sprintf('%05d', $i)`     (numeric) | 361 B    | 361 B    | 361 B    |
+  | `sprintf('%032d', $i)`    (numeric) | 361 B    | 361 B    | 361 B    |
+  | `sprintf('%s-%d', 'X', $i)` (uses %s) | 361 B  | 361 B    | **73 B** |
+  | `'SKU-' . str_pad(...)`              | 81 B     | 81 B     | 81 B     |
+  | `number_format($i, 2)`               | 73 B     | 73 B     | 73 B     |
+  | `'SKU-' . (string)$i`                | 73 B     | 73 B     | 73 B     |
+
+  The `%s` substitution path was optimised in PHP 8.4 — sprintf
+  with at least one `%s` formatter no longer produces an oversized
+  zend_string. **But sprintf with numeric formatters only
+  (`%d`, `%05d`, `%032d`, …) still produces 320 B slots in 8.4**.
+  The `OrderLine::$sku` line above is `sprintf('SKU-%05d', $i)`
+  i.e. numeric-only, so it remains oversized on every modern PHP.
+
+  So the precise advice is narrower than "avoid sprintf for hot
+  loops":
+
+  - `sprintf` with at least one `%s` substitution → fine on 8.4+,
+    oversized on 8.3 and earlier
+  - `sprintf` with numeric formatters only (`%d`, `%05d`, etc.) →
+    still oversized on 8.4. Replace with concat + `str_pad` /
+    `number_format` / `(string)` cast for hot loops with
+    long-lived results.
+
   **How often this matters in real code is an open question.**
   This survey did not catch a sprintf-driven OversizedTail in
   the four real GitHub apps (laravel, symfony-demo, composer,
