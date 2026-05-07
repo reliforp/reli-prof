@@ -672,6 +672,9 @@ final class VariableReader implements VariableReaderInterface
         return $ref_pointer->address;
     }
 
+    /**
+     * @param array<int, true> $seen
+     */
     private function buildResolvedValue(
         Zval $zval,
         Dereferencer $dereferencer,
@@ -966,10 +969,8 @@ final class VariableReader implements VariableReaderInterface
                 : null;
 
             $visited_slots = [];
-            foreach (
-                $ce->properties_info->getItemIterator($dereferencer)
-                as $simple_name => $info_zval
-            ) {
+            $info_iter = $ce->properties_info->getItemIterator($dereferencer);
+            foreach ($info_iter as $simple_name => $info_zval) {
                 $info_pointer = $info_zval->value->getAsPointer(
                     \Reli\Lib\PhpInternals\Types\Zend\ZendPropertyInfo::class,
                     $zend_type_reader->sizeOf(
