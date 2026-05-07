@@ -113,6 +113,7 @@ final class ParallelIndexBuilder
         array $index_specs,
         int $worker_count,
         int $pages_per_index_reservation = self::PAGES_PER_INDEX_RESERVATION_FLOOR,
+        ?\Closure $sidecar = null,
     ): ?array {
         if (
             !extension_loaded('ffi')
@@ -122,6 +123,10 @@ final class ParallelIndexBuilder
             return null;
         }
         if ($index_specs === []) {
+            // Nothing to build. Even if a sidecar is supplied, the
+            // empty-specs path doesn't allocate page space for it,
+            // so the caller is expected to fall back to a serial
+            // path for the sidecar work in this corner.
             return [0];
         }
         $worker_count = max(1, min($worker_count, count($index_specs)));
@@ -200,6 +205,38 @@ final class ParallelIndexBuilder
         [$data_ptr, $data_len, $data_fd] = $data_res;
         [$meta_ptr, $meta_len, $meta_fd] = $meta_res;
 
+        // If the caller supplied a sidecar closure (typically the
+        // format-direct integer-index merge), fork it before the
+        // worker fan-out so it gets to share the same atomic pgno
+        // counter and ftruncated file region. The sidecar is a
+        // peer of the workers, not nested inside them — it pwrites
+        // to disjoint pgno ranges via the same counter and cleans
+        // up its own writer.
+        $sidecar_pid = null;
+        if ($sidecar !== null) {
+            $sidecar_pid = pcntl_fork();
+            if ($sidecar_pid === -1) {
+                LibcFileWriter::munmap($data_ptr, $data_len);
+                LibcFileWriter::munmap($meta_ptr, $meta_len);
+                LibcFileWriter::close($data_fd);
+                LibcFileWriter::close($meta_fd);
+                @unlink($meta_path);
+                @unlink($counter_path);
+                throw new \RuntimeException(
+                    'ParallelIndexBuilder: pcntl_fork failed for sidecar'
+                );
+            }
+            if ($sidecar_pid === 0) {
+                try {
+                    $sidecar($counter_path);
+                    exit(0);
+                } catch (\Throwable $e) {
+                    fwrite(STDERR, 'ParallelIndexBuilder sidecar: ' . $e->getMessage() . "\n");
+                    exit(1);
+                }
+            }
+        }
+
         $any_failure = false;
         try {
             $pids = [];
@@ -242,6 +279,15 @@ final class ParallelIndexBuilder
             }
             foreach ($shard_paths as $sp) {
                 @unlink($sp);
+            }
+            if ($sidecar_pid !== null) {
+                pcntl_waitpid($sidecar_pid, $sidecar_status);
+                $sidecar_code = pcntl_wifexited($sidecar_status)
+                    ? pcntl_wexitstatus($sidecar_status)
+                    : 1;
+                if ($sidecar_code !== 0) {
+                    $any_failure = true;
+                }
             }
             if ($any_failure) {
                 throw new \RuntimeException(

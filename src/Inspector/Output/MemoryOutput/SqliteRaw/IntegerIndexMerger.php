@@ -18,11 +18,15 @@ namespace Reli\Inspector\Output\MemoryOutput\SqliteRaw;
  * shape (run_id INTEGER, key INTEGER, rowid INTEGER).
  *
  * Inputs are SortRun files dumped by workers, one per shard, each
- * already sorted by (key, rowid). The merger streams them through a
- * heap-of-iterators, encodes each merged record as a SQLite index
- * leaf cell (with the supplied real run_id prepended), and writes
- * the resulting b-tree to main, overwriting the empty index rootpage
- * SQLite created at CREATE INDEX time.
+ * already sorted by (key, rowid) AND already carrying the
+ * fully-encoded SQLite leaf cell for its row (since v2 of the
+ * sort-run format). The merger streams them through a
+ * heap-of-iterators and writes the cells verbatim into a freshly
+ * assembled b-tree at the empty index rootpage SQLite created at
+ * CREATE INDEX time. Per-row record encoding now happens once per
+ * row in the worker that produced the row, not per row in main —
+ * the encoding work parallelises across workers and the merge in
+ * main is heap-pull + memcpy.
  *
  * Index leaf cell shape:
  *   varint payload_size
@@ -35,9 +39,10 @@ namespace Reli\Inspector\Output\MemoryOutput\SqliteRaw;
  *           entry in the left subtree)
  *
  * The merger refuses overflow (cell payload bigger than the inline
- * threshold). For 3-int payloads the encoded record is ≤ 26 bytes,
+ * threshold). For 3-int payloads the encoded record is ≤ 28 bytes,
  * comfortably below the 4061-byte inline limit, so overflow doesn't
- * happen in practice.
+ * happen in practice — the SortRunWriter's u8 cell_len field also
+ * caps any record at 255 bytes upstream.
  *
  * @psalm-suppress MixedArgument
  * @psalm-suppress MixedAssignment
@@ -61,12 +66,46 @@ final class IntegerIndexMerger
     public function __construct(
         private Writer $main,
         private array $sort_runs,
-        private int $run_id,
     ) {
     }
 
+    /**
+     * Build the index and write its root at `$main_index_rootpage`.
+     */
     public function merge(int $main_index_rootpage): void
     {
+        ['leaves' => $leaves_with_dividers, 'rightmost_pgno' => $rightmost_pgno] =
+            $this->extractLeavesForRange(null, null, true);
+        $this->assembleInteriorTree(
+            $leaves_with_dividers,
+            $rightmost_pgno,
+            $main_index_rootpage,
+        );
+    }
+
+    /**
+     * Build leaves for the (key, rowid) entries that fall inside
+     * `[$low_inclusive, $high_exclusive)`, using the existing k-way
+     * merge over the supplied sort runs and the same SQLite leaf
+     * encoding that {@see merge} uses. Used for the parallel-
+     * partition path: each partition worker invokes this with its
+     * own key window and emits its leaves to the shared writer.
+     *
+     * `$is_global_rightmost` controls how the partition's last leaf
+     * is treated:
+     *   - true : the last leaf is the global rightmost, no
+     *            promotion (returned via `rightmost_pgno`).
+     *   - false: the last leaf gets its last cell promoted as the
+     *            divider into the next partition (added to the
+     *            `leaves` list, `rightmost_pgno` is null).
+     *
+     * @return array{leaves: list<array{pgno: int, divider_payload: string}>, rightmost_pgno: ?int}
+     */
+    public function extractLeavesForRange(
+        ?int $low_inclusive,
+        ?int $high_exclusive,
+        bool $is_global_rightmost,
+    ): array {
         $page_size = $this->main->page_size;
         $inline_max = $page_size - 35;
 
@@ -85,17 +124,42 @@ final class IntegerIndexMerger
         $payloads = [];
         $cells_size = 0;
 
-        foreach ($this->mergeStream() as [$key, $rowid]) {
-            $payload = RecordEncoder::encodeIntegerRow([$this->run_id, $key, $rowid]);
-            if (strlen($payload) > $inline_max) {
+        foreach ($this->mergeStream() as [$key, $_rowid, $cell]) {
+            if ($low_inclusive !== null && $key < $low_inclusive) {
+                continue;
+            }
+            if ($high_exclusive !== null && $key >= $high_exclusive) {
+                // Sort runs are sorted by (key, rowid), so once we
+                // pass `$high_exclusive` no later entry can fall
+                // back into our window.
+                break;
+            }
+            // $cell is the worker-encoded leaf cell:
+            //   varint(payload_size) + payload(record bytes).
+            // Strip the size varint to get the payload bytes — we
+            // need the raw payload as the divider when promoting,
+            // and we need the cell as a unit when packing leaves.
+            $cell_len = strlen($cell);
+            // Payload size in our records is < 128 so the size
+            // varint is one byte; we still bail to the generic
+            // varint reader for any record that lies in the
+            // multi-byte range, just in case.
+            $size_byte = ord($cell[0]);
+            if ($size_byte < 0x80) {
+                $payload_size = $size_byte;
+                $sz_len = 1;
+            } else {
+                [$payload_size, $sz_len] = Format::readVarint($cell, 0);
+            }
+            if ($payload_size > $inline_max) {
                 throw new OverflowNotSupportedException(
                     'integer index payload exceeds inline threshold ('
-                    . strlen($payload) . ' > ' . $inline_max . ')'
+                    . $payload_size . ' > ' . $inline_max . ')'
                 );
             }
-            $cell = Format::writeVarint(strlen($payload)) . $payload;
+            $payload = substr($cell, $sz_len, $payload_size);
 
-            $needed = 8 + (count($cells) + 1) * 2 + $cells_size + strlen($cell);
+            $needed = 8 + (count($cells) + 1) * 2 + $cells_size + $cell_len;
             if ($needed > $page_size && count($cells) > 0) {
                 // Promote the last cell as the divider; emit the
                 // remaining cells (still ≥ 1 because we required
@@ -136,27 +200,74 @@ final class IntegerIndexMerger
             }
             $cells[] = $cell;
             $payloads[] = $payload;
-            $cells_size += strlen($cell);
+            $cells_size += $cell_len;
         }
 
-        // Final partial buffer becomes the rightmost leaf; no
-        // promotion (the rightmost has no divider in the interior
-        // page — the rightmost-child pointer lives in the page
-        // header instead).
-        $rightmost_pgno = 0;
+        // Final partial buffer. If this is the global rightmost
+        // partition the last leaf carries no divider (its content
+        // is the rightmost-child pointer in the parent interior
+        // page); otherwise we promote its last cell as the divider
+        // into the next partition.
+        $rightmost_pgno = null;
         if (count($cells) > 0) {
-            $page = $this->buildLeafPage($cells, $page_size);
-            $rightmost_pgno = $this->main->appendPage($page);
+            if ($is_global_rightmost) {
+                $page = $this->buildLeafPage($cells, $page_size);
+                $rightmost_pgno = $this->main->appendPage($page);
+            } else {
+                $promoted_payload = $payloads[count($payloads) - 1];
+                $promoted_cell = $cells[count($cells) - 1];
+                $promoted_cell_size = strlen($promoted_cell);
+                array_pop($cells);
+                array_pop($payloads);
+                if ($cells === []) {
+                    // Single-cell-leaf case: keep the only cell in
+                    // the leaf and use it as the divider too. The
+                    // next partition's first cell strictly compares
+                    // greater, so the divider key is correctly
+                    // "max key in left subtree".
+                    $cells[] = $promoted_cell;
+                    $payloads[] = $promoted_payload;
+                }
+                $page = $this->buildLeafPage($cells, $page_size);
+                $pgno = $this->main->appendPage($page);
+                $leaves_with_dividers[] = [
+                    'pgno' => $pgno,
+                    'divider_payload' => $promoted_payload,
+                ];
+            }
         }
 
-        if ($leaves_with_dividers === [] && $rightmost_pgno === 0) {
-            // No data — leave the empty leaf in place.
-            return;
-        }
+        return ['leaves' => $leaves_with_dividers, 'rightmost_pgno' => $rightmost_pgno];
+    }
 
-        if ($leaves_with_dividers === [] && $rightmost_pgno !== 0) {
+    /**
+     * Build the interior tree on top of an already-laid-out leaf
+     * level, write the resulting root at `$main_index_rootpage`.
+     *
+     * `$leaves_with_dividers` is the ordered list of non-rightmost
+     * leaves with their promoted divider payloads. `$rightmost_pgno`
+     * is the global rightmost leaf (or null if the entire range
+     * is empty).
+     *
+     * @param list<array{pgno: int, divider_payload: string}> $leaves_with_dividers
+     */
+    public function assembleInteriorTree(
+        array $leaves_with_dividers,
+        ?int $rightmost_pgno,
+        int $main_index_rootpage,
+    ): void {
+        $page_size = $this->main->page_size;
+
+        if ($leaves_with_dividers === []) {
+            if ($rightmost_pgno === null) {
+                // No data — leave the empty leaf in place.
+                return;
+            }
             // Only one leaf; copy it over the rootpage.
-            $this->main->writePage($main_index_rootpage, $this->main->readPage($rightmost_pgno));
+            $this->main->writePage(
+                $main_index_rootpage,
+                $this->main->readPage($rightmost_pgno),
+            );
             return;
         }
 
@@ -164,9 +275,18 @@ final class IntegerIndexMerger
         // the leaves, then recurse upward.
         /** @var list<array{pgno: int, divider_payload: string}> $level */
         $level = $leaves_with_dividers;
-        // The very last child of this level is the rightmost leaf
-        // (which has no divider).
-        $rightmost = $rightmost_pgno;
+        // The very last child of this level is the rightmost leaf.
+        // If a non-rightmost-only partition trail returned no
+        // explicit rightmost, fall back to treating the last entry
+        // in $leaves_with_dividers as it (its divider becomes
+        // unused at the top of the tree).
+        if ($rightmost_pgno === null) {
+            $last = array_pop($level);
+            \assert($last !== null);
+            $rightmost = $last['pgno'];
+        } else {
+            $rightmost = $rightmost_pgno;
+        }
 
         $max_children = $this->maxInteriorCellCount($page_size);
         while (count($level) >= $max_children) {
@@ -213,8 +333,11 @@ final class IntegerIndexMerger
     }
 
     /**
-     * K-way merge generator. Yields each (key, rowid) in ascending
-     * order across all sort runs.
+     * K-way merge generator. Yields each (key, rowid, cell) in
+     * ascending (key, rowid) order across all sort runs. `cell` is
+     * the worker-encoded SQLite leaf cell bytes for that row,
+     * ready to drop into the result leaf without further per-row
+     * encoding work.
      *
      * Uses a manual array-backed binary min-heap with three parallel
      * arrays (keys / rowids / source-indexes) instead of
@@ -224,7 +347,7 @@ final class IntegerIndexMerger
      * dominates the merge time. The manual heap stays in pure PHP
      * but does only int comparisons inline, no method dispatch.
      *
-     * @return \Generator<int, array{int, int}>
+     * @return \Generator<int, array{int, int, string}>
      */
     private function mergeStream(): \Generator
     {
@@ -237,29 +360,29 @@ final class IntegerIndexMerger
 
         foreach ($this->sort_runs as $i => $run) {
             if ($run->hasMore()) {
-                [$k, $r] = $run->peek();
+                [$k, $r, $_c] = $run->peek();
                 $keys[] = $k;
                 $rowids[] = $r;
                 $sources[] = $i;
             }
         }
         $size = count($keys);
-        // No initial sift-up needed: source iterators were inserted
-        // in worker order, but the merge contract only requires the
-        // heap property eventually. Heapify the array.
         for ($i = ($size >> 1) - 1; $i >= 0; $i--) {
             $this->siftDown($keys, $rowids, $sources, $i, $size);
         }
 
         while ($size > 0) {
-            $top_key = $keys[0];
-            $top_rowid = $rowids[0];
             $top_source = $sources[0];
-            yield [$top_key, $top_rowid];
+            // Re-peek the cell bytes from the source — the heap only
+            // tracks (key, rowid) so we don't have to copy variable
+            // strings around on every sift-down. The peek is just an
+            // array index into the reader's pre-decoded arrays.
+            [$top_key, $top_rowid, $top_cell] = $this->sort_runs[$top_source]->peek();
+            yield [$top_key, $top_rowid, $top_cell];
 
             $this->sort_runs[$top_source]->advance();
             if ($this->sort_runs[$top_source]->hasMore()) {
-                [$nk, $nr] = $this->sort_runs[$top_source]->peek();
+                [$nk, $nr, $_nc] = $this->sort_runs[$top_source]->peek();
                 $keys[0] = $nk;
                 $rowids[0] = $nr;
                 // sources[0] stays the same — we're just replacing the
@@ -321,87 +444,6 @@ final class IntegerIndexMerger
         $keys[$i] = $k;
         $rowids[$i] = $r;
         $sources[$i] = $s;
-    }
-
-    /**
-     * Decode a leaf cell back to (key, rowid). Used to compute the
-     * "max key in this leaf" record we hand the interior page.
-     *
-     * @return array{int, int}
-     */
-    private function lastDecoded(string $cell): array
-    {
-        [$payload_size, $sz_len] = Format::readVarint($cell, 0);
-        $payload_offset = $sz_len;
-
-        // Record header: varint header_size, then varint type codes.
-        [$_header_size, $hl] = Format::readVarint($cell, $payload_offset);
-        $hdr = $payload_offset + $hl;
-        $type_codes = [];
-        $end = $payload_offset + $_header_size;
-        while ($hdr < $end) {
-            [$tc, $tl] = Format::readVarint($cell, $hdr);
-            $type_codes[] = $tc;
-            $hdr += $tl;
-        }
-        // Skip column 0 (run_id) body.
-        $body = $end;
-        $body += $this->bodySizeFor($type_codes[0]);
-        $key = $this->decodeIntegerColumn($cell, $body, $type_codes[1]);
-        $body += $this->bodySizeFor($type_codes[1]);
-        $rowid = $this->decodeIntegerColumn($cell, $body, $type_codes[2]);
-        return [$key, $rowid];
-    }
-
-    private function bodySizeFor(int $type_code): int
-    {
-        return match (true) {
-            $type_code === 0, $type_code === 8, $type_code === 9 => 0,
-            $type_code === 1 => 1,
-            $type_code === 2 => 2,
-            $type_code === 3 => 3,
-            $type_code === 4 => 4,
-            $type_code === 5 => 6,
-            $type_code === 6 => 8,
-            default => throw new \RuntimeException("unsupported type code in lastDecoded: {$type_code}"),
-        };
-    }
-
-    private function decodeIntegerColumn(string $bytes, int $offset, int $type_code): int
-    {
-        switch ($type_code) {
-            case 0:
-                return 0;
-            case 8:
-                return 0;
-            case 9:
-                return 1;
-            case 1:
-                $b = ord($bytes[$offset]);
-                return $b >= 128 ? $b - 256 : $b;
-            case 2:
-                $v = (int)unpack('n', substr($bytes, $offset, 2))[1];
-                return $v >= 0x8000 ? $v - 0x10000 : $v;
-            case 3:
-                $bs = unpack('C3', substr($bytes, $offset, 3));
-                $v = ($bs[1] << 16) | ($bs[2] << 8) | $bs[3];
-                return $v >= 0x800000 ? $v - 0x1000000 : $v;
-            case 4:
-                $v = (int)unpack('N', substr($bytes, $offset, 4))[1];
-                return $v >= 0x80000000 ? $v - 0x100000000 : $v;
-            case 5:
-                $bs = unpack('C6', substr($bytes, $offset, 6));
-                $v = ($bs[1] << 40) | ($bs[2] << 32) | ($bs[3] << 24)
-                    | ($bs[4] << 16) | ($bs[5] << 8) | $bs[6];
-                if ($v >= (1 << 47)) {
-                    $v -= (1 << 48);
-                }
-                return $v;
-            case 6:
-                return (int)unpack('J', substr($bytes, $offset, 8))[1];
-            default:
-                throw new \RuntimeException("unsupported integer type code: {$type_code}");
-        }
     }
 
     /**

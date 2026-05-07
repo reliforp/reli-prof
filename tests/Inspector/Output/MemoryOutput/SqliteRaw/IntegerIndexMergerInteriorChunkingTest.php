@@ -88,7 +88,7 @@ class IntegerIndexMergerInteriorChunkingTest extends BaseTestCase
             )->fetchColumn();
             unset($main);
 
-            $writer = new SortRunWriter($sort_run_path);
+            $writer = new SortRunWriter($sort_run_path, run_id: 1);
             // Strictly ascending (key, rowid) — the merger contract.
             // 8-byte-wide values keep the encoded payload in the
             // 8-byte-int branch of RecordEncoder, matching real-world
@@ -102,7 +102,6 @@ class IntegerIndexMergerInteriorChunkingTest extends BaseTestCase
             $merger = new IntegerIndexMerger(
                 $main_writer,
                 [new SortRunReader($sort_run_path)],
-                run_id: 1,
             );
             $merger->merge($rootpage);
             $main_writer->close($main_path);
