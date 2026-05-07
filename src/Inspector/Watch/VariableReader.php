@@ -559,8 +559,9 @@ final class VariableReader implements VariableReaderInterface
         string $simple_name,
         \Reli\Lib\PhpInternals\Types\Zend\ZendPropertyInfo $property_info,
         Dereferencer $dereferencer,
+        bool $php74_or_later,
     ): string {
-        if ($property_info->isPrivate()) {
+        if ($property_info->isPrivate($php74_or_later)) {
             $owner_name = '*';
             if ($property_info->ce !== null) {
                 try {
@@ -572,7 +573,7 @@ final class VariableReader implements VariableReaderInterface
             }
             return "\0" . $owner_name . "\0" . $simple_name;
         }
-        if ($property_info->isProtected()) {
+        if ($property_info->isProtected($php74_or_later)) {
             return "\0*\0" . $simple_name;
         }
         return $simple_name;
@@ -989,6 +990,7 @@ final class VariableReader implements VariableReaderInterface
                     (string)$simple_name,
                     $property_info,
                     $dereferencer,
+                    $is_74_plus,
                 );
                 $prop_zval = $properties_table[$slot];
                 if ($prop_zval->isUndef()) {

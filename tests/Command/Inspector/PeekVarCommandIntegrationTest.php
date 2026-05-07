@@ -275,8 +275,8 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
         $target_script = <<<'CODE'
             <?php
             class Foo {
-                public int $pub = 1;
-                private string $priv = "secret";
+                public $pub = 1;
+                private $priv = "secret";
             }
             $GLOBALS['arr'] = ['a' => 1, 'b' => [10, 20]];
             $GLOBALS['obj'] = new Foo();
@@ -441,7 +441,7 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
     ): void {
         $target_script = <<<'CODE'
             <?php
-            class Node { public ?Node $next = null; }
+            class Node { public $next = null; }
             $GLOBALS['n'] = new Node();
             $GLOBALS['n']->next = $GLOBALS['n'];
             fputs(STDOUT, "ready\n");
@@ -480,7 +480,7 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
     ): void {
         $target_script = <<<'CODE'
             <?php
-            class Node { public ?Node $next = null; public string $tag = "x"; }
+            class Node { public $next = null; public $tag = "x"; }
             $GLOBALS['n'] = new Node();
             $GLOBALS['n']->next = $GLOBALS['n'];
             fputs(STDOUT, "ready\n");

@@ -82,23 +82,28 @@ final class ZendPropertyInfo implements CDataDereferencable
     }
 
     /**
-     * Visibility helpers. ZEND_ACC_* low bits in zend_compile.h:
-     * public=0x01, protected=0x02, private=0x04. Stable from PHP 7.x
-     * onward.
+     * Visibility helpers. ZEND_ACC_PUBLIC / PROTECTED / PRIVATE moved across
+     * PHP 7.4: in 7.0–7.3 they sat in the upper byte (0x100 / 0x200 / 0x400);
+     * from 7.4 onward they live in the low bits (0x01 / 0x02 / 0x04). We
+     * mirror the version handling used by {@see isStatic} so the caller's
+     * existing `$php74_or_later` plumbing flows through.
      */
-    public function isPublic(): bool
+    public function isPublic(bool $php74_or_later = true): bool
     {
-        return (bool)($this->flags & 0x01);
+        $mask = $php74_or_later ? 0x01 : 0x100;
+        return (bool)($this->flags & $mask);
     }
 
-    public function isProtected(): bool
+    public function isProtected(bool $php74_or_later = true): bool
     {
-        return (bool)($this->flags & 0x02);
+        $mask = $php74_or_later ? 0x02 : 0x200;
+        return (bool)($this->flags & $mask);
     }
 
-    public function isPrivate(): bool
+    public function isPrivate(bool $php74_or_later = true): bool
     {
-        return (bool)($this->flags & 0x04);
+        $mask = $php74_or_later ? 0x04 : 0x400;
+        return (bool)($this->flags & $mask);
     }
 
     /**
