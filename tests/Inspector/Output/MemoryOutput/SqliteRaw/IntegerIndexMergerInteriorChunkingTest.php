@@ -88,7 +88,7 @@ class IntegerIndexMergerInteriorChunkingTest extends BaseTestCase
             )->fetchColumn();
             unset($main);
 
-            $writer = new SortRunWriter($sort_run_path);
+            $writer = new SortRunWriter($sort_run_path, run_id: 1);
             // Strictly ascending (key, rowid) — the merger contract.
             // 8-byte-wide values keep the encoded payload in the
             // 8-byte-int branch of RecordEncoder, matching real-world
@@ -102,7 +102,6 @@ class IntegerIndexMergerInteriorChunkingTest extends BaseTestCase
             $merger = new IntegerIndexMerger(
                 $main_writer,
                 [new SortRunReader($sort_run_path)],
-                run_id: 1,
             );
             $merger->merge($rootpage);
             $main_writer->close($main_path);
@@ -131,6 +130,114 @@ class IntegerIndexMergerInteriorChunkingTest extends BaseTestCase
             @unlink($main_path);
             @unlink($sort_run_path);
         }
+    }
+
+    /**
+     * Bug B regression: when a non-rightmost partition's entry count
+     * is exactly `(cells_per_leaf + 1) * k + 1` (i.e. one orphan cell
+     * past a clean leaf-cycle boundary), the tail used to fall back
+     * to "single-cell leaf with self-divider" — same cell stored in
+     * both the leaf and the parent interior page. PRAGMA
+     * integrity_check reports it as "wrong # of entries in index"
+     * and the table-side full scan double-counts the cell as a
+     * silent extra row with a duplicated rowid.
+     *
+     * The fixture builds one partition's worth of leaves directly
+     * via `extractLeavesForRange` with `is_global_rightmost = false`
+     * and an entry count chosen to land exactly on the bug's
+     * (272k+1)-shape. For `(1-int run_id, int32 key, int32 rowid)`
+     * cells the per-leaf packing is 271 cells + 1 promoted divider
+     * = 272 entries per leaf cycle, so an entry count of
+     * `272 + 1 = 273` lands on the smallest k=1 trigger.
+     *
+     * The post-fix expectation: total b-tree entries (leaf cells +
+     * promoted dividers across the returned `leaves` list) equals
+     * the input row count exactly. Pre-fix the count was off by
+     * exactly +1 because the lone tail cell appeared in both a
+     * 1-cell leaf and as the divider above it.
+     */
+    public function testNonRightmostPartitionTailDoesNotDuplicateLastCell(): void
+    {
+        // 273 entries = 1 trigger of the (272k + 1) shape. With
+        // small int32-shaped keys (run_id=1, key, rowid) the cell
+        // is 13 bytes and the per-leaf cycle is 272 entries, so 273
+        // = 1 full leaf cycle (271 in leaf + 1 promoted) + 1 tail
+        // cell. The tail-merge path under test re-absorbs that lone
+        // cell back into the previous leaf and uses it as the new
+        // divider.
+        $row_count = 273;
+
+        $base = tempnam(sys_get_temp_dir(), 'iim_partB_');
+        self::assertNotFalse($base);
+        $main_path = $base . '_main.sqlite3';
+        $sort_run_path = $base . '_run';
+
+        try {
+            $main = new \PDO("sqlite:{$main_path}");
+            $main->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+            $main->exec('PRAGMA page_size = 4096');
+            $main->exec('CREATE TABLE t (run_id INTEGER, k INTEGER, v INTEGER)');
+            unset($main);
+
+            $writer = new SortRunWriter($sort_run_path, run_id: 1);
+            for ($i = 1; $i <= $row_count; $i++) {
+                $writer->append($i, $i);
+            }
+            $writer->close();
+
+            $main_writer = Writer::open($main_path);
+            $merger = new IntegerIndexMerger(
+                $main_writer,
+                [new SortRunReader($sort_run_path)],
+            );
+            // is_global_rightmost = false simulates a non-rightmost
+            // partition; this is the path that triggered the bug.
+            $result = $merger->extractLeavesForRange(null, null, false);
+            $main_writer->close($main_path);
+
+            $entry_count = 0;
+            foreach ($result['leaves'] as $entry) {
+                $entry_count += $this->countLeafCells(
+                    $main_path,
+                    $entry['pgno'],
+                );
+                $entry_count += 1; // promoted divider for this leaf
+            }
+
+            self::assertNull(
+                $result['rightmost_pgno'],
+                'non-rightmost partition must not return an explicit rightmost',
+            );
+            self::assertSame(
+                $row_count,
+                $entry_count,
+                'non-rightmost tail must not duplicate the lone cell as both leaf and divider',
+            );
+        } finally {
+            @unlink($main_path);
+            @unlink($sort_run_path);
+        }
+    }
+
+    /**
+     * Count the number of cells in an index-leaf page at `$pgno`.
+     */
+    private function countLeafCells(string $path, int $pgno): int
+    {
+        $reader = Reader::open($path);
+        $page = $reader->readPage($pgno);
+        $btree_offset = $pgno === 1 ? Format::HEADER_SIZE : 0;
+        $type = ord($page[$btree_offset]);
+        if ($type !== Format::BTREE_LEAF_INDEX) {
+            throw new \RuntimeException(
+                sprintf(
+                    'expected index leaf page at pgno %d, got type 0x%02x',
+                    $pgno,
+                    $type,
+                ),
+            );
+        }
+        return (int)unpack('n', substr($page, $btree_offset + Format::PG_CELL_COUNT, 2))[1];
     }
 
     /**

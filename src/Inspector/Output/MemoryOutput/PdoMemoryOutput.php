@@ -19,6 +19,7 @@ use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\PdoDriverInterface;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\CellTooLargeException;
+use Reli\Inspector\Output\MemoryOutput\SqliteRaw\Format as SqliteRawFormat;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\IntegerIndexMerger;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\OverflowNotSupportedException;
 use Reli\Inspector\Output\MemoryOutput\SqliteRaw\ParallelIndexBuilder;
@@ -776,9 +777,19 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $phase('createViews');
     }
 
+    /**
+     * Default-on toggle for the parallel CREATE INDEX path. Off only
+     * when explicitly disabled via `RELI_PARALLEL_INDEX=0`; the
+     * pre-flight inside {@see tryParallelCreateIndexes} already
+     * returns false on environments that can't support it (non-SQLite
+     * driver, FFI / pcntl missing), so callers fall back to the
+     * serial createIndexes path automatically. The env-var kill
+     * switch is kept so users hitting an unforeseen edge can opt
+     * back to serial without recompiling.
+     */
     private static function parallelIndexEnabled(): bool
     {
-        return getenv('RELI_PARALLEL_INDEX') === '1';
+        return getenv('RELI_PARALLEL_INDEX') !== '0';
     }
 
     /**
@@ -800,12 +811,51 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      * shard, then page-relocates the index back into main via
      * shared mmap.
      */
-    private function tryParallelCreateIndexes(\PDO $db): bool
+    private function tryParallelCreateIndexes(\PDO $db, ?\Closure $sidecar = null): bool
     {
         if (!$this->driver instanceof SqliteDriver) {
             return false;
         }
         $specs = self::userIndexSpecs();
+
+        // Skip indexes that already exist — re-ingest into a
+        // populated 0.13.x DB carries sqlite_master entries from
+        // previous runs that would trip the writable_schema INSERT
+        // with a duplicate-name conflict.
+        $existing = [];
+        $existing_stmt = $db->query(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"
+        );
+        if ($existing_stmt !== false) {
+            /** @var array{name: string} $row */
+            foreach ($existing_stmt as $row) {
+                $existing[$row['name']] = true;
+            }
+        }
+        // When the format-direct integer-index sidecar is attached,
+        // it owns the 3 integer indexes — exclude them from the PIB
+        // worker specs so PIB doesn't build them in parallel and
+        // produce duplicate sqlite_master rows.
+        if ($sidecar !== null) {
+            foreach (self::integerIndexSpecs() as [$index_name, $_table, $_key]) {
+                $existing[$index_name] = true;
+            }
+        }
+        $specs = array_values(array_filter(
+            $specs,
+            static fn (array $s): bool => !isset($existing[$s['name']]),
+        ));
+        if ($specs === []) {
+            // No PIB work to do. If a sidecar was supplied, run it
+            // serially here — we don't have a session to host it
+            // in. Caller's loop arranges the same fallback when
+            // PIB's pre-flight bails (FFI/pcntl unavailable).
+            if ($sidecar !== null) {
+                return false;
+            }
+            return true;
+        }
+
         $db_path = $this->driver->path();
 
         // Reservation budget per index, tuned to the largest source
@@ -838,11 +888,26 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         // any failure throws; we let those bubble up because the
         // serial fallback would write on top of orphan index pages
         // and break integrity_check.
+        // When a sidecar is attached, leave CPU slots for it so it
+        // isn't time-sliced against the worker pool. Without this
+        // the L sidecar's wall-clock balloons (e.g. 0.85 s → 1.4 s
+        // on a 4-core box) and partly defeats the parallel win.
+        // The L sidecar may itself fork up to one process per
+        // integer index when parallel-L is enabled — reserve a
+        // matching number of CPU slots in that case.
+        $worker_count = $this->defaultWorkerCount();
+        if ($sidecar !== null) {
+            $reserve = self::lParallelEnabled()
+                ? count(self::integerIndexSpecs())
+                : 1;
+            $worker_count = max(1, $worker_count - $reserve);
+        }
         $result = ParallelIndexBuilder::build(
             $db_path,
             $specs,
-            $this->defaultWorkerCount(),
+            $worker_count,
             $reservation,
+            $sidecar,
         );
         return $result !== null;
     }
@@ -1279,11 +1344,13 @@ final class PdoMemoryOutput implements MemoryOutputInterface
         $db->exec('PRAGMA synchronous = OFF');
         $db->exec('PRAGMA temp_store = MEMORY');
         $this->createTables($db);
-        if (self::formatDirectIndexEnabled()) {
-            foreach (self::integerIndexSpecs() as [$index_name, $table, $key]) {
-                $db->exec("CREATE INDEX IF NOT EXISTS {$index_name} ON {$table}(run_id, {$key})");
-            }
-        }
+        // Integer indexes (the L-path's pre-allocated rootpages)
+        // used to be created here. They are now created in
+        // mergeShards after summary inserts run, so the planner
+        // can't pick the empty rootpages for queries during the
+        // intervening summary phase. Moving the CREATE INDEX out
+        // also lets L run as a ParallelIndexBuilder sidecar
+        // concurrent with the C-side CREATE INDEX path.
         $db->beginTransaction();
         $run_id = $this->insertRun($db);
         $this->insertSummary($db, $run_id, $summary);
@@ -1438,8 +1505,10 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             // After the table data is in the shard, dump sort-run
             // files for each integer index. These get k-way merged
             // by the main process to skip the SQL CREATE INDEX
-            // sort phase entirely.
-            $this->dumpIntegerIndexSortRuns($shard, $shard_path);
+            // sort phase entirely. Worker also pre-encodes the leaf
+            // cell bytes against the freshly-allocated run_id so the
+            // merger doesn't have to re-encode in the critical path.
+            $this->dumpIntegerIndexSortRuns($shard, $shard_path, $run_id);
         } catch (\Throwable $e) {
             $shard->rollBack();
             throw $e;
@@ -1548,10 +1617,21 @@ final class PdoMemoryOutput implements MemoryOutputInterface
                 static fn (string $p): SqliteRawReader => SqliteRawReader::open($p),
                 array_values($shard_paths),
             );
+            // Open main once to resolve all 4 rootpages — used to be
+            // SqliteRawReader::open($main_path) per table iteration,
+            // which reread the whole main file 4 times. Cheap when
+            // main is empty-schema only, but extra ms per merge that
+            // we don't need to spend, and quadratic with re-ingest
+            // into a populated main DB.
+            $main_reader = SqliteRawReader::open($main_path);
+            $rootpages = [];
+            foreach ($tables as $table) {
+                $rootpages[$table] = $main_reader->tableRootpage($table);
+            }
+            unset($main_reader);
             $merger = new TableMerger($writer, $shard_readers);
             foreach ($tables as $table) {
-                $rootpage = SqliteRawReader::open($main_path)->tableRootpage($table);
-                $merger->merge($table, $rootpage);
+                $merger->merge($table, $rootpages[$table]);
             }
             $writer->close($main_path);
         } catch (OverflowNotSupportedException $_e) {
@@ -1569,15 +1649,17 @@ final class PdoMemoryOutput implements MemoryOutputInterface
 
         if (!$needs_sql_fallback) {
             // Format-direct table copy bypasses the b-tree machinery,
-            // so the auto-indexes that the PRIMARY KEYs maintain are
-            // still the empty leaves they were at CREATE TABLE time.
-            // REINDEX rebuilds them from the freshly-merged table
-            // data. Workers already wrote canonical run_id values,
-            // so no UPDATE round-trip is needed.
+            // so the auto-index of the only data table with a
+            // compound PK (context_nodes) is still the empty leaf it
+            // was at CREATE TABLE time and needs REINDEX. The other
+            // three data tables use `id INTEGER PRIMARY KEY`, which
+            // is a rowid alias with no separate autoindex, so they
+            // need nothing here. The summary tables (summary,
+            // location_types_summary, class_objects_summary) are
+            // populated through the regular SQLite INSERT path
+            // (allocateRun + the post-merge inserts below), so SQLite
+            // maintains their autoindexes itself.
             $db->exec('REINDEX context_nodes');
-            $db->exec('REINDEX summary');
-            $db->exec('REINDEX location_types_summary');
-            $db->exec('REINDEX class_objects_summary');
         }
 
         if ($needs_sql_fallback) {
@@ -1614,22 +1696,6 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             $db->commit();
         }
 
-        // Format-direct integer index merge (gated, off by default).
-        // When enabled, has to run BEFORE the summary inserts:
-        // the integer indexes' rootpages were pre-allocated but
-        // currently hold an empty leaf, and SQLite's planner
-        // happily uses them for queries like `SELECT ... WHERE
-        // run_id = ?`, which then returns zero rows. Populating
-        // the indexes first means subsequent SELECTs that route
-        // through them see the real data.
-        if (!$needs_sql_fallback && self::formatDirectIndexEnabled()) {
-            unset($db);
-            $this->mergeIntegerIndexes($shard_paths, $main_path, $run_id);
-            $db = $this->driver->createConnection();
-            $db->exec('PRAGMA synchronous = OFF');
-            $db->exec('PRAGMA temp_store = MEMORY');
-        }
-
         $db->beginTransaction();
         $this->insertLocationTypesSummaryFromDb($db, $run_id);
         $this->insertClassObjectsSummaryFromDb($db, $run_id);
@@ -1638,12 +1704,135 @@ final class PdoMemoryOutput implements MemoryOutputInterface
 
         $this->driver->afterBulkInsert($db);
 
-        // The remaining indexes (text-keyed, partial, post-merge-
-        // derived like idx_context_nodes_canonical) get built the
-        // normal way. CREATE INDEX IF NOT EXISTS on the integer
-        // indexes is a no-op since they already exist.
-        $this->createIndexes($db);
+        // Pre-create the integer-index rootpages so the L path has
+        // somewhere to writePage() into. Done after summaries run
+        // so the empty rootpages don't mislead the planner during
+        // those queries. CREATE INDEX on a populated table is a
+        // real cost — but only when L is enabled, otherwise the
+        // serial createIndexes / parallel CREATE INDEX path below
+        // builds these indexes itself. Gate by $needs_sql_fallback
+        // because the SQL fallback path doesn't want format-direct
+        // anything.
+        $l_eligible = !$needs_sql_fallback && self::formatDirectIndexEnabled();
+
+        // L runs as a sidecar of ParallelIndexBuilder when both are
+        // available — its work overlaps with the C-side CREATE INDEX
+        // phase that builds the remaining 7 indexes, and both
+        // claim pgnos from the same shared atomic counter so their
+        // page allocations never collide. The sidecar emits its
+        // `index_name => rootpage` map to a temp file because the
+        // parent then has to register those rootpages in
+        // sqlite_master via writable_schema (skipping CREATE INDEX
+        // entirely avoids ~0.4 s of wasted C-side index build that
+        // L would just overwrite). Falls back to a sequential L
+        // before the serial createIndexes path when parallel-index
+        // can't run.
+        $sidecar = null;
+        $sidecar_result_path = null;
+        if ($l_eligible) {
+            $sidecar_result_path = $main_path . '.l_meta';
+            @unlink($sidecar_result_path);
+            $shard_paths_for_sidecar = $shard_paths;
+            $main_path_for_sidecar = $main_path;
+            $result_path_for_sidecar = $sidecar_result_path;
+            $sidecar = function (string $counter_path) use (
+                $shard_paths_for_sidecar,
+                $main_path_for_sidecar,
+                $result_path_for_sidecar
+            ): void {
+                $rootpages = $this->mergeIntegerIndexes(
+                    $shard_paths_for_sidecar,
+                    $main_path_for_sidecar,
+                    $counter_path,
+                );
+                file_put_contents(
+                    $result_path_for_sidecar,
+                    serialize($rootpages),
+                );
+            };
+        }
+
+        $parallel_landed = self::parallelIndexEnabled()
+            && $this->tryParallelCreateIndexes($db, $sidecar);
+
+        if ($parallel_landed) {
+            if (
+                $l_eligible
+                && $sidecar_result_path !== null
+                && file_exists($sidecar_result_path)
+            ) {
+                $payload = (string)file_get_contents($sidecar_result_path);
+                @unlink($sidecar_result_path);
+                /** @var array<string, int> $rootpages */
+                $rootpages = unserialize($payload);
+                $this->insertIntegerIndexSchemaEntries($db, $rootpages);
+            }
+        } else {
+            // Serial path: run L sequentially first (claims its own
+            // rootpages and emits them back to us), then the serial
+            // createIndexes builds the remaining 7 indexes.
+            //
+            // After L's writable_schema INSERT we close + reopen the
+            // PDO handle before createIndexes runs. Reason: SQLite's
+            // schema-cache lives on the PDO connection, and a
+            // writable_schema INSERT made via the same connection
+            // *doesn't* update that connection's cache. The next
+            // CREATE INDEX IF NOT EXISTS would then see the cache
+            // saying "missing", try to create, and trip a
+            // sqlite_master duplicate-name violation against the
+            // row L just inserted — surfaced as
+            // `malformed database schema (...) - index ... already
+            // exists` on the next DB open.
+            if ($l_eligible) {
+                unset($db);
+                $rootpages = $this->mergeIntegerIndexes($shard_paths, $main_path);
+                $db = $this->driver->createConnection();
+                $db->exec('PRAGMA synchronous = OFF');
+                $db->exec('PRAGMA temp_store = MEMORY');
+                $this->insertIntegerIndexSchemaEntries($db, $rootpages);
+                unset($db);
+                $db = $this->driver->createConnection();
+                $db->exec('PRAGMA synchronous = OFF');
+                $db->exec('PRAGMA temp_store = MEMORY');
+            }
+            $this->createIndexes($db);
+        }
         $this->createViews($db);
+    }
+
+    /**
+     * Insert sqlite_master rows for the integer indexes L just
+     * populated. Mirrors {@see ParallelIndexBuilder}'s post-fork
+     * writable_schema step. Each entry's rootpage was claimed by
+     * the merger (sequential or session mode), and its name /
+     * tbl_name / sql come from {@see integerIndexSpecs}. The
+     * schema_cookie bumps as a side effect of writable_schema, so
+     * freshly-opened PDO connections re-parse and see the new
+     * indexes.
+     *
+     * @param array<string, int> $rootpages index_name => rootpage
+     */
+    private function insertIntegerIndexSchemaEntries(\PDO $db, array $rootpages): void
+    {
+        if ($rootpages === []) {
+            return;
+        }
+        $db->exec('PRAGMA writable_schema = ON');
+        try {
+            $stmt = $db->prepare(
+                'INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql)'
+                . ' VALUES (?, ?, ?, ?, ?)'
+            );
+            foreach (self::integerIndexSpecs() as [$index_name, $table, $key]) {
+                if (!isset($rootpages[$index_name])) {
+                    continue;
+                }
+                $sql = "CREATE INDEX {$index_name} ON {$table}(run_id, {$key})";
+                $stmt->execute(['index', $index_name, $table, $rootpages[$index_name], $sql]);
+            }
+        } finally {
+            $db->exec('PRAGMA writable_schema = OFF');
+        }
     }
 
     /**
@@ -1686,10 +1875,13 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      *
      * @psalm-suppress MixedAssignment
      */
-    private function dumpIntegerIndexSortRuns(\PDO $shard, string $shard_path): void
+    private function dumpIntegerIndexSortRuns(\PDO $shard, string $shard_path, int $run_id): void
     {
         foreach (self::integerIndexSpecs() as [$index_name, $table, $key_column]) {
-            $writer = new SortRunWriter(self::sortRunPath($shard_path, $index_name));
+            $writer = new SortRunWriter(
+                self::sortRunPath($shard_path, $index_name),
+                $run_id,
+            );
             $stmt = $shard->prepare(
                 "SELECT {$key_column}, rowid FROM {$table} ORDER BY {$key_column}, rowid"
             );
@@ -1715,20 +1907,42 @@ final class PdoMemoryOutput implements MemoryOutputInterface
      *
      * @param array<int, string> $shard_paths shard index => path
      */
+    /**
+     * Build the integer-only indexes from the per-shard sort runs.
+     *
+     * Always claims a fresh rootpage pgno for each index via the
+     * writer's `appendPage` (placeholder empty leaf, immediately
+     * overwritten by the merger), so the caller never has to pre-
+     * `CREATE INDEX` to allocate the rootpage — that CREATE INDEX
+     * would do the C-side index build only for L to overwrite the
+     * result, ~0.4 s of pure waste at our table sizes.
+     *
+     * Sequential mode (counter_path null): writer uses patch mode,
+     * appended pages are dense at the end of the file.
+     *
+     * Session mode (counter_path supplied): writer uses session
+     * mode, appended pages claim pgnos from the shared atomic
+     * counter so they don't collide with parallel cohort processes
+     * (typically {@see ParallelIndexBuilder} workers).
+     *
+     * Returns the `index_name => rootpage` map for indexes the
+     * merger populated. The caller is responsible for inserting
+     * the corresponding sqlite_master rows via writable_schema.
+     *
+     * @return array<string, int>
+     */
+    /**
+     * @param array<int, string> $shard_paths shard index => path
+     * @return array<string, int> index_name => rootpage
+     */
     private function mergeIntegerIndexes(
         array $shard_paths,
         string $main_path,
-        int $run_id,
-    ): void {
+        ?string $counter_path = null,
+    ): array {
+        /** @var list<array{name: string, sort_runs: list<SortRunReader>}> $jobs */
+        $jobs = [];
         foreach (self::integerIndexSpecs() as [$index_name, $_table, $_key]) {
-            $reader = SqliteRawReader::open($main_path);
-            $rootpage = $reader->findSchemaEntry($index_name);
-            if ($rootpage === null) {
-                // Index wasn't created — caller bug. Skip rather than
-                // throw, so an unexpected schema doesn't prevent the
-                // rest of the merge from completing.
-                continue;
-            }
             $sort_runs = [];
             foreach ($shard_paths as $shard_path) {
                 $run_path = self::sortRunPath($shard_path, $index_name);
@@ -1739,19 +1953,429 @@ final class PdoMemoryOutput implements MemoryOutputInterface
             if ($sort_runs === []) {
                 continue;
             }
-            $writer = SqliteRawWriter::open($main_path);
-            $merger = new IntegerIndexMerger($writer, $sort_runs, $run_id);
+            $jobs[] = ['name' => $index_name, 'sort_runs' => $sort_runs];
+        }
+
+        if ($jobs === []) {
+            return [];
+        }
+
+        // Session mode with multiple jobs and enough cores: fork
+        // one sub-sidecar per integer index so they build in
+        // parallel. Each child claims its own pgno range from the
+        // shared counter and pwrites disjoint pages — the wall-
+        // clock collapses from sum(per-index times) to
+        // max(per-index time).
+        //
+        // Gated on a core threshold: on a 4-core box the 3 L sub-
+        // forks + 3 PIB workers exceed the core count, so the OS
+        // time-slices everything and the largest L job stretches
+        // from 0.5 s to 1.5 s+. The break-even moves below 4 cores
+        // only on small captures where PIB doesn't have much to
+        // do anyway. RELI_L_PARALLEL=1 force-enables; =0 force-
+        // disables.
+        if (
+            $counter_path !== null
+            && count($jobs) > 1
+            && function_exists('pcntl_fork')
+            && function_exists('pcntl_waitpid')
+            && self::lParallelEnabled()
+        ) {
+            return $this->mergeIntegerIndexesParallel($main_path, $counter_path, $jobs);
+        }
+
+        return $this->mergeIntegerIndexesSequential($main_path, $counter_path, $jobs);
+    }
+
+    /**
+     * True when the per-index L parallelisation should run. Defaults
+     * to on for >= 8 cores (3 L sub-forks + 4-5 PIB workers fits
+     * comfortably), off below that. Override with RELI_L_PARALLEL=1
+     * (force on) or RELI_L_PARALLEL=0 (force off).
+     */
+    private static function lParallelEnabled(): bool
+    {
+        $env = getenv('RELI_L_PARALLEL');
+        if ($env === '1') {
+            return true;
+        }
+        if ($env === '0') {
+            return false;
+        }
+        $cores = 4;
+        if (is_readable('/proc/cpuinfo')) {
+            $cpuinfo = @file_get_contents('/proc/cpuinfo');
+            if (is_string($cpuinfo) && $cpuinfo !== '') {
+                $cores = max(1, substr_count($cpuinfo, "\nprocessor\t") + 1);
+            }
+        }
+        return $cores >= 8;
+    }
+
+    /**
+     * Sequential (in-process) integer-index merge. One writer; one
+     * job after another. Used when there's only one job, when
+     * pcntl is unavailable, or when running outside the PIB
+     * session (no shared counter to coordinate parallel forks).
+     *
+     * @param list<array{name: string, sort_runs: list<SortRunReader>}> $jobs
+     * @return array<string, int>
+     */
+    private function mergeIntegerIndexesSequential(
+        string $main_path,
+        ?string $counter_path,
+        array $jobs,
+    ): array {
+        $writer = $counter_path !== null
+            ? SqliteRawWriter::openForPatchInSession($main_path, $counter_path)
+            : SqliteRawWriter::openForPatch($main_path);
+        $empty_leaf = self::emptyIndexLeafPage($writer->page_size);
+        $populated = [];
+        foreach ($jobs as $job) {
+            $rootpage = $writer->appendPage($empty_leaf);
+            $merger = new IntegerIndexMerger($writer, $job['sort_runs']);
             try {
-                $merger->merge($rootpage['rootpage']);
+                $merger->merge($rootpage);
+                $populated[$job['name']] = $rootpage;
             } catch (OverflowNotSupportedException $_e) {
-                // Should not happen for our 3-int payloads; if it
-                // does, leave SQLite's CREATE INDEX (run by
-                // createIndexes after this) build the index in the
-                // normal way.
                 continue;
             }
-            $writer->close($main_path);
         }
+        $writer->close($main_path);
+        return $populated;
+    }
+
+    /**
+     * How many partitions to split the largest integer index into
+     * when the inner-partition path is enabled. Default off
+     * (`= 1` ↔ no partitioning); `RELI_L_PARTITION_COUNT=4` etc.
+     * lights it. Only kicks in for the partition-eligible (largest)
+     * index; the smaller integer indexes remain a single sub-fork
+     * each — they finish quickly enough that splitting them costs
+     * more in fork + sampling overhead than it saves.
+     */
+    private static function lPartitionCount(): int
+    {
+        $env = getenv('RELI_L_PARTITION_COUNT');
+        if (is_string($env) && ctype_digit($env)) {
+            return max(1, (int)$env);
+        }
+        return 1;
+    }
+
+    /**
+     * Per-index parallel integer-index merge. One fork per job,
+     * each running a session-mode writer that claims pgnos from
+     * the same shared counter as the orchestrator's other cohort
+     * processes (PIB workers, when applicable). Children
+     * communicate their claimed rootpage back to the parent via
+     * a 4-byte big-endian temp file — small, no PHP serialise
+     * overhead.
+     *
+     * @param list<array{name: string, sort_runs: list<SortRunReader>}> $jobs
+     * @return array<string, int>
+     */
+    private function mergeIntegerIndexesParallel(
+        string $main_path,
+        string $counter_path,
+        array $jobs,
+    ): array {
+        // If inner-partition is enabled, identify the largest job
+        // by total sort-run row count and route just that one
+        // through the partitioned path. The other jobs stay one-
+        // sub-sidecar-per-job because they're small enough that
+        // the per-partition fork + sampling + assembly overhead
+        // would exceed the savings.
+        $partition_count = self::lPartitionCount();
+        $partition_target_idx = -1;
+        if ($partition_count > 1) {
+            $max_rows = 0;
+            foreach ($jobs as $i => $job) {
+                $total = 0;
+                foreach ($job['sort_runs'] as $run) {
+                    $total += $run->count();
+                }
+                if ($total > $max_rows) {
+                    $max_rows = $total;
+                    $partition_target_idx = $i;
+                }
+            }
+        }
+
+        /** @var list<array{int, int, string}> $pids [pid, job_index, job_name] */
+        $pids = [];
+        $result_paths = [];
+        foreach ($jobs as $i => $job) {
+            $result_paths[$i] = $main_path . '.l_sub_' . $i;
+            @unlink($result_paths[$i]);
+            $pid = pcntl_fork();
+            if ($pid === -1) {
+                foreach ($pids as [$running_pid, $_idx, $_name]) {
+                    posix_kill($running_pid, SIGTERM);
+                    pcntl_waitpid($running_pid, $_status);
+                }
+                foreach ($result_paths as $rp) {
+                    @unlink($rp);
+                }
+                throw new \RuntimeException('L sub-sidecar fork failed');
+            }
+            if ($pid === 0) {
+                $exit_code = 0;
+                try {
+                    if ($i === $partition_target_idx && $partition_count > 1) {
+                        $rootpage = $this->mergeOneIndexPartitioned(
+                            $main_path,
+                            $counter_path,
+                            $job,
+                            $partition_count,
+                        );
+                    } else {
+                        $rootpage = $this->mergeOneIndex(
+                            $main_path,
+                            $counter_path,
+                            $job,
+                        );
+                    }
+                    if ($rootpage !== null) {
+                        file_put_contents($result_paths[$i], pack('N', $rootpage));
+                    }
+                } catch (\Throwable $e) {
+                    fwrite(STDERR, "L sub-sidecar {$job['name']}: " . $e->getMessage() . "\n");
+                    $exit_code = 1;
+                }
+                exit($exit_code);
+            }
+            $pids[] = [$pid, $i, $job['name']];
+        }
+
+        $populated = [];
+        $any_failure = false;
+        foreach ($pids as [$pid, $i, $name]) {
+            pcntl_waitpid($pid, $status);
+            $code = pcntl_wifexited($status) ? pcntl_wexitstatus($status) : 1;
+            if ($code !== 0) {
+                $any_failure = true;
+                @unlink($result_paths[$i]);
+                continue;
+            }
+            $data = file_exists($result_paths[$i])
+                ? (string)file_get_contents($result_paths[$i])
+                : '';
+            @unlink($result_paths[$i]);
+            if (strlen($data) >= 4) {
+                $unpacked = unpack('N', substr($data, 0, 4));
+                if ($unpacked !== false) {
+                    $populated[$name] = (int)$unpacked[1];
+                }
+            }
+            // Empty $data means the merger threw OverflowNotSupported
+            // and the caller's fallback path will rebuild the index.
+        }
+
+        if ($any_failure) {
+            throw new \RuntimeException('L sub-sidecar failed');
+        }
+
+        return $populated;
+    }
+
+    /**
+     * Build one integer index in-process. Returns the claimed
+     * rootpage, or null if the merger bailed (overflow / no data).
+     *
+     * @param array{name: string, sort_runs: list<SortRunReader>} $job
+     */
+    private function mergeOneIndex(
+        string $main_path,
+        string $counter_path,
+        array $job,
+    ): ?int {
+        $writer = SqliteRawWriter::openForPatchInSession($main_path, $counter_path);
+        $empty_leaf = self::emptyIndexLeafPage($writer->page_size);
+        $rootpage = $writer->appendPage($empty_leaf);
+        $merger = new IntegerIndexMerger($writer, $job['sort_runs']);
+        $populated = null;
+        try {
+            $merger->merge($rootpage);
+            $populated = $rootpage;
+        } catch (OverflowNotSupportedException $_e) {
+            // Fall through; the placeholder leaf at $rootpage is
+            // harmless (no sqlite_master entry refers to it).
+        }
+        $writer->close($main_path);
+        return $populated;
+    }
+
+    /**
+     * Build one integer index by partitioning the (key, rowid)
+     * stream across `$partition_count` forked workers and
+     * assembling the resulting leaf list into a single interior
+     * tree at the end.
+     *
+     * Phases:
+     *   1. Sample 64 keys from each sort run, combine, sort, pick
+     *      the (`partition_count - 1`) quantile boundaries — the
+     *      key range each partition will own.
+     *   2. Fork one worker per partition; each builds its leaves
+     *      via {@see IntegerIndexMerger::extractLeavesForRange}.
+     *      Workers share the same SharedPgnoCounter so their
+     *      claimed leaf pgnos never collide. Each emits a
+     *      serialised `{leaves, rightmost_pgno}` payload to a
+     *      temp file.
+     *   3. Wait, collect leaves from every partition into one
+     *      ordered list (concatenation works because the key-
+     *      range boundaries make partitions key-disjoint and
+     *      already in global order).
+     *   4. Claim a fresh rootpage and call
+     *      {@see IntegerIndexMerger::assembleInteriorTree} to
+     *      build the interior level on top of the merged leaves.
+     *
+     * Theoretical wall-clock for the single index: max(per-
+     * partition merge times) instead of sum. The smaller integer
+     * indexes don't get this treatment — the gain wouldn't pay
+     * for the per-fork overhead at their size.
+     *
+     * @param array{name: string, sort_runs: list<SortRunReader>} $job
+     */
+    private function mergeOneIndexPartitioned(
+        string $main_path,
+        string $counter_path,
+        array $job,
+        int $partition_count,
+    ): ?int {
+        // Phase 1: sample boundaries.
+        /** @var list<int> $samples */
+        $samples = [];
+        foreach ($job['sort_runs'] as $run) {
+            foreach ($run->sampleKeys(64) as $k) {
+                $samples[] = $k;
+            }
+        }
+        if (count($samples) < $partition_count) {
+            // Not enough data to partition meaningfully — fall
+            // back to single-process merge.
+            return $this->mergeOneIndex($main_path, $counter_path, $job);
+        }
+        sort($samples);
+        $boundaries = [];
+        $samples_count = count($samples);
+        for ($p = 1; $p < $partition_count; $p++) {
+            $idx = (int)floor($samples_count * $p / $partition_count);
+            if ($idx >= $samples_count) {
+                $idx = $samples_count - 1;
+            }
+            $boundaries[] = $samples[$idx];
+        }
+        // Deduplicate adjacent boundaries — if the dataset has
+        // fewer distinct keys than partitions, some boundaries
+        // collapse and the affected partition would be empty.
+        $boundaries = array_values(array_unique($boundaries));
+        $effective_partition_count = count($boundaries) + 1;
+        if ($effective_partition_count < 2) {
+            return $this->mergeOneIndex($main_path, $counter_path, $job);
+        }
+
+        // Phase 2: fork partition workers.
+        /** @var array<int, int> $part_pids partition_idx => pid */
+        $part_pids = [];
+        $partition_paths = [];
+        for ($p = 0; $p < $effective_partition_count; $p++) {
+            $partition_paths[$p] = $main_path . '.l_part_' . $job['name'] . '_' . $p;
+            @unlink($partition_paths[$p]);
+            $low = $p === 0 ? null : $boundaries[$p - 1];
+            $high = $p === $effective_partition_count - 1 ? null : $boundaries[$p];
+            $is_global_rightmost = $p === $effective_partition_count - 1;
+            $pid = pcntl_fork();
+            if ($pid === -1) {
+                foreach ($part_pids as $running_pid) {
+                    posix_kill($running_pid, SIGTERM);
+                    pcntl_waitpid($running_pid, $_status);
+                }
+                foreach ($partition_paths as $pp) {
+                    @unlink($pp);
+                }
+                throw new \RuntimeException('L partition fork failed');
+            }
+            if ($pid === 0) {
+                $exit_code = 0;
+                try {
+                    $writer = SqliteRawWriter::openForPatchInSession($main_path, $counter_path);
+                    $merger = new IntegerIndexMerger($writer, $job['sort_runs']);
+                    $result = $merger->extractLeavesForRange($low, $high, $is_global_rightmost);
+                    $writer->close($main_path);
+                    file_put_contents($partition_paths[$p], serialize($result));
+                } catch (\Throwable $e) {
+                    fwrite(
+                        STDERR,
+                        "L partition {$job['name']}#{$p}: " . $e->getMessage() . "\n",
+                    );
+                    $exit_code = 1;
+                }
+                exit($exit_code);
+            }
+            $part_pids[$p] = $pid;
+        }
+
+        // Phase 3: collect leaves in partition order.
+        /** @var list<array{pgno: int, divider_payload: string}> $all_leaves */
+        $all_leaves = [];
+        $rightmost_pgno = null;
+        $any_failure = false;
+        for ($p = 0; $p < $effective_partition_count; $p++) {
+            pcntl_waitpid($part_pids[$p], $status);
+            $code = pcntl_wifexited($status) ? pcntl_wexitstatus($status) : 1;
+            if ($code !== 0) {
+                $any_failure = true;
+                @unlink($partition_paths[$p]);
+                continue;
+            }
+            $payload = file_exists($partition_paths[$p])
+                ? (string)file_get_contents($partition_paths[$p])
+                : '';
+            @unlink($partition_paths[$p]);
+            if ($payload === '') {
+                continue;
+            }
+            /** @var array{leaves: list<array{pgno: int, divider_payload: string}>, rightmost_pgno: ?int} $result */
+            $result = unserialize($payload);
+            foreach ($result['leaves'] as $leaf) {
+                $all_leaves[] = $leaf;
+            }
+            if ($result['rightmost_pgno'] !== null) {
+                $rightmost_pgno = $result['rightmost_pgno'];
+            }
+        }
+        if ($any_failure) {
+            throw new \RuntimeException('L partition worker failed for ' . $job['name']);
+        }
+
+        // Phase 4: claim rootpage, assemble interior tree.
+        $writer = SqliteRawWriter::openForPatchInSession($main_path, $counter_path);
+        $empty_leaf = self::emptyIndexLeafPage($writer->page_size);
+        $rootpage = $writer->appendPage($empty_leaf);
+        // Empty merger (no sort runs) — assembleInteriorTree only
+        // touches the writer.
+        $merger = new IntegerIndexMerger($writer, []);
+        $merger->assembleInteriorTree($all_leaves, $rightmost_pgno, $rootpage);
+        $writer->close($main_path);
+        return $rootpage;
+    }
+
+    /**
+     * One-time-built empty-index-leaf page (type 0x0a, 0 cells).
+     * Used as the placeholder bytes for `appendPage` when claiming
+     * a fresh rootpage — the merger immediately overwrites it via
+     * `writePage` so the placeholder bytes never end up on disk.
+     */
+    private static function emptyIndexLeafPage(int $page_size): string
+    {
+        $cc = $page_size === 65536 ? 0 : $page_size;
+        return chr(SqliteRawFormat::BTREE_LEAF_INDEX)
+            . pack('n', 0)
+            . pack('n', 0)
+            . pack('n', $cc)
+            . "\x00"
+            . str_repeat("\x00", $page_size - 8);
     }
 
     /**
