@@ -704,7 +704,11 @@ shape reli's report flagged most prominently for that target.
   length** — `OrderLine::$sku = sprintf('SKU-%05d', $j)` produces
   a 9-char string but lands the resulting `zend_string` in a
   320 B bin slot (header + content occupies ~34 B, the remaining
-  ~287 B is unused tail). Empirically reproduced on PHP 8.4.19
+  ~287 B is unused tail). The `sprintf` line is in **this survey's
+  hand-written fixture, not in Doctrine ORM**: `doctrine-entities`
+  is just a Doctrine-shaped synthetic, and the SKU formatting is
+  the surveyor's choice. The PHP-runtime behaviour underneath
+  *is* general, however — empirically reproduced on PHP 8.4.19
   with 7 allocation patterns × 200 strings each:
 
   | pattern                                | len  | actual bin     |
@@ -722,12 +726,27 @@ shape reli's report flagged most prominently for that target.
   all land in the natural bin. Cause is almost certainly that
   `spprintf` allocates through `smart_str` with a non-trivial
   initial buffer that becomes the backing capacity of the
-  resulting `zend_string`. Cost in doctrine-entities:
+  resulting `zend_string`. Cost on this synthetic:
   `15 000 × ~287 B ≈ 4.2 MB` of effectively unused slot tail
-  for SKU strings alone — replacing the `sprintf` with
-  `'SKU-' . str_pad(...)` would drop that to zero. This is the
-  loudest concrete instance of the OversizedTail category
-  proposed under G1.
+  for SKU strings alone; replacing the `sprintf` with
+  `'SKU-' . str_pad(...)` drops that to zero on the same
+  fixture.
+
+  **How often this matters in real code is an open question.**
+  This survey did not catch a sprintf-driven OversizedTail in
+  the four real GitHub apps (laravel, symfony-demo, composer,
+  phpstan), only in the surveyor's fixture. The pattern only
+  manifests when the result is *long-lived* (retained for the
+  process lifetime); short-lived sprintf in log lines, error
+  messages, and per-request display strings is freed back to
+  the bin and never shows up in a steady-state snapshot.
+  The places to look for real instances are: ID-dictionary or
+  cache-key pre-generation, permanent in-process lookup tables,
+  formatted-name caches in long-lived workers. A future reli
+  with the OversizedTail column from G1 would surface them
+  without prior knowledge of where the sprintf calls live;
+  pending that, this is the loudest *concrete* example of the
+  OversizedTail category the survey produced.
 
 ### WordPress (bootstrapped to wp_die, ~3.6 MB)
 
