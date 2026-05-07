@@ -203,29 +203,43 @@ and matches the framing in the fix commit
 ("bin walker total deliberately not used here").
 
 **What the new "% analyzed" actually means.** With the fix, "% analyzed"
-is `attributed user-visible bytes / memory_get_usage(false)`. Numbers
-like doctrine-entities's 46.4 % look low at first read but are not a
-coverage failure — they reflect the structural gap between
-"user-visible byte size" (numerator) and "ZendMM slot bytes the user
-process actually paid for" (which approximates the denominator).
-For doctrine-entities the gap of 6.18 MB breaks down approximately:
+is `attributed user-visible bytes / memory_get_usage(false)`. Both
+sides of that fraction are at user-byte granularity — `(false)`
+returns the per-allocation user-byte sum, *not* the ZendMM slot-byte
+sum (`(true)` is the OS-chunk-rounded view, which differs from
+`(false)` only by chunk-end slack: 12.00 MB vs 11.52 MB on
+doctrine-entities). So the gap between numerator and denominator
+is not bin-slot rounding — it's literally user-byte allocations
+that ZendMM handed out and that reli's pointer tracer did not
+label.
 
-| component (doctrine-entities) | est. bytes | source |
-| ----------------------------- | ---------- | ------ |
-| bin-slot rounding (`OrderLine` 120 B → 320 B bin) | ~3.0 MB | bin 16 × 15,006 |
-| ZendString small-slot rounding (~24-40 B → 128 B) | ~1.6 MB | bin 11 × 20,000 |
-| internal-class unmodeled state (DateTimeImmutable's `php_date_obj`/`timelib_time`) | ~500 KB | bin 15 × 5,001 |
-| hash-bucket capacity headroom + other slot rounding | ~1 MB | rest |
+For doctrine-entities that gap is 6.18 MB out of 11.52 MB —
+**~54 % of the live user-byte heap that the pointer tracer doesn't
+visit.** Slot-count corroboration: the bin walker enumerates
+70,736 small slots, while reli's typed entries (ZendObject 25,100
+\+ ZendString 20,364 + ZendArray 10,111 + ZendArrayTable 5,111
+\+ ZendArrayTableOverhead 5,106 = 65,792) cover ~93 % of the
+slots; ~5,000 small slots stay un-typed.
 
-So the canonical "is the gap reli failing to model internal classes?"
-hypothesis explains roughly 8 % of doctrine-entities's gap — the
-DateTimeImmutable component. The other ~92 % is bin-slot rounding,
-which is structural to ZendMM and not reli's to fix. A future
-"unaccounted breakdown" feature (G5) would be most useful if it
-splits the gap into (a) bin-slot rounding waste, (b) unmodeled
-internal-class state, (c) anything else, so that the genuine
-reli-coverage portion (b) can be tracked separately from the
-allocator-structural portion (a).
+Plausible suspects (not verified — would need instrumentation):
+
+- internal-class additional struct beyond the bare `ZendObject`
+  header — for `DateTimeImmutable` that's `php_date_obj`'s
+  embedded `timelib_time` plus its timezone-string allocations,
+  one set per instance × 5 000 instances
+- the bytes behind dynamic-property `HashTable`s when reli walks
+  the parent object but not the spilled bag
+- internal-engine bookkeeping that user code "paid for" through
+  ZendMM but doesn't have an obvious user-visible owner
+  (`zend_string` interns spawned by extensions, etc.)
+
+A future "unaccounted breakdown" feature (see G5) would
+ideally walk the typed slots and the un-typed slots side by
+side and report the difference per bin and per likely owner,
+so this gap can be split into "missing internal-class layouts"
+(reli should fix) vs "engine-internal allocations with no
+user-visible owner" (reli probably can't, but should at least
+label).
 
 ### G2. "% analyzed" can exceed 100 %
 
