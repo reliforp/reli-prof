@@ -37,6 +37,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\PhpStreamTempDataMe
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\PhpUserstreamDataMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendResourceMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringSlotTailMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ResourceContext;
 use Reli\Lib\Process\Pointer\Pointer;
@@ -248,7 +249,17 @@ final class EmitResourceJob implements CollectorJob
             $str = $ctx->dereferencer->deref($string_pointer);
             $memory_location = ZendStringMemoryLocation::fromZendString($str, $ctx->dereferencer);
             $ctx->memory_locations->add($memory_location);
-            $string_context = $ctx->context_pools->string_context_pool->getContextForLocation($memory_location);
+            $slot_tail = ZendStringSlotTailMemoryLocation::tryFromStringInChunks(
+                $memory_location,
+                $ctx->chunk_memory_locations,
+            );
+            if ($slot_tail !== null) {
+                $ctx->memory_locations->add($slot_tail);
+            }
+            $string_context = $ctx->context_pools->string_context_pool->getContextForLocation(
+                $memory_location,
+                $slot_tail,
+            );
             $resource_context->add('stream_memory_data', $string_context);
         } else {
             $cached = $ctx->context_pools->string_context_pool->getContextByAddress($data_address);
@@ -368,7 +379,17 @@ final class EmitResourceJob implements CollectorJob
             $str = $ctx->dereferencer->deref($string_pointer);
             $memory_location = ZendStringMemoryLocation::fromZendString($str, $ctx->dereferencer);
             $ctx->memory_locations->add($memory_location);
-            $string_context = $ctx->context_pools->string_context_pool->getContextForLocation($memory_location);
+            $slot_tail = ZendStringSlotTailMemoryLocation::tryFromStringInChunks(
+                $memory_location,
+                $ctx->chunk_memory_locations,
+            );
+            if ($slot_tail !== null) {
+                $ctx->memory_locations->add($slot_tail);
+            }
+            $string_context = $ctx->context_pools->string_context_pool->getContextForLocation(
+                $memory_location,
+                $slot_tail,
+            );
             $resource_context->add('stream_temp_name', $string_context);
         } else {
             $cached = $ctx->context_pools->string_context_pool->getContextByAddress($temp_name_address);

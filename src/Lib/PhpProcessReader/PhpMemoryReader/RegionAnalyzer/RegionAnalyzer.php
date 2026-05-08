@@ -38,6 +38,43 @@ final class RegionAnalyzer
     ) {
     }
 
+    /**
+     * Decide whether a heap-resident location should contribute to
+     * `possible_allocation_overhead_total` via
+     * {@see ZendMmChunkMemoryLocation::getOverhead}.
+     *
+     * `ZendArrayTable` and `ZendString` both publish a dedicated
+     * "reserved-but-unused tail" location of their own
+     * ({@see ZendArrayTableOverheadMemoryLocation},
+     * {@see ZendStringSlotTailMemoryLocation}) that already covers
+     * the slot beyond `location.size`. Calling getOverhead for those
+     * types would book the same bytes a second time as generic ZendMM
+     * slot-rounding overhead.
+     *
+     * The slot-tail placeholder itself must also be skipped:
+     * `getOverhead` assumes the location's address is the start of an
+     * allocation slot and computes `bin_size − location.size`. A
+     * placeholder sitting at `base + len + 24` (mid-slot) does not
+     * satisfy that precondition, and the result would be garbage
+     * `bin_size − slot_tail.size` bytes attributed to the next slot.
+     * The array-overhead case avoids the same trap by special-casing
+     * `ZendArrayTableOverheadMemoryLocation` inside
+     * `ZendMmChunkMemoryLocation::getOverhead`; strings don't need
+     * that because the slot tail already captures
+     * `bin_size − (len + 24)` exactly, with no further rounding layer
+     * to compute.
+     *
+     * Pulled out of `analyze()` so the rule is unit-testable without
+     * standing up a real chunk and so the production class
+     * `ZendMmChunkMemoryLocation` can stay `final`.
+     */
+    public static function shouldComputeGenericChunkOverhead(MemoryLocation $memory_location): bool
+    {
+        return !$memory_location instanceof ZendArrayTableMemoryLocation
+            && !$memory_location instanceof ZendStringMemoryLocation
+            && !$memory_location instanceof ZendStringSlotTailMemoryLocation;
+    }
+
     public function analyze(MemoryLocations $memory_locations): RegionAnalyzerResult
     {
         $heap_memory_total = 0;
@@ -101,34 +138,7 @@ final class RegionAnalyzer
                 } else {
                     $heap_memory_usage += $memory_location->size;
                     assert($chunk instanceof ZendMmChunkMemoryLocation);
-                    // ZendArrayTable and ZendString both publish a
-                    // dedicated "reserved-but-unused tail" location of
-                    // their own (ZendArrayTableOverheadMemoryLocation /
-                    // ZendStringSlotTailMemoryLocation) that already
-                    // covers the slot beyond location.size. Calling
-                    // getOverhead here for those types would book the
-                    // same bytes a second time as generic ZendMM
-                    // slot-rounding overhead.
-                    //
-                    // The slot-tail placeholder itself must also be
-                    // skipped: getOverhead assumes the location's
-                    // address is the start of an allocation slot and
-                    // computes (bin_size − location.size). A placeholder
-                    // sitting at base+len+24 (mid-slot) does not satisfy
-                    // that precondition, and the result would be
-                    // garbage `bin_size − slot_tail.size` bytes
-                    // attributed to the next slot. The array-overhead
-                    // case avoids the same trap by special-casing
-                    // ZendArrayTableOverheadMemoryLocation in
-                    // ZendMmChunkMemoryLocation::getOverhead — strings
-                    // don't need that because the slot tail already
-                    // captures `bin_size − (len + 24)` exactly, with no
-                    // further rounding layer to compute.
-                    if (
-                        !$memory_location instanceof ZendArrayTableMemoryLocation
-                        && !$memory_location instanceof ZendStringMemoryLocation
-                        && !$memory_location instanceof ZendStringSlotTailMemoryLocation
-                    ) {
+                    if (self::shouldComputeGenericChunkOverhead($memory_location)) {
                         $overhead = $chunk->getOverhead($memory_location);
                         if (!is_null($overhead)) {
                             $possible_allocation_overhead_total += $overhead->size;

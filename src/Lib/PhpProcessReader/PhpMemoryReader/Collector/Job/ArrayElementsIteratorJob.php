@@ -20,6 +20,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorJob;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\JobQueue;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringSlotTailMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArrayElementContext;
 use Reli\Lib\Process\Pointer\Pointer;
 
@@ -80,7 +81,17 @@ final class ArrayElementsIteratorJob implements CollectorJob
                     $zend_string = $ctx->dereferencer->deref($key);
                     $memory_location = ZendStringMemoryLocation::fromZendString($zend_string, $ctx->dereferencer);
                     $ctx->memory_locations->add($memory_location);
-                    $key_context = $ctx->context_pools->string_context_pool->getContextForLocation($memory_location);
+                    $slot_tail = ZendStringSlotTailMemoryLocation::tryFromStringInChunks(
+                        $memory_location,
+                        $ctx->chunk_memory_locations,
+                    );
+                    if ($slot_tail !== null) {
+                        $ctx->memory_locations->add($slot_tail);
+                    }
+                    $key_context = $ctx->context_pools->string_context_pool->getContextForLocation(
+                        $memory_location,
+                        $slot_tail,
+                    );
                     $element_context->add('key', $key_context);
                     $key_string = $zend_string->toString($ctx->dereferencer);
                 } else {

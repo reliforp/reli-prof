@@ -13,11 +13,10 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Reli\BaseTestCase;
-use Reli\Lib\Process\MemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendMmChunkMemoryLocation;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendMmOverheadMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayTableMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringSlotTailMemoryLocation;
@@ -58,19 +57,27 @@ class RegionAnalyzerTest extends BaseTestCase
         $this->assertSame(5, $arr['possible_string_overhead_total']);
     }
 
-    public function testSlotTailPlaceholderDoesNotInflateAllocationOverhead(): void
+    /**
+     * Regression for the review note on PR #785: the slot-tail
+     * placeholder must be skipped from
+     * {@see \Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendMmChunkMemoryLocation::getOverhead}
+     * during {@see RegionAnalyzer::analyze}, otherwise the placeholder's
+     * mid-slot address violates getOverhead's "address is at the start
+     * of an allocation slot" precondition and contributes a garbage
+     * `bin_size − slot_tail.size` overhead booked against the next
+     * slot.
+     *
+     * The skip rule lives in
+     * {@see RegionAnalyzer::shouldComputeGenericChunkOverhead} so this
+     * test pins it directly. The chunk is left `final` in production
+     * code; pinning the rule by stubbing the chunk's getOverhead would
+     * have required de-final'ing the production class for test
+     * convenience, which is the wrong trade.
+     *
+     * @return list<array{0: \Reli\Lib\Process\MemoryLocation, 1: bool, 2: string}>
+     */
+    public static function shouldComputeGenericChunkOverheadCases(): array
     {
-        // Regression for the review note on PR #785: without the
-        // skip-list entry for ZendStringSlotTailMemoryLocation, the
-        // generic ZendMmChunkMemoryLocation::getOverhead path treats
-        // the placeholder's address as the start of an allocation slot
-        // and returns garbage `bin_size − slot_tail.size` bytes
-        // attributed to the next slot — i.e. the placeholder INFLATES
-        // possible_allocation_overhead_total instead of attributing
-        // those bytes to the string. Drive the chunk dispatch with a
-        // chunk-shaped test double that always reports a fixed
-        // overhead so we can prove the placeholder's bytes never reach
-        // the counter.
         $string = new ZendStringMemoryLocation(
             address: 0x1000,
             size: 27,
@@ -78,60 +85,52 @@ class RegionAnalyzerTest extends BaseTestCase
             type_info: 0,
             value: 'hi!',
         );
-        $slot_tail = new ZendStringSlotTailMemoryLocation(
-            address: 0x1000 + 27,
-            size: 5,
-            used_location: $string,
+        $object = new ZendObjectMemoryLocation(
+            address: 0x2000,
+            size: 56,
+            refcount: 1,
+            type_info: 0,
+            class_name: 'stdClass',
         );
-        $chunk = new class (0x0000, 0x4000) extends ZendMmChunkMemoryLocation {
-            public int $get_overhead_calls = 0;
-            #[\Override]
-            public function getOverhead(MemoryLocation $memory_location): ?ZendMmOverheadMemoryLocation
-            {
-                $this->get_overhead_calls++;
-                // Pretend any location lives in a 32-byte bin slot
-                // ending at base+32 — same as what a real chunk would
-                // return for an overlapping slot.
-                return new ZendMmOverheadMemoryLocation(
-                    $memory_location->address + $memory_location->size,
-                    32 - $memory_location->size,
-                );
-            }
-            #[\Override]
-            public function contains(MemoryLocation $memory_location): bool
-            {
-                return $memory_location->address >= $this->address
-                    && $memory_location->address < $this->address + $this->size;
-            }
-        };
-        $chunks = new MemoryLocations();
-        $chunks->add($chunk);
+        return [
+            'ZendString skipped (publishes its own slot tail)' => [
+                $string,
+                false,
+                'string already publishes a ZendStringSlotTail covering the slot beyond len+24',
+            ],
+            'ZendStringSlotTail skipped (would be mid-slot for getOverhead)' => [
+                new ZendStringSlotTailMemoryLocation(
+                    address: 0x1000 + 27,
+                    size: 5,
+                    used_location: $string,
+                ),
+                false,
+                'placeholder address is mid-slot; getOverhead would attribute garbage to the next slot',
+            ],
+            'ZendArrayTable skipped (parallel to the string case)' => [
+                new ZendArrayTableMemoryLocation(0x3000, 64, false),
+                false,
+                'array publishes its own ZendArrayTableOverhead; getOverhead is special-cased there',
+            ],
+            'ZendObject computed (regular type, no dedicated tail location)' => [
+                $object,
+                true,
+                'plain heap-resident object goes through generic slot-rounding overhead',
+            ],
+        ];
+    }
 
-        $locations = new MemoryLocations();
-        $locations->add($string);
-        $locations->add($slot_tail);
-
-        $analyzer = new RegionAnalyzer(
-            $chunks,
-            new MemoryLocations(),
-            new MemoryLocations(),
-            new MemoryLocations(),
-        );
-        $result = $analyzer->analyze($locations);
-        $arr = $result->summary->toArray();
-
-        // The string is in the skip-list, so no getOverhead call for
-        // it. The slot-tail must also be skipped, so the only
-        // surviving contribution to allocation_overhead is zero — the
-        // counter must NOT include the bogus `32 − 5 = 27` bytes that
-        // the test-double getOverhead would have returned.
+    #[DataProvider('shouldComputeGenericChunkOverheadCases')]
+    public function testShouldComputeGenericChunkOverhead(
+        \Reli\Lib\Process\MemoryLocation $location,
+        bool $expected,
+        string $why,
+    ): void {
         $this->assertSame(
-            0,
-            $arr['possible_allocation_overhead_total'],
-            'slot-tail placeholder must be skipped from generic getOverhead — review of PR #785',
+            $expected,
+            RegionAnalyzer::shouldComputeGenericChunkOverhead($location),
+            $why,
         );
-        // The slot-tail is still counted in possible_string_overhead_total.
-        $this->assertSame(5, $arr['possible_string_overhead_total']);
     }
 
     public function testFilterDropsReservedCapacityWhenConcreteOverlaps(): void

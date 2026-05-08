@@ -37,6 +37,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayMemoryLoca
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayTableMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayTableOverheadMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringSlotTailMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ObjectContext;
 use Reli\Lib\Process\Pointer\Pointer;
 
@@ -217,6 +218,14 @@ final class PdoHelper
                         if (!$ctx->memory_locations->has($name_location->address)) {
                             $ctx->memory_locations->add($name_location);
                             $object_context->addLocation($name_location);
+                            $name_slot_tail = ZendStringSlotTailMemoryLocation::tryFromStringInChunks(
+                                $name_location,
+                                $ctx->chunk_memory_locations,
+                            );
+                            if ($name_slot_tail !== null) {
+                                $ctx->memory_locations->add($name_slot_tail);
+                                $object_context->addLocation($name_slot_tail);
+                            }
                         }
                     }
                 } catch (\Throwable) {
