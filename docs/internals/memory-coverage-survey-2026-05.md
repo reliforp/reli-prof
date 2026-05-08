@@ -132,6 +132,106 @@ This also reframes G2 below: laravel's `105.8 % analyzed` isn't
 broken Overview accounting tipping into the >100 % regime on
 particular heap shapes.
 
+#### G1 follow-up: `allocation_overhead` is the direct mechanism
+
+After the headline-side fix landed (`fix(memory-report): make
+Overview Heap/% analyzed match the rest of the report`,
+0.13.x e1ae8c9..0238a04) the Overview line now derives from
+`SUM(memory_usage)` over the per-type breakdown — the same
+node-set everything below it uses — so the live-vs-offline
+disagreement and the >100% regime are gone from the user-visible
+output. But the underlying `zend_mm_heap_usage` /
+`heap_memory_analyzed_percentage` summary keys are still computed
+the old way and still disagree across paths; the fix only
+stopped the headline from advertising the disagreement.
+
+The mechanism, narrowed down to one term:
+
+- **live** (`MemoryCommand::buildSummary`) takes
+  `allocation_overhead = $sink->computeRegionSumsAndOverhead()['overhead']`
+  — a raw row-by-row sum over the binary location temp file with
+  no overlap suppression (the comment on
+  `BinaryContextTreeSink::computeRegionSumsAndOverhead` is
+  explicit about this).
+- **offline** (`MemoryDumpReader::buildSummary` →
+  `RegionsSummary::correctedToArray`) takes
+  `possible_allocation_overhead_total` from
+  `RegionAnalyzer::analyze()`, which feeds
+  `filterOverlappingLocations()` first and only calls
+  `$chunk->getOverhead()` for the survivors (with
+  `ZendArrayTableMemoryLocation` excluded outright at
+  `RegionAnalyzer.php:101`).
+
+Every other input to `zend_mm_heap_usage` (`chunk_usage`,
+`huge_usage`, `vm_stack_total`, `compiler_arena_total`) is
+identical across the two paths because both come from the same
+sink scan. The 4.56 MB doctrine-entities gap is entirely the
+overhead term.
+
+#### G1 follow-up: `zend_string` over-allocation breaks the
+`getOverhead = bin_size - location_size` model
+
+Independently of the live/offline overhead disagreement above, a
+subsequent investigation surfaced a `zend_string` shape that the
+overhead computation in `ZendMmChunkMemoryLocation::getOverhead`
+mis-attributes:
+
+- `ZendStringMemoryLocation::size = len + ZEND_STRING_HEADER_SIZE`
+  (`getSize()` at `ZendString.php:150-153`).
+- PHP, however, can allocate a `zend_string` with a buffer
+  capacity larger than `len + 1`. `zend_string_safe_alloc` and
+  rope/concatenation helpers reserve room for in-place growth
+  before the final length is known, and the surplus capacity
+  stays attached to the live string after the writer settles
+  on a shorter `len` than it asked for.
+- `getOverhead()` then computes `bin_size - location_size` and
+  classifies the **whole** `bin_size − (len + 24)` gap as
+  ZendMM slot-rounding overhead. In reality some of that gap is
+  a `zend_string` buffer that PHP intentionally reserved —
+  conceptually attributable to the string, not to ZendMM.
+
+Two consequences:
+
+1. The Type Breakdown's `ZendString` row understates the type's
+   real footprint by exactly the over-allocated capacity, and the
+   "Top Strings by Memory" ranking is biased against strings that
+   PHP grew through realloc-friendly call paths.
+2. `allocation_overhead` absorbs the over-allocated bytes and
+   ends up larger than the slot-rounding-only definition implies.
+   For the live path the bin walker exposes the slot size
+   directly so the discrepancy is bounded; for the offline path
+   `RegionAnalyzer` re-derives overhead through `getOverhead()`
+   and inherits the same misattribution. Both paths agree they
+   are wrong; they don't agree on *how* wrong because of the
+   filter-overlap difference above.
+
+Refinement direction (deferred to a separate PR):
+
+- Decide on the canonical "allocated bytes" for a `zend_string`.
+  Candidates:
+  - `len + ZEND_STRING_HEADER_SIZE` (current — capacity-blind).
+  - The bin slot the string occupies, minus a constant ZendMM
+    slot-rounding term computed from the bin class. Anything
+    beyond that is buffer reserved for the string.
+  - A direct read of the `val` buffer's allocated capacity if
+    the SAPI / runtime exposes it (e.g. via
+    `zend_string_capacity()` style probes; not currently
+    persisted in `zend_string` itself).
+- Split `ZendMmOverheadMemoryLocation` into two sub-types so the
+  report can distinguish "slot-rounding waste" from
+  "type-reserved capacity that didn't end up used", or extend
+  `ZendStringMemoryLocation` with a `reserved_capacity` field
+  and only return slot-rounding overhead from `getOverhead()`.
+- Reconcile `BinaryContextTreeSink::computeRegionSumsAndOverhead`
+  and `RegionAnalyzer::analyze` so live and offline produce the
+  same `allocation_overhead`; the natural fix is to make the
+  binary streaming path also dedup overlapping address ranges
+  rather than pull `RegionAnalyzer` toward the raw scan.
+- Confirm with a reproducer whether the same shape applies to
+  `ZendArrayTable` (its `getOverhead` skip at
+  `RegionAnalyzer.php:101` predates this work) or whether that
+  was an unrelated workaround.
+
 ### G2. "% analyzed" can exceed 100 %
 
 `laravel.live` reports `Heap: 24.68 MB (105.8% analyzed)`. The
