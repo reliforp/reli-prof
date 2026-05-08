@@ -303,6 +303,51 @@ implementation could ship just `OversizedTail` first (no
 threshold tuning needed for the line "natural bin"), bin-walker
 join cost permitting.
 
+**Refinement: ZendString slack is *certain* overhead, not
+"possible".** The three-column shape above was reasoned out
+from a ZendObject-shaped intuition (where we genuinely can't
+tell whether a slot's tail bytes are unused rounding or
+internal-class struct content we don't know how to read).
+ZendString is a different case — its layout is completely
+closed (`header (24) + len + 1`), so any byte beyond that in
+the slot **cannot** be content. Today's `RegionAnalyzer`
+accumulates a `possible_allocation_overhead_total` whose name
+reflects ZendObject-style uncertainty; for ZendString that
+"possible" qualifier is unwarranted, the slack is definitively
+overhead.
+
+So the right shape splits the per-type residue by whether the
+type has a closed layout:
+
+| type                          | residue is | how to count it |
+| ----------------------------- | ---------- | --------------- |
+| `ZendString`                  | certain overhead | promote to its own type label (e.g. `ZendStringSlackOverhead`) and **add to `analyzed_percentage` with full confidence** |
+| `ZendObject` (user class)     | certain overhead (`zend_object` header + properties_table is fully known) | ditto |
+| `ZendArray` + `ZendArrayTable`| certain overhead (header + bucket array sizes both computable) | ditto |
+| `ZendObject` (internal class) | could be unmodeled struct extension *or* overhead | keep under a `possible_*` line, *not* added to confident `analyzed_percentage` |
+
+For doctrine-entities with the ZendString refinement applied:
+
+```
+ZendString                   1.06 MB   (conceptual)
+ZendStringSlackOverhead      4.2 MB    (certain — sum to analyzed)
+ZendObject + ZendArray …     5.34 MB - 1.06 MB = 4.28 MB  (today's certain content)
+possible-overhead (residue)  ~700 KB   (DateTimeImmutable etc., approximate)
+                            -------
+                            ~10.3 MB   ≈ 11.52 MB memory_get_usage minus a small allocator-rounding gap
+```
+
+So `% analyzed` rises from 46.4 % to ~89 % once the
+`ZendString` slack is correctly accounted as the
+known-content-class overhead it is. The residual ~11 % is the
+honest "we don't know the struct layout for these instances"
+gap — much smaller and much more accurately framed.
+
+Implementation: same bin-walker × typed-node join as the
+three-column proposal, but for closed-layout types the join
+result feeds straight into `analyzed_percentage` instead of
+`possible_allocation_overhead_total`.
+
 The `--bin-detail` flag on `inspector:memory:report` already prints
 shape-detector results in `=== Per-bin Shape Detection ===` /
 `=== ZendMM Periodic Groups ===`, with an `orphan/reachable` split
