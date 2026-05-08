@@ -19,32 +19,43 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\LexborMrawChunkMemo
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\LexborUnicodeNormalizerBufferMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\LexborStateContext;
+use Reli\Lib\Process\MemoryLocation;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryReader\MemoryReaderException;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
 
 /**
- * Structural fingerprinter for the four ZEND_TLS lexbor variables that
- * ext/uri's PHP_RINIT_FUNCTION installs on PHP >= 8.5:
+ * Structural fingerprinter for the four lexbor state variables that
+ * ext/uri's `PHP_RINIT_FUNCTION(uri_parser_whatwg)` installs on PHP >= 8.5:
  *
- *   - lexbor_mraw      (8 KB initial mraw chunk → 12 KB LRUN)
- *   - lexbor_parser    (no extra heap on idle workers, scanned indirectly
- *                       through `lexbor_mraw`)
- *   - lexbor_idna      (24 KB BST pool, 4 KB BST cache list, 32 KB NFC
- *                       buffer)
+ *   - lexbor_mraw   (mraw memory pool — initial chunk plus a 512-entry
+ *                    BST and a 512-slot cache list)
+ *   - lexbor_parser (no extra heap on idle workers, scanned indirectly
+ *                    through `lexbor_mraw`)
+ *   - lexbor_idna   (Unicode NFC normalizer with a 32 KB scratch buffer)
  *
- * Symbols are file-static (`ZEND_TLS` → `static __thread`), so they are
- * not present in `.dynsym` on stripped distro PHP binaries. The scanner
- * walks the live thread's TLS image, looking for byte patterns that
- * uniquely identify each struct, then follows pointers into the ZendMM
- * heap to credit the four large emalloc allocations as typed
- * `MemoryLocation`s.
+ * The variables are declared `ZEND_TLS`. On NTS builds (the 99 % case
+ * for distro PHP CLI / FPM / mod_php) `ZEND_TLS` expands to plain
+ * `static`, so the variables live in the main binary's `.bss`. On ZTS
+ * builds it expands to `static __thread` and they live in PT_TLS. Both
+ * symbols are file-static, so they are not in `.dynsym`, and `.symtab`
+ * is gone on stripped distro builds — name-based lookup is unavailable.
+ *
+ * The scanner walks each memory range it is given at 8-byte alignment,
+ * looking for a `lxb_unicode_normalizer_t`-shaped window first (the
+ * normalizer has the strongest invariants), then a `lexbor_mraw_t`-
+ * shaped window with chained dereferences. The caller is responsible
+ * for choosing the right ranges:
+ *
+ *   NTS: the binary's `rw-p` VMA + the immediately following anon
+ *        mapping that holds the BSS tail.
+ *   ZTS: the live thread's PT_TLS image.
  *
  * Conservatively: when invariants don't hold, no credit is given. We
- * prefer an honest coverage_gap to a false credit that would dilute the
- * `analyzed_percentage` metric.
+ * prefer an honest `coverage_gap` to a false credit that would dilute
+ * the `analyzed_percentage` metric.
  */
-final class LexborTlsScanner
+final class LexborStateScanner
 {
     /**
      * `lxb_unicode_normalizer_init` always allocates 4096 buffer entries,
@@ -84,18 +95,18 @@ final class LexborTlsScanner
      *   off 56: tmp[4]       (4B)
      *   off 60: tmp_lenght   (1B; 0 at idle)
      *   off 61: quick_ccc    (1B; 0 at idle)
-     *   off 62: quick_type   (1B; 0x06 for NFC)
+     *   off 62: quick_type   (1B; 0x03 for NFC)
      *   off 63: pad          (1B)
      *   off 64: flush_cp     (8B size_t; 1024 at init)
      */
     private const NORMALIZER_WINDOW_BYTES = 72;
 
     /**
-     * `lexbor_mraw_init`'s default chunk size (8192 + meta_size of 32 →
-     * 8224, ZendMM rounds to 12 KB / 3 pages). We accept a band around
-     * the canonical value to absorb future minor lexbor revisions, but
-     * keep the lower bound > the BST pool size so the two cases don't
-     * collide.
+     * `lexbor_mraw_init` is called with `chunk_size = 8192`; the
+     * downstream `lexbor_mem_init` stores `chunk_size + meta_size`
+     * (a small constant) as `chunk_min_size`. We accept a band so we
+     * survive minor lexbor revisions, while keeping the lower bound
+     * far below the BST pool's 24 KiB so the two cases don't collide.
      */
     private const MRAW_CHUNK_MIN_SIZE_LOW = 4096;
     private const MRAW_CHUNK_MIN_SIZE_HIGH = 16384;
@@ -118,25 +129,14 @@ final class LexborTlsScanner
     private const BST_CACHE_SIZE = 512;
 
     /**
-     * The biggest typed location we credit in this pass. Sanity bound for
-     * caller-side memory budgeting; no logic in here actually depends on
-     * it.
-     */
-    public const MAX_CREDITED_BYTES =
-        12288    // mraw chunk
-        + 24576  // BST pool
-        + 4096   // BST cache list
-        + 32768; // normalizer buffer
-
-    /**
      * Cached `[r-xp]` ranges from the process memory map. Each entry is a
      * `[begin, end)` pair of inclusive-exclusive virtual addresses.
      *
      * @var list<array{0: int, 1: int}>
      */
-    private array $tls_text_segments = [];
+    private array $text_segments = [];
 
-    private bool $tls_text_segments_built = false;
+    private bool $text_segments_built = false;
 
     public function __construct(
         private MemoryReaderInterface $memory_reader,
@@ -148,20 +148,22 @@ final class LexborTlsScanner
      * emit MemoryLocations for matches.
      *
      * `$ranges` is a list of `[start_address, size_in_bytes]` pairs.
-     * Both NTS (BSS) and ZTS (PT_TLS image) targets are supported by the
-     * caller passing the appropriate ranges:
+     * The caller is responsible for passing the right ranges (see the
+     * class docblock for NTS / ZTS guidance).
      *
-     *   NTS: the binary's `rw-p` VMA, plus the immediately following anon
-     *        mapping if `.bss` extends past the file-backed end (the
-     *        loader uses anonymous pages for the BSS tail).
-     *   ZTS: the live thread's PT_TLS image (`tls_block_address`,
-     *        `tls_block_size`).
+     * `$known_zendmm_locations` is an optional list of `MemoryLocations`
+     * the scanner should treat as authoritative homes for emitted
+     * locations: a candidate buffer pointer that does not land inside
+     * one of these is rejected. Pass the chunk and huge-list location
+     * sets here to make sure spurious pointer chases can't credit a
+     * region the rest of the analyzer doesn't even know about.
      *
      * Returns the number of locations added. Any read or parse failure
      * is swallowed so the caller can run this opportunistically on every
      * collect without breaking the analyze pass.
      *
-     * @param list<array{int, int}> $ranges
+     * @param list<array{int, int}>  $ranges
+     * @param list<MemoryLocations>  $known_zendmm_locations
      */
     public function scan(
         int $pid,
@@ -169,6 +171,7 @@ final class LexborTlsScanner
         ProcessMemoryMap $process_memory_map,
         MemoryLocations $memory_locations,
         ?LexborStateContext $state_context = null,
+        array $known_zendmm_locations = [],
     ): int {
         $this->indexExecutableSegments($process_memory_map);
 
@@ -186,16 +189,17 @@ final class LexborTlsScanner
                 continue;
             }
             $emitted += $this->scanForNormalizer(
-                $pid,
                 $image,
                 $memory_locations,
                 $state_context,
+                $known_zendmm_locations,
             );
             $emitted += $this->scanForMraw(
                 $pid,
                 $image,
                 $memory_locations,
                 $state_context,
+                $known_zendmm_locations,
             );
         }
         return $emitted;
@@ -225,7 +229,7 @@ final class LexborTlsScanner
     /** Cache (begin, end) ranges of all `[r-xp]` (executable) memory areas. */
     private function indexExecutableSegments(ProcessMemoryMap $process_memory_map): void
     {
-        if ($this->tls_text_segments_built) {
+        if ($this->text_segments_built) {
             return;
         }
         $segments = [];
@@ -239,14 +243,14 @@ final class LexborTlsScanner
                 $segments[] = [$begin, $end];
             }
         }
-        $this->tls_text_segments = $segments;
-        $this->tls_text_segments_built = true;
+        $this->text_segments = $segments;
+        $this->text_segments_built = true;
     }
 
     /** True if `$address` falls inside any indexed `[r-xp]` segment. */
     private function isInExecutableSegment(int $address): bool
     {
-        foreach ($this->tls_text_segments as $range) {
+        foreach ($this->text_segments as $range) {
             if ($address >= $range[0] && $address < $range[1]) {
                 return true;
             }
@@ -255,31 +259,57 @@ final class LexborTlsScanner
     }
 
     /**
-     * Walk the TLS image at 8-byte alignment looking for the
+     * True if the candidate location is fully contained by at least one
+     * of the supplied authoritative ZendMM location sets, or if the
+     * caller passed no sets at all (back-compat: tests can opt out by
+     * passing `[]`).
+     *
+     * @param list<MemoryLocations> $known_zendmm_locations
+     */
+    private function isInsideKnownZendMm(
+        MemoryLocation $candidate,
+        array $known_zendmm_locations,
+    ): bool {
+        if ($known_zendmm_locations === []) {
+            return true;
+        }
+        foreach ($known_zendmm_locations as $set) {
+            if ($set->getContainingMemoryLocation($candidate) !== null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Walk the image at 8-byte alignment looking for the
      * `lxb_unicode_normalizer_t` fingerprint:
      *
      *   end - buf == 32768  AND
      *   p == buf            AND
      *   ican == buf         AND
-     *   quick_type == 0x06  AND
+     *   quick_type == 0x03  AND
      *   flush_cp == 1024    AND
      *   decomposition + composition both land in `[r-xp]`
      *
-     * On match: emit a `LexborUnicodeNormalizerBufferMemoryLocation` over
-     * `[buf, end)`.
+     * On match (and only when the resulting `[buf, end)` falls inside a
+     * known ZendMM chunk / huge alloc), emit a
+     * `LexborUnicodeNormalizerBufferMemoryLocation` over `[buf, end)`.
+     *
+     * @param list<MemoryLocations> $known_zendmm_locations
      */
     private function scanForNormalizer(
-        int $pid,
-        string $tls_image,
+        string $image,
         MemoryLocations $memory_locations,
         ?LexborStateContext $state_context,
+        array $known_zendmm_locations,
     ): int {
         $emitted = 0;
-        $size = strlen($tls_image);
+        $size = strlen($image);
         $end = $size - self::NORMALIZER_WINDOW_BYTES;
         for ($offset = 0; $offset <= $end; $offset += 8) {
             /** @var array{1: int, 2: int, 3: int, 4: int, 5: int, 6: int, 7: int}|false $u */
-            $u = unpack('P7', $tls_image, $offset);
+            $u = unpack('P7', $image, $offset);
             if ($u === false) {
                 break;
             }
@@ -311,19 +341,19 @@ final class LexborTlsScanner
             }
             // tmp_lenght / quick_ccc / quick_type live in the byte triplet at
             // offsets 60, 61, 62 (right after tmp[4]). All three are zero at
-            // idle except quick_type, which is fixed to 0x06 by the NFC init.
+            // idle except quick_type, which is fixed to 0x03 by the NFC init.
             if (
-                $tls_image[$offset + 60] !== "\x00"
-                || $tls_image[$offset + 61] !== "\x00"
+                $image[$offset + 60] !== "\x00"
+                || $image[$offset + 61] !== "\x00"
             ) {
                 continue;
             }
-            if (ord($tls_image[$offset + 62]) !== self::NORMALIZER_QUICK_TYPE_NFC) {
+            if (ord($image[$offset + 62]) !== self::NORMALIZER_QUICK_TYPE_NFC) {
                 continue;
             }
             // flush_cp is size_t (8B), set to 1024 by lxb_unicode_normalizer_init.
             /** @var array{1: int}|false $fc_u */
-            $fc_u = unpack('P', $tls_image, $offset + 64);
+            $fc_u = unpack('P', $image, $offset + 64);
             if ($fc_u === false) {
                 continue;
             }
@@ -340,43 +370,50 @@ final class LexborTlsScanner
                 $buf,
                 self::NORMALIZER_BUFFER_BYTES,
             );
+            if (!$this->isInsideKnownZendMm($location, $known_zendmm_locations)) {
+                continue;
+            }
             if (!$memory_locations->has($buf)) {
                 $memory_locations->add($location);
                 $state_context?->addLocation($location);
                 $emitted++;
             }
             // There is exactly one normalizer per worker; don't waste cycles
-            // on the rest of the TLS image.
+            // on the rest of the image.
             break;
         }
         return $emitted;
     }
 
     /**
-     * Walk the TLS image at 8-byte alignment looking for the
+     * Walk the image at 8-byte alignment looking for the
      * `lexbor_mraw_t` fingerprint, then dereference into the heap to
      * credit the data buffer of `mem.chunk` and the BST pool / cache.
      *
      * `lexbor_mraw_t` itself is small and not very distinctive on its
      * own, so the match is gated on the chained validation: every
      * pointer must dereference to plausible bytes (page-aligned data
-     * pointer, sane chunk_min_size, etc.). When any link fails we just
-     * move on; the `_t` is opaque enough that occasional false starts
-     * are cheap.
+     * pointer, sane chunk_min_size, etc.) and every credited buffer
+     * must land inside a known ZendMM chunk / huge allocation. When
+     * any link fails we just move on; the `_t` is opaque enough that
+     * occasional false starts are cheap.
+     *
+     * @param list<MemoryLocations> $known_zendmm_locations
      */
     private function scanForMraw(
         int $pid,
-        string $tls_image,
+        string $image,
         MemoryLocations $memory_locations,
         ?LexborStateContext $state_context,
+        array $known_zendmm_locations,
     ): int {
         $emitted = 0;
-        $size = strlen($tls_image);
+        $size = strlen($image);
         $window = 24; // sizeof(lexbor_mraw_t)
         $end = $size - $window;
         for ($offset = 0; $offset <= $end; $offset += 8) {
             /** @var array{1: int, 2: int, 3: int}|false $u */
-            $u = unpack('P3', $tls_image, $offset);
+            $u = unpack('P3', $image, $offset);
             if ($u === false) {
                 break;
             }
@@ -397,6 +434,7 @@ final class LexborTlsScanner
                     $cache_ptr,
                     $memory_locations,
                     $state_context,
+                    $known_zendmm_locations,
                 );
             } catch (MemoryReaderException) {
                 continue;
@@ -406,6 +444,7 @@ final class LexborTlsScanner
     }
 
     /**
+     * @param list<MemoryLocations> $known_zendmm_locations
      * @throws MemoryReaderException
      */
     private function tryFollowMraw(
@@ -414,6 +453,7 @@ final class LexborTlsScanner
         int $cache_ptr,
         MemoryLocations $memory_locations,
         ?LexborStateContext $state_context,
+        array $known_zendmm_locations,
     ): int {
         $emitted = 0;
         // lexbor_mem_t = { chunk, chunk_first, chunk_min_size, chunk_length }
@@ -460,18 +500,28 @@ final class LexborTlsScanner
             return 0;
         }
 
+        $location = new LexborMrawChunkMemoryLocation($data_ptr, $data_size);
+        if (!$this->isInsideKnownZendMm($location, $known_zendmm_locations)) {
+            return 0;
+        }
         if (!$memory_locations->has($data_ptr)) {
-            $location = new LexborMrawChunkMemoryLocation($data_ptr, $data_size);
             $memory_locations->add($location);
             $state_context?->addLocation($location);
             $emitted++;
         }
 
-        $emitted += $this->tryFollowBst($pid, $cache_ptr, $memory_locations, $state_context);
+        $emitted += $this->tryFollowBst(
+            $pid,
+            $cache_ptr,
+            $memory_locations,
+            $state_context,
+            $known_zendmm_locations,
+        );
         return $emitted;
     }
 
     /**
+     * @param list<MemoryLocations> $known_zendmm_locations
      * @throws MemoryReaderException
      */
     private function tryFollowBst(
@@ -479,6 +529,7 @@ final class LexborTlsScanner
         int $bst_ptr,
         MemoryLocations $memory_locations,
         ?LexborStateContext $state_context,
+        array $known_zendmm_locations,
     ): int {
         // lexbor_bst_t = { dobject, root, tree_length }
         $bst = $this->tryRead($pid, $bst_ptr, 24);
@@ -550,9 +601,11 @@ final class LexborTlsScanner
                         && !$memory_locations->has($pool_data)
                     ) {
                         $location = new LexborBstPoolMemoryLocation($pool_data, $pool_size);
-                        $memory_locations->add($location);
-                        $state_context?->addLocation($location);
-                        $emitted++;
+                        if ($this->isInsideKnownZendMm($location, $known_zendmm_locations)) {
+                            $memory_locations->add($location);
+                            $state_context?->addLocation($location);
+                            $emitted++;
+                        }
                     }
                 }
             }
@@ -577,9 +630,11 @@ final class LexborTlsScanner
                     $list_ptr,
                     self::BST_CACHE_SIZE * 8,
                 );
-                $memory_locations->add($location);
-                $state_context?->addLocation($location);
-                $emitted++;
+                if ($this->isInsideKnownZendMm($location, $known_zendmm_locations)) {
+                    $memory_locations->add($location);
+                    $state_context?->addLocation($location);
+                    $emitted++;
+                }
             }
         }
 
