@@ -55,7 +55,7 @@ final class MemoryLocations
             } elseif ($memory_location instanceof ZendArrayTableOverheadMemoryLocation) {
                 return;
             }
-            if ($recorded_memory_location instanceof ZendStringReservedCapacityMemoryLocation) {
+            if ($recorded_memory_location instanceof ZendStringSlotTailMemoryLocation) {
                 // Reserved-capacity placeholder yields to a concrete
                 // location landing at the same address (e.g. opcache
                 // trimming a string's reserved tail and writing a real
@@ -63,7 +63,7 @@ final class MemoryLocations
                 // above.
                 $this->memory_locations[$memory_location->address] = $memory_location;
                 return;
-            } elseif ($memory_location instanceof ZendStringReservedCapacityMemoryLocation) {
+            } elseif ($memory_location instanceof ZendStringSlotTailMemoryLocation) {
                 return;
             }
             if ($memory_location != $recorded_memory_location) {

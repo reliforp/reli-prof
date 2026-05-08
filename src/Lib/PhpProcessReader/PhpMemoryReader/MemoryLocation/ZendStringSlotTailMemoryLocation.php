@@ -31,19 +31,34 @@ use Reli\Lib\Process\MemoryLocation;
  * the type breakdown downward and inflating
  * `allocation_overhead`.
  *
- * This class mirrors the role `ZendArrayTableOverheadMemoryLocation`
- * plays for hash tables: a placeholder for "this address range is
- * reserved by the type itself, not by ZendMM rounding". The
- * placeholder is dropped by
- * `RegionAnalyzer::filterOverlappingLocations` when a concrete
- * location turns up at the same address — opcache, in particular,
- * trims reserved tails when copying class tables and similar
- * structures into its own SHM segment, so what reli reads as
- * "the string's reserved capacity" can legitimately contain
- * unrelated live data; yielding to the real location keeps that
- * case correct.
+ * The honest framing is "string-attributable slot tail", not
+ * "reserved capacity": from a `zend_string` we can't tell how
+ * much of `bin_size − (len + 24)` is PHP-reserved growth room
+ * and how much is ZendMM bin rounding / alignment slack. The
+ * tail just gets attributed to the string instead of to the
+ * generic ZendMM overhead bucket, which is the corrective the
+ * report needs.
+ *
+ * Mirrors the role `ZendArrayTableOverheadMemoryLocation`
+ * plays for hash tables, with one design difference: the array
+ * placeholder is THE reserved-tail-only — slot rounding for the
+ * whole table is computed afterwards via
+ * `ZendMmChunkMemoryLocation::getOverhead`'s special case. For
+ * strings, the slot tail already represents
+ * `bin_size − (len + 24)`, so there is no further rounding
+ * layer to compute; `RegionAnalyzer::analyze` skips the
+ * placeholder from the generic `getOverhead` call entirely.
+ *
+ * The placeholder is also dropped by
+ * `RegionAnalyzer::filterOverlappingLocations` (and by
+ * `MemoryLocations::add`) when a concrete location turns up at
+ * the same address — opcache, in particular, trims reserved
+ * tails when copying class tables and similar structures into
+ * its own SHM segment, so what reli reads as the string's slot
+ * tail can legitimately contain unrelated live data; yielding
+ * to the real location keeps that case correct.
  */
-final class ZendStringReservedCapacityMemoryLocation extends MemoryLocation
+final class ZendStringSlotTailMemoryLocation extends MemoryLocation
 {
     public function __construct(
         int $address,
@@ -54,12 +69,12 @@ final class ZendStringReservedCapacityMemoryLocation extends MemoryLocation
     }
 
     /**
-     * Try to construct a reserved-capacity location for a string by
-     * looking up the bin slot it occupies in the chunk index.
-     * Returns null when no chunk contains the string (e.g. it lives in
-     * a huge allocation that doesn't get bin-slot rounding) or when
-     * the slot exactly matches `len + ZEND_STRING_HEADER_SIZE` (no
-     * surplus to attribute).
+     * Try to construct a slot-tail location for a string by looking
+     * up the bin slot it occupies in the chunk index. Returns null
+     * when no chunk contains the string (e.g. it lives in a huge
+     * allocation that doesn't get bin-slot rounding) or when the
+     * slot exactly matches `len + ZEND_STRING_HEADER_SIZE` (no
+     * tail bytes to attribute).
      */
     public static function tryFromStringInChunks(
         ZendStringMemoryLocation $string_location,

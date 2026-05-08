@@ -19,7 +19,10 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendMmPageInfoLarge;
 use Reli\Lib\PhpInternals\Types\Zend\ZendMmPageInfoSmall;
 use Reli\Lib\Process\MemoryLocation;
 
-final class ZendMmChunkMemoryLocation extends MemoryLocation
+// Not `final`: tests want to override getOverhead() to drive the
+// skip-list logic in RegionAnalyzer without standing up a real
+// zend_mm_chunk. Production callers don't subclass.
+class ZendMmChunkMemoryLocation extends MemoryLocation
 {
     public function __construct(
         int $address,

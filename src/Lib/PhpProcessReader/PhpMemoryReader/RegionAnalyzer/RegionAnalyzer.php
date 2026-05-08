@@ -22,7 +22,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendMmChunkMemoryLo
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendOpArrayHeaderMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringReservedCapacityMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringSlotTailMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\Result\RegionalMemoryLocations;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\Result\RegionAnalyzerResult;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\Result\RegionsSummary;
@@ -104,14 +104,30 @@ final class RegionAnalyzer
                     // ZendArrayTable and ZendString both publish a
                     // dedicated "reserved-but-unused tail" location of
                     // their own (ZendArrayTableOverheadMemoryLocation /
-                    // ZendStringReservedCapacityMemoryLocation) that
-                    // already covers the slot beyond
-                    // location.size. Calling getOverhead here for those
-                    // types would book the same bytes a second time as
-                    // generic ZendMM slot-rounding overhead.
+                    // ZendStringSlotTailMemoryLocation) that already
+                    // covers the slot beyond location.size. Calling
+                    // getOverhead here for those types would book the
+                    // same bytes a second time as generic ZendMM
+                    // slot-rounding overhead.
+                    //
+                    // The slot-tail placeholder itself must also be
+                    // skipped: getOverhead assumes the location's
+                    // address is the start of an allocation slot and
+                    // computes (bin_size − location.size). A placeholder
+                    // sitting at base+len+24 (mid-slot) does not satisfy
+                    // that precondition, and the result would be
+                    // garbage `bin_size − slot_tail.size` bytes
+                    // attributed to the next slot. The array-overhead
+                    // case avoids the same trap by special-casing
+                    // ZendArrayTableOverheadMemoryLocation in
+                    // ZendMmChunkMemoryLocation::getOverhead — strings
+                    // don't need that because the slot tail already
+                    // captures `bin_size − (len + 24)` exactly, with no
+                    // further rounding layer to compute.
                     if (
                         !$memory_location instanceof ZendArrayTableMemoryLocation
                         && !$memory_location instanceof ZendStringMemoryLocation
+                        && !$memory_location instanceof ZendStringSlotTailMemoryLocation
                     ) {
                         $overhead = $chunk->getOverhead($memory_location);
                         if (!is_null($overhead)) {
@@ -137,7 +153,7 @@ final class RegionAnalyzer
             if ($memory_location instanceof ZendArrayTableOverheadMemoryLocation) {
                 $possible_array_overhead_total += $memory_location->size;
             }
-            if ($memory_location instanceof ZendStringReservedCapacityMemoryLocation) {
+            if ($memory_location instanceof ZendStringSlotTailMemoryLocation) {
                 $possible_string_overhead_total += $memory_location->size;
             }
         }
@@ -200,7 +216,7 @@ final class RegionAnalyzer
             ) {
                 $filtered_locations[$last_key] = $location;
             } elseif (
-                $filtered_last instanceof ZendStringReservedCapacityMemoryLocation
+                $filtered_last instanceof ZendStringSlotTailMemoryLocation
             ) {
                 // The reserved-capacity tail is a placeholder for "the
                 // string's slot extends to here, no one should have
