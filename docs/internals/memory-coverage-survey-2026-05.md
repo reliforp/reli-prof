@@ -217,20 +217,38 @@ Refinement direction (deferred to a separate PR):
     the SAPI / runtime exposes it (e.g. via
     `zend_string_capacity()` style probes; not currently
     persisted in `zend_string` itself).
-- Split `ZendMmOverheadMemoryLocation` into two sub-types so the
-  report can distinguish "slot-rounding waste" from
-  "type-reserved capacity that didn't end up used", or extend
-  `ZendStringMemoryLocation` with a `reserved_capacity` field
-  and only return slot-rounding overhead from `getOverhead()`.
+- Reuse the `ZendArrayTable` / `ZendArrayTableOverheadMemoryLocation`
+  pair as the blueprint for the `zend_string` case. That pair
+  already encodes "type-reserved capacity is its own location,
+  slot-rounding overhead is something else" — `RegionAnalyzer`
+  skips the generic `getOverhead()` for `ZendArrayTable` at
+  `RegionAnalyzer.php:101` precisely because the dedicated
+  overhead location already covers that range, and
+  `filterOverlappingLocations` (`RegionAnalyzer.php:181-183`)
+  drops the overhead-placeholder when a real location turns
+  up at the same address (opcache, in particular, trims
+  reserved tails when it copies class tables and similar
+  structures into its own SHM segment, so what reli reads as
+  "the array's unused capacity" can legitimately contain
+  unrelated live data — the placeholder yielding to the real
+  location is what keeps that case correct).
+
+  Mirror it for strings:
+  - emit a `ZendStringReservedCapacityMemoryLocation` alongside
+    each `ZendStringMemoryLocation` whose underlying allocation
+    exceeds `len + 24`,
+  - skip `$chunk->getOverhead()` for `ZendStringMemoryLocation`
+    in `RegionAnalyzer::analyze()` (sibling of the
+    `ZendArrayTable` skip),
+  - and have `filterOverlappingLocations` drop the
+    reserved-capacity placeholder when something concrete
+    overlaps it (same opcache-style "someone else is using this
+    range" caveat as the array case).
 - Reconcile `BinaryContextTreeSink::computeRegionSumsAndOverhead`
   and `RegionAnalyzer::analyze` so live and offline produce the
   same `allocation_overhead`; the natural fix is to make the
   binary streaming path also dedup overlapping address ranges
   rather than pull `RegionAnalyzer` toward the raw scan.
-- Confirm with a reproducer whether the same shape applies to
-  `ZendArrayTable` (its `getOverhead` skip at
-  `RegionAnalyzer.php:101` predates this work) or whether that
-  was an unrelated workaround.
 
 ### G2. "% analyzed" can exceed 100 %
 
