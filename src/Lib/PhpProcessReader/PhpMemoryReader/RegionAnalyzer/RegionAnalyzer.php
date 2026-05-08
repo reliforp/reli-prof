@@ -21,6 +21,8 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendClassEntryMemor
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendMmChunkMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendOpArrayHeaderMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringReservedCapacityMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\Result\RegionalMemoryLocations;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\Result\RegionAnalyzerResult;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\Result\RegionsSummary;
@@ -48,6 +50,7 @@ final class RegionAnalyzer
         $compiler_arena_memory_usage = 0;
         $possible_allocation_overhead_total = 0;
         $possible_array_overhead_total = 0;
+        $possible_string_overhead_total = 0;
         $per_class_objects = [];
 
         $regional_memory_locations = RegionalMemoryLocations::createDefault();
@@ -98,7 +101,18 @@ final class RegionAnalyzer
                 } else {
                     $heap_memory_usage += $memory_location->size;
                     assert($chunk instanceof ZendMmChunkMemoryLocation);
-                    if (!$memory_location instanceof ZendArrayTableMemoryLocation) {
+                    // ZendArrayTable and ZendString both publish a
+                    // dedicated "reserved-but-unused tail" location of
+                    // their own (ZendArrayTableOverheadMemoryLocation /
+                    // ZendStringReservedCapacityMemoryLocation) that
+                    // already covers the slot beyond
+                    // location.size. Calling getOverhead here for those
+                    // types would book the same bytes a second time as
+                    // generic ZendMM slot-rounding overhead.
+                    if (
+                        !$memory_location instanceof ZendArrayTableMemoryLocation
+                        && !$memory_location instanceof ZendStringMemoryLocation
+                    ) {
                         $overhead = $chunk->getOverhead($memory_location);
                         if (!is_null($overhead)) {
                             $possible_allocation_overhead_total += $overhead->size;
@@ -122,6 +136,9 @@ final class RegionAnalyzer
             }
             if ($memory_location instanceof ZendArrayTableOverheadMemoryLocation) {
                 $possible_array_overhead_total += $memory_location->size;
+            }
+            if ($memory_location instanceof ZendStringReservedCapacityMemoryLocation) {
+                $possible_string_overhead_total += $memory_location->size;
             }
         }
 
@@ -147,6 +164,7 @@ final class RegionAnalyzer
             $compiler_arena_memory_usage,
             $possible_allocation_overhead_total,
             $possible_array_overhead_total,
+            $possible_string_overhead_total,
         );
         return new RegionAnalyzerResult(
             $summary,
@@ -180,6 +198,18 @@ final class RegionAnalyzer
             } elseif (
                 $filtered_last instanceof ZendArrayTableOverheadMemoryLocation
             ) {
+                $filtered_locations[$last_key] = $location;
+            } elseif (
+                $filtered_last instanceof ZendStringReservedCapacityMemoryLocation
+            ) {
+                // The reserved-capacity tail is a placeholder for "the
+                // string's slot extends to here, no one should have
+                // written here". opcache, in particular, copies class
+                // tables and similar structures into its own SHM with
+                // reserved tails trimmed, so a real location turning up
+                // inside the placeholder range is the authoritative
+                // claim — yield to it, mirror of the array-overhead
+                // case above.
                 $filtered_locations[$last_key] = $location;
             } elseif (
                 $filtered_last instanceof ZendObjectMemoryLocation
