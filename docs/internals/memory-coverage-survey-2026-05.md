@@ -348,6 +348,41 @@ three-column proposal, but for closed-layout types the join
 result feeds straight into `analyzed_percentage` instead of
 `possible_allocation_overhead_total`.
 
+**Caveat: "1 slot = 1 logical allocation" is convention, not
+invariant.** ZendMM's API doesn't forbid an allocator user
+from packing multiple logical regions into one slot — it just
+returns N contiguous bytes and the caller can lay out
+whatever they want inside. The "certain overhead" framing
+above relies on the current PHP runtime + main-extensions
+convention of one principal allocation per slot, *plus*
+alignment friction. For ZendString in particular, packing
+something after the null terminator would need 1–7 B of
+alignment padding, after which the resulting layout buys
+nothing over a separate `_emalloc` for the trailing struct,
+so nobody does it; but that's a usage observation, not a
+structural guarantee. The known exception is internal-class
+ZendObject (`php_date_obj` and friends), where additional
+struct fields *are* packed inline after the bare zend_object
+header — exactly why those fall in the lower-confidence tier.
+
+A practical confidence-tier model for "promote slack to
+analyzed":
+
+| tier | applies to | analyzed-percentage handling |
+| ---- | ---------- | ---------------------------- |
+| A (extremely high) | ZendString slack — alignment friction makes inline packing implausible | promote to `ZendStringSlackOverhead`, count |
+| B (high) | user-class ZendObject slack, ZendArray/ZendArrayTable slack — closed layout, no observed inline extension by extensions | promote to per-type `*Overhead`, count |
+| C (low / unmodeled) | internal-class ZendObject slack — inline struct extension known to occur (`php_date_obj`, …) | leave under `possible_*`, don't add to confident analyzed |
+
+Plus an **invariant check** to detect if convention shifts
+under reli's feet: assert
+`sum_of_conceptual_within_slot <= slot_size` for every
+joined slot. An overshoot means a typed node's conceptual
+size is wrong, *or* a tier-A/B layout has gained inline
+extension that reli isn't yet modelling — either way reli
+should warn instead of silently emitting a negative
+overhead.
+
 The `--bin-detail` flag on `inspector:memory:report` already prints
 shape-detector results in `=== Per-bin Shape Detection ===` /
 `=== ZendMM Periodic Groups ===`, with an `orphan/reachable` split
