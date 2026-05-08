@@ -146,6 +146,102 @@ class SummaryPassesTest extends BaseTestCase
         $this->assertCount(0, $gaps);
     }
 
+    public function testOverviewPassDerivesHeapFromPointerTracedAttribution(): void
+    {
+        // laravel-shaped numbers from the 2026-05 coverage survey: the
+        // legacy heap_memory_analyzed_percentage tipped to 105.8% because
+        // its numerator was slot-rounded (chunk_usage + vm_stack +
+        // compiler_arena + overhead) but its denominator was
+        // memory_get_usage(false). Pulling SUM(memory_usage) up out of
+        // the per-type breakdown gives a numerator at the same
+        // granularity as memory_get_usage(false) (both are user-bytes,
+        // not slot bytes), so the Overview line is self-consistent with
+        // the per-type rows below it and stops exceeding 100%.
+        $attributed = 22_010_000;
+        $mgu = 24_000_000;
+        $pass = new OverviewPass(
+            summary: [
+                [
+                    'zend_mm_heap_total' => 26 * 1024 * 1024,
+                    'zend_mm_heap_usage' => 25_390_000,
+                    'heap_memory_analyzed_percentage' => 105.8,
+                    'memory_get_usage' => $mgu,
+                    'memory_get_real_usage' => 24 * 1024 * 1024,
+                ],
+            ],
+            location_types_summary: [
+                'ZendObjectMemoryLocation' => ['count' => 25_100, 'memory_usage' => 13_510_000],
+                'ZendStringMemoryLocation' => ['count' => 60_000, 'memory_usage' => 7_500_000],
+                'ZendArrayMemoryLocation' => ['count' => 5_000, 'memory_usage' => 1_000_000],
+            ],
+        );
+        $findings = $pass->analyze();
+
+        $overview = array_filter($findings, fn(Finding $f) => $f->kind === 'overview');
+        $f = array_values($overview)[0];
+        $this->assertSame($attributed, $f->facts['displayed_heap_bytes']);
+        $this->assertSame($attributed, $f->facts['attributed_bytes']);
+        $this->assertSame('pointer_trace', $f->facts['analyzed_percentage_source']);
+        $expected_pct = $attributed / $mgu * 100.0;
+        $this->assertEqualsWithDelta($expected_pct, $f->facts['analyzed_percentage'], 0.01);
+        $this->assertLessThan(100.0, $f->facts['analyzed_percentage']);
+        $this->assertStringNotContainsString('105.8%', $f->summary);
+        // Bin-walker enumeration must NOT bubble into the headline:
+        // it's a fallback-coverage tool, not the analysis signal.
+        $this->assertArrayNotHasKey('bin_walk_total_bytes', $f->facts);
+    }
+
+    public function testOverviewPassCoverageGapUsesMguMinusAttributedOnPointerTracePath(): void
+    {
+        // On the new pointer-trace path the gap is literally
+        // (memory_get_usage - attributed); the old derived form
+        // attributed * (100 - pct) / 100 was wrong here.
+        $pass = new OverviewPass(
+            summary: [
+                [
+                    'zend_mm_heap_usage' => 7_500_000,
+                    'heap_memory_analyzed_percentage' => 80.0,
+                    'memory_get_usage' => 10_000_000,
+                    'memory_get_real_usage' => 12 * 1024 * 1024,
+                ],
+            ],
+            location_types_summary: [
+                'ZendObjectMemoryLocation' => ['count' => 100, 'memory_usage' => 8_000_000],
+            ],
+        );
+        $findings = $pass->analyze();
+        $gaps = array_filter($findings, fn(Finding $f) => $f->kind === 'coverage_gap');
+        $this->assertCount(1, $gaps);
+        $f = array_values($gaps)[0];
+        $this->assertSame(2_000_000, $f->facts['gap_bytes']);
+        $this->assertSame('pointer_trace', $f->facts['analyzed_percentage_source']);
+    }
+
+    public function testOverviewPassFallsBackWhenLocationTypesAbsent(): void
+    {
+        // No per-type breakdown (e.g. tiny heap, or older summary
+        // shape) — fall back to the persisted summary fields rather
+        // than dividing by zero.
+        $pass = new OverviewPass(
+            summary: [
+                [
+                    'zend_mm_heap_usage' => 8388608,
+                    'heap_memory_analyzed_percentage' => 80.0,
+                    'memory_get_usage' => 8400000,
+                    'memory_get_real_usage' => 10485760,
+                ],
+            ],
+            location_types_summary: [],
+        );
+        $findings = $pass->analyze();
+
+        $overview = array_filter($findings, fn(Finding $f) => $f->kind === 'overview');
+        $f = array_values($overview)[0];
+        $this->assertSame('summary', $f->facts['analyzed_percentage_source']);
+        $this->assertSame(80.0, $f->facts['analyzed_percentage']);
+        $this->assertSame(8388608, $f->facts['displayed_heap_bytes']);
+    }
+
     // ---- TypeBreakdownPass ----
 
     public function testTypeBreakdownDetectsDominantType(): void
