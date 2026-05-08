@@ -2023,3 +2023,83 @@ typedef struct {
 	zend_function *fptr_count;
 	zend_object    zo;
 } php_sxe_object;
+
+/* ext/uri / lexbor — TLS-resident parser state.
+ *
+ * PHP 8.5 added ext/uri (Uri\Rfc3986\Uri / Uri\WhatWg\Url). Its RINIT
+ * allocates four large emalloc-backed buffers (12K / 24K / 4K / 32K)
+ * via lexbor's allocators (which are pointed at emalloc by MINIT).
+ * These structs live in TLS as ZEND_TLS variables, so on stripped
+ * distro builds they are not directly resolvable by name.
+ *
+ * We list only the fields the structural fingerprinter reads; later
+ * tail fields are tolerated as long as the offsets we care about line
+ * up. Sizes match the upstream lexbor sources bundled with PHP 8.5.5
+ * (php-8.5.5/ext/lexbor/lexbor/core/{mem,mraw,bst,array,dobject}.h
+ * and php-8.5.5/ext/lexbor/lexbor/unicode/idna.h). */
+typedef struct lexbor_mem_chunk {
+	uint8_t                       *data;
+	size_t                         length;
+	size_t                         size;
+	struct lexbor_mem_chunk       *next;
+	struct lexbor_mem_chunk       *prev;
+} lexbor_mem_chunk_t;
+
+typedef struct lexbor_mem {
+	lexbor_mem_chunk_t            *chunk;
+	lexbor_mem_chunk_t            *chunk_first;
+	size_t                         chunk_min_size;
+	size_t                         chunk_length;
+} lexbor_mem_t;
+
+typedef struct lexbor_array {
+	void                         **list;
+	size_t                         size;
+	size_t                         length;
+} lexbor_array_t;
+
+typedef struct lexbor_dobject {
+	lexbor_mem_t                  *mem;
+	lexbor_array_t                *cache;
+	size_t                         allocated;
+	size_t                         struct_size;
+} lexbor_dobject_t;
+
+typedef struct lexbor_bst_entry  lexbor_bst_entry_t;
+
+typedef struct lexbor_bst {
+	lexbor_dobject_t              *dobject;
+	lexbor_bst_entry_t            *root;
+	size_t                         tree_length;
+} lexbor_bst_t;
+
+typedef struct lexbor_mraw {
+	lexbor_mem_t                  *mem;
+	lexbor_bst_t                  *cache;
+	size_t                         ref_count;
+} lexbor_mraw_t;
+
+/* lxb_unicode_normalizer_t — see php-8.5.5/ext/lexbor/lexbor/unicode/base.h.
+ * The decomposition/composition fields are typed pointers in the upstream
+ * source; we declare them as void* here because reli only checks pointer
+ * residency in [r-xp] segments and doesn't invoke them. Field order and
+ * sizes match upstream exactly; offsets in LexborTlsScanner depend on it. */
+typedef struct lxb_unicode_normalizer {
+	void                          *decomposition;   /*  0 */
+	void                          *composition;     /*  8 */
+	void                          *starter;         /* 16 */
+	void                          *buf;             /* 24 */
+	const void                    *end;             /* 32 */
+	void                          *p;               /* 40 */
+	void                          *ican;            /* 48 */
+	uint8_t                        tmp[4];          /* 56 */
+	uint8_t                        tmp_lenght;      /* 60 */
+	uint8_t                        quick_ccc;       /* 61 */
+	uint8_t                        quick_type;      /* 62 */
+	/* implicit 1 byte pad to align flush_cp to 8 */
+	size_t                         flush_cp;        /* 64 (size_t, not uint32_t) */
+} lxb_unicode_normalizer_t;
+
+typedef struct lxb_unicode_idna {
+	lxb_unicode_normalizer_t       normalizer;
+} lxb_unicode_idna_t;

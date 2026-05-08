@@ -31,6 +31,7 @@ final class EmitModulesJob implements CollectorJob
 {
     public function __construct(
         private ?int $bg_address,
+        private ?ModulesContext $modules_context = null,
     ) {
     }
 
@@ -38,7 +39,10 @@ final class EmitModulesJob implements CollectorJob
     public function execute(CollectorContext $ctx, JobQueue $queue): void
     {
         try {
-            $modules_context = new ModulesContext();
+            // Reuse an externally-built ModulesContext so the caller can
+            // attach extra child branches (e.g. ext/uri lexbor state)
+            // before this job emits the root.
+            $modules_context = $this->modules_context ?? new ModulesContext();
 
             if ($this->bg_address === null) {
                 $ctx->emitNode($modules_context, null, 'modules');
