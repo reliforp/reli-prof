@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringReservedCapacityMemoryLocation;
 
 final class StringContext implements ReferenceContext
 {
@@ -21,6 +22,7 @@ final class StringContext implements ReferenceContext
 
     public function __construct(
         public ZendStringMemoryLocation $memory_location,
+        public ?ZendStringReservedCapacityMemoryLocation $reserved_capacity_location = null,
     ) {
     }
 
@@ -38,6 +40,9 @@ final class StringContext implements ReferenceContext
     #[\Override]
     public function getLocations(): iterable
     {
+        if ($this->reserved_capacity_location !== null) {
+            return [$this->memory_location, $this->reserved_capacity_location];
+        }
         return [$this->memory_location];
     }
 }

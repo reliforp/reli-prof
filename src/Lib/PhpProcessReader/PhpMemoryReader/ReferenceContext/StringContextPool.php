@@ -14,19 +14,22 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringReservedCapacityMemoryLocation;
 
 final class StringContextPool
 {
     /** @var array<int, StringContext> */
     private array $contexts = [];
 
-    public function getContextForLocation(ZendStringMemoryLocation $memory_location): StringContext
-    {
+    public function getContextForLocation(
+        ZendStringMemoryLocation $memory_location,
+        ?ZendStringReservedCapacityMemoryLocation $reserved_capacity_location = null,
+    ): StringContext {
         if (isset($this->contexts[$memory_location->address])) {
             return $this->contexts[$memory_location->address];
         }
 
-        $context = new StringContext($memory_location);
+        $context = new StringContext($memory_location, $reserved_capacity_location);
         $this->contexts[$memory_location->address] = $context;
         return $context;
     }
