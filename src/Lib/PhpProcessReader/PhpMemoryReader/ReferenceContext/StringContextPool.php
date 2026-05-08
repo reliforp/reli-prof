@@ -14,19 +14,33 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringSlotTailMemoryLocation;
 
 final class StringContextPool
 {
     /** @var array<int, StringContext> */
     private array $contexts = [];
 
-    public function getContextForLocation(ZendStringMemoryLocation $memory_location): StringContext
-    {
+    public function getContextForLocation(
+        ZendStringMemoryLocation $memory_location,
+        ?ZendStringSlotTailMemoryLocation $slot_tail_location = null,
+    ): StringContext {
         if (isset($this->contexts[$memory_location->address])) {
-            return $this->contexts[$memory_location->address];
+            $cached = $this->contexts[$memory_location->address];
+            // Backfill: a caller earlier in the walk may have populated
+            // the pool without a slot_tail (e.g. helper paths that ran
+            // before the chunk index for an address was usable). When a
+            // later caller arrives with a slot_tail for the same
+            // address, attach it so StringContext::getLocations()
+            // includes the placeholder when this node is finally
+            // emitted to the sink.
+            if ($slot_tail_location !== null && $cached->slot_tail_location === null) {
+                $cached->slot_tail_location = $slot_tail_location;
+            }
+            return $cached;
         }
 
-        $context = new StringContext($memory_location);
+        $context = new StringContext($memory_location, $slot_tail_location);
         $this->contexts[$memory_location->address] = $context;
         return $context;
     }

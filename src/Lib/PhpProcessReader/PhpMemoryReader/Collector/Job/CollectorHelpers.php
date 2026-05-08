@@ -24,6 +24,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArgInfosMemoryL
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendOpArrayBodyMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendOpArrayHeaderMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringSlotTailMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArgInfoContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ArgInfosContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\DynamicFuncDefsContext;
@@ -67,7 +68,17 @@ final class CollectorHelpers
         $str = $ctx->dereferencer->deref($pointer);
         $memory_location = ZendStringMemoryLocation::fromZendString($str, $ctx->dereferencer);
         $ctx->memory_locations->add($memory_location);
-        return $ctx->context_pools->string_context_pool->getContextForLocation($memory_location);
+        $slot_tail = ZendStringSlotTailMemoryLocation::tryFromStringInChunks(
+            $memory_location,
+            $ctx->chunk_memory_locations,
+        );
+        if ($slot_tail !== null) {
+            $ctx->memory_locations->add($slot_tail);
+        }
+        return $ctx->context_pools->string_context_pool->getContextForLocation(
+            $memory_location,
+            $slot_tail,
+        );
     }
 
     /**

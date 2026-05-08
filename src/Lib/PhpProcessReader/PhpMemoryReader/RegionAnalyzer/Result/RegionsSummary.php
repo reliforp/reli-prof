@@ -28,6 +28,7 @@ final class RegionsSummary
         public int $compiler_arena_usage,
         public int $possible_allocation_overhead_total,
         public int $possible_array_overhead_total,
+        public int $possible_string_overhead_total = 0,
     ) {
     }
 
@@ -49,6 +50,7 @@ final class RegionsSummary
             'compiler_arena_usage' => $this->compiler_arena_usage,
             'possible_allocation_overhead_total' => $this->possible_allocation_overhead_total,
             'possible_array_overhead_total' => $this->possible_array_overhead_total,
+            'possible_string_overhead_total' => $this->possible_string_overhead_total,
         ];
     }
 
@@ -86,6 +88,7 @@ final class RegionsSummary
             'compiler_arena_usage' => $region_sums['compiler_arena'] ?? 0,
             'possible_allocation_overhead_total' => $this->possible_allocation_overhead_total,
             'possible_array_overhead_total' => $this->possible_array_overhead_total,
+            'possible_string_overhead_total' => $this->possible_string_overhead_total,
         ];
     }
 

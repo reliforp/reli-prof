@@ -160,5 +160,48 @@ class RegionsSummaryTest extends BaseTestCase
         $this->assertSame(0, $arr['compiler_arena_usage']);
         $this->assertSame(500, $arr['possible_allocation_overhead_total']);
         $this->assertSame(0, $arr['possible_array_overhead_total']);
+        $this->assertSame(0, $arr['possible_string_overhead_total']);
+    }
+
+    public function testToArrayIncludesPossibleStringOverheadTotal(): void
+    {
+        $summary = new RegionsSummary(
+            zend_mm_heap_total: 4194304,
+            zend_mm_heap_usage: 0,
+            zend_mm_chunk_total: 2097152,
+            zend_mm_chunk_usage: 0,
+            zend_mm_huge_total: 2097152,
+            zend_mm_huge_usage: 0,
+            vm_stack_total: 0,
+            vm_stack_usage: 0,
+            compiler_arena_total: 0,
+            compiler_arena_usage: 0,
+            possible_allocation_overhead_total: 0,
+            possible_array_overhead_total: 0,
+            possible_string_overhead_total: 12345,
+        );
+        $arr = $summary->toArray();
+        $this->assertSame(12345, $arr['possible_string_overhead_total']);
+    }
+
+    public function testCorrectedToArrayIncludesPossibleStringOverheadTotal(): void
+    {
+        $summary = new RegionsSummary(
+            zend_mm_heap_total: 4194304,
+            zend_mm_heap_usage: 0,
+            zend_mm_chunk_total: 2097152,
+            zend_mm_chunk_usage: 0,
+            zend_mm_huge_total: 2097152,
+            zend_mm_huge_usage: 0,
+            vm_stack_total: 0,
+            vm_stack_usage: 0,
+            compiler_arena_total: 0,
+            compiler_arena_usage: 0,
+            possible_allocation_overhead_total: 0,
+            possible_array_overhead_total: 0,
+            possible_string_overhead_total: 6789,
+        );
+        $corrected = $summary->correctedToArray([]);
+        $this->assertSame(6789, $corrected['possible_string_overhead_total']);
     }
 }

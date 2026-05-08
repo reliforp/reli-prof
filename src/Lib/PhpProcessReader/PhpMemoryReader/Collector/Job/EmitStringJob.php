@@ -18,6 +18,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorJob;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\JobQueue;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringSlotTailMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\Process\Pointer\Pointer;
 
@@ -82,9 +83,16 @@ final class EmitStringJob implements CollectorJob
                     $h,
                 );
                 $ctx->memory_locations->add($memory_location);
+                $slot_tail = ZendStringSlotTailMemoryLocation::tryFromStringInChunks(
+                    $memory_location,
+                    $ctx->chunk_memory_locations,
+                );
+                if ($slot_tail !== null) {
+                    $ctx->memory_locations->add($slot_tail);
+                }
                 $string_context = $ctx->context_pools
                     ->string_context_pool
-                    ->getContextForLocation($memory_location);
+                    ->getContextForLocation($memory_location, $slot_tail);
                 $node_id = $ctx->emitNode($string_context, $this->parent_node_id, $this->link_name, $this->edge_strength);
                 if ($node_id >= 0) {
                     $ctx->address_map[$address] = $node_id;
@@ -99,9 +107,16 @@ final class EmitStringJob implements CollectorJob
             $ctx->dereferencer,
         );
         $ctx->memory_locations->add($memory_location);
+        $slot_tail = ZendStringSlotTailMemoryLocation::tryFromStringInChunks(
+            $memory_location,
+            $ctx->chunk_memory_locations,
+        );
+        if ($slot_tail !== null) {
+            $ctx->memory_locations->add($slot_tail);
+        }
         $string_context = $ctx->context_pools
             ->string_context_pool
-            ->getContextForLocation($memory_location);
+            ->getContextForLocation($memory_location, $slot_tail);
 
         $node_id = $ctx->emitNode($string_context, $this->parent_node_id, $this->link_name, $this->edge_strength);
         if ($node_id >= 0) {
