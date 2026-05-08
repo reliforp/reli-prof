@@ -14,8 +14,6 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayTableMemoryLocation;
-use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayTableOverheadMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendMmChunkMemoryLocation;
 use Reli\Lib\Process\MemoryLocation;
 
@@ -50,19 +48,35 @@ final class RegionBoundaries
      * Compute ZendMM bin alignment overhead for a location.
      * Returns the overhead in bytes, or 0 if not applicable.
      *
-     * ZendArrayTableOverheadMemoryLocation is NOT a separate allocation —
-     * it shares the same emalloc as ZendArrayTableMemoryLocation. The
-     * getOverhead() in ZendMmChunkMemoryLocation already handles this by
-     * combining both into the full table size. So we return 0 for the
-     * overhead location to avoid double-counting.
+     * Types whose slot tail is owned by a sibling location must
+     * return 0 here, otherwise the bytes that already live in the
+     * sibling's `size` row would be booked a second time as
+     * generic ZendMM slot-rounding overhead in the sink's
+     * `bin_overhead` column.
+     *
+     * - `ZendArrayTableMemoryLocation` (used part) and
+     *   `ZendArrayTableOverheadMemoryLocation` (unused tail) share
+     *   one emalloc: the overhead row carries the rounding so the
+     *   used row returns 0.
+     * - `ZendStringMemoryLocation` and
+     *   `ZendStringSlotTailMemoryLocation` are the same shape: the
+     *   slot tail row owns the bytes between `len + 24` and the
+     *   bin slot end, so the string row contributes 0 overhead.
+     *   The slot-tail row itself also returns 0 because its
+     *   address sits mid-slot — calling
+     *   `ZendMmChunkMemoryLocation::getOverhead` on it would
+     *   produce a garbage `bin_size − slot_tail.size` value
+     *   attributed to the *next* slot (this is the same trap
+     *   `RegionAnalyzer::shouldComputeGenericChunkOverhead`
+     *   already filters out for the offline path; mirroring it
+     *   here keeps the live path's `allocation_overhead` aligned).
+     *
+     * The set of skipped types is centralised in
+     * {@see RegionAnalyzer::shouldComputeGenericChunkOverhead}.
      */
     public function computeBinOverhead(MemoryLocation $location): int
     {
-        // ZendArrayTable (used part) and ZendArrayTableOverhead (unused part) share
-        // one emalloc. The overhead is bin_size(full_table) - full_table. We compute
-        // this on the Overhead location (which has access to the used_location) and
-        // return 0 for the Table location to avoid double-counting.
-        if ($location instanceof ZendArrayTableMemoryLocation) {
+        if (!RegionAnalyzer::shouldComputeGenericChunkOverhead($location)) {
             return 0;
         }
 

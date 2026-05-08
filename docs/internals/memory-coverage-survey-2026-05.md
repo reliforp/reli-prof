@@ -250,6 +250,59 @@ Refinement direction (deferred to a separate PR):
   binary streaming path also dedup overlapping address ranges
   rather than pull `RegionAnalyzer` toward the raw scan.
 
+#### G1 follow-up: live-path `bin_overhead` regression after
+the slot-tail PR
+
+Implementing the `zend_string` slot-tail attribution above
+introduced a fresh divergence on the *live* path that the
+offline path did not share, surfaced while planning the
+reconciliation work.
+
+The sink stores a per-row `bin_overhead` column populated by
+`RegionBoundaries::computeBinOverhead`. Before the slot-tail
+work, only `ZendArrayTableMemoryLocation` was special-cased to
+return 0; every other location flowed through
+`ZendMmChunkMemoryLocation::getOverhead`. After the slot-tail
+PR the offline-side `RegionAnalyzer::analyze` got a skip
+predicate
+(`RegionAnalyzer::shouldComputeGenericChunkOverhead`) covering
+`ZendArrayTable`, `ZendString`, and `ZendStringSlotTail` — but
+`computeBinOverhead` was not updated. Concretely, for a
+`zend_string` of `len = 3` living in a 32-byte bin:
+
+- the string row gets `size = 27`, `bin_overhead = 32 − 27 = 5`
+  (the slot tail, which is now also represented as its own row),
+- the slot-tail row gets `size = 5`, `bin_overhead = 32 − 5 = 27`
+  (garbage, because `getOverhead` assumes the location's address
+  is at the start of an allocation slot — the slot-tail address
+  is mid-slot).
+
+`MemoryCommand::buildSummary` reads
+`$sink->computeRegionSumsAndOverhead()`, so the live path's
+`zend_mm_heap_usage` ends up as `chunk_usage(27 + 5) +
+allocation_overhead(5 + 27) = 64` for a 32-byte slot — about
+2× the actual heap footprint per string. The offline path
+escapes this because `RegionAnalyzer::analyze` recomputes
+overhead via the predicate, ignoring the sink's `bin_overhead`
+column.
+
+Fix landed: `RegionBoundaries::computeBinOverhead` delegates the
+skip set to `RegionAnalyzer::shouldComputeGenericChunkOverhead`,
+so the live and offline paths now use the same skip rule. After
+the fix, the same string contributes `chunk_usage(27 + 5) +
+allocation_overhead(0 + 0) = 32` — matching the slot exactly.
+The remaining live/offline divergence is the overlap filter
+(see below).
+
+Still deferred: an overlap-filter pass for
+`computeRegionSumsAndOverhead` itself, mirroring
+`RegionAnalyzer::filterOverlappingLocations`. That covers the
+`ZendClassEntry`-`ZendArray` and `Closure`-`ZendOpArrayHeader`
+overlap pairs (and the empty-`else` "silent drop" default for
+unhandled overlaps). On the surveyed targets the overlap-filter
+delta is much smaller than the per-string `bin_overhead` delta
+above, so its absence no longer dominates the gap.
+
 ### G2. "% analyzed" can exceed 100 %
 
 `laravel.live` reports `Heap: 24.68 MB (105.8% analyzed)`. The
