@@ -762,13 +762,47 @@ profiler.
 ### 02 — PhpSpreadsheet (80 000 Cells)
 
 - **Every `Cell` allocates an `IgnoredErrors` companion** — 80 000
-  instances, 7.93 MB. `IgnoredErrors` exists to suppress per-cell
-  Excel error markers; an empty/default instance is not free
-  (104 B/instance). The "1:1 ownership pattern, 100 % coverage"
-  finding pinpoints it. Lazy allocation (only construct
-  `IgnoredErrors` when one of its setters is called) would save
-  ~7.9 MB on a large spreadsheet at zero runtime cost. Already a
-  reasonable upstream PR.
+  instances, 7.93 MB. `IgnoredErrors` is a small DTO of ~8-10
+  boolean flags marking which Excel per-cell error markers to
+  suppress (`numberStoredAsText`, `formula`, `evalError`,
+  `unlockedFormula`, etc.); for the overwhelming majority of cells
+  every flag stays at its default `false`, but the empty-default
+  instance still costs 104 B. The "1:1 ownership pattern, 100 %
+  coverage" finding pinpoints it. **Shared default singleton with
+  copy-on-first-write** is strictly better than lazy allocation
+  here: writers (e.g. the `Xlsx` writer's `<x:ignoredError>` step)
+  read every cell's flags during save, so a `null`-and-allocate-on-
+  read scheme would bottom out at 80 k instances anyway. A shared
+  singleton stays one instance through every read; only setter
+  calls clone (and most cells never call any). Sketch:
+
+  ```php
+  final class IgnoredErrors {
+      private static ?self $defaultInstance = null;
+      private bool $shared = true;
+      public static function default(): self { return self::$defaultInstance ??= new self(); }
+      public function setNumberStoredAsText(bool $v): self {
+          if ($this->shared) {
+              $copy = clone $this;
+              $copy->shared = false;
+              $copy->numberStoredAsText = $v;
+              return $copy;          // caller swaps the field in
+          }
+          $this->numberStoredAsText = $v;
+          return $this;
+      }
+      // …same shape for the other flags
+  }
+  // Cell::__construct uses IgnoredErrors::default() instead of `new`.
+  // Cell::setIgnoredError() reassigns $this->ignoredErrors to the setter's return.
+  ```
+
+  Net effect on this workload: the 80 000-instance, 7.93 MB
+  finding collapses to a single observation
+  `[shared_singleton] Cell::$ignoredErrors -> IgnoredErrors
+  (80 000 refs -> 1 target)` in reli's report — the same shape
+  reli already uses for `Monolog\LogRecord::$channel` and
+  `Color::$name` on neighbouring drivers. A reasonable upstream PR.
 - **`workSheetCollection[0]->cellCollection->cache` retains
   31.86 MB** — the cell cache is what holds the actual values, so
   this is by-design rather than waste, but it's the report's clearest
