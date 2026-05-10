@@ -15,6 +15,8 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer;
 
 use Reli\BaseTestCase;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringSlotTailMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\Result\RegionsSummary;
 use Reli\Lib\Process\MemoryLocation;
 
@@ -247,5 +249,57 @@ class RegionBoundariesTest extends BaseTestCase
         $this->assertGreaterThan(50.0, $pct, 'percentage must not be near-zero');
         // Exact expected: (188304 + 500000) / 700000 * 100 ≈ 98.3%
         $this->assertEqualsWithDelta(98.3, $pct, 0.5);
+    }
+
+    /**
+     * Behaviour spec for the post-#785 reconciliation: types whose
+     * slot tail is owned by a sibling location (the slot-tail row,
+     * the array-overhead row) must contribute 0 to the sink's per-row
+     * `bin_overhead` column, otherwise the live path's
+     * `allocation_overhead` re-books bytes that already live in the
+     * sibling row's `size` column.
+     *
+     * `computeBinOverhead` delegates to
+     * {@see RegionAnalyzer::shouldComputeGenericChunkOverhead} for
+     * the skip set, and the *predicate's* mutation safety is pinned
+     * by `RegionAnalyzerTest::testShouldComputeGenericChunkOverhead`.
+     * This case is intentionally a behaviour spec at the boundary
+     * layer — the chunk_memory_locations is empty here on purpose,
+     * which means `chunk->getOverhead` would also return 0 even if
+     * the predicate were removed; cases that exercise the chunk
+     * branch end-to-end live under
+     * `MemoryLocationsCollectorTest`.
+     */
+    public function testComputeBinOverheadReturnsZeroForTypesWithSiblingTailLocation(): void
+    {
+        $boundaries = new RegionBoundaries(
+            new MemoryLocations(),
+            new MemoryLocations(),
+            new MemoryLocations(),
+            new MemoryLocations(),
+        );
+        $string = new ZendStringMemoryLocation(
+            address: 0x1000,
+            size: 27,
+            refcount: 1,
+            type_info: 0,
+            value: 'hi!',
+        );
+        $slot_tail = new ZendStringSlotTailMemoryLocation(
+            address: 0x1000 + 27,
+            size: 5,
+            used_location: $string,
+        );
+
+        $this->assertSame(
+            0,
+            $boundaries->computeBinOverhead($string),
+            'string row must contribute 0 bin_overhead — slot tail bytes already live in the sibling slot-tail row',
+        );
+        $this->assertSame(
+            0,
+            $boundaries->computeBinOverhead($slot_tail),
+            'slot-tail row must contribute 0 bin_overhead — calling getOverhead with a mid-slot address would attribute garbage to the next slot',
+        );
     }
 }
