@@ -460,23 +460,87 @@ explain the unaccounted gap. The unaccounted bytes on driver 10
 are something else (likely opcache / extension-side allocations
 ZendMM didn't pointer-trace), independent of W7.
 
-### W8. WeakMap entry table reports `Table: 0 B`
+### W8. `Top Arrays` "Table" column shows the `_zend_array` struct, not the buckets table
 
-Same driver. `Top Arrays`:
+`Top Arrays` (and the `large_array` finding it builds on) carries
+a column literally labelled `Table`. Driver 10:
 
 ```
-$weak->weak_map->entries     6.38 MB retained, 5,000 elements, Table: 0 B
+    #      Retained        Table    Elems      Node  Path
+    1      10.18 MB         56 B       24     #1259  global_variables
+    2       6.38 MB          0 B    5,000    #26465  $weak->weak_map->entries
+    3       1.92 MB         56 B    2,000   #132099  $closures
+    4     906.71 KB         56 B    1,000    #96477  $gens
+    5     558.05 KB         56 B    5,000     #1435  $points
 ```
 
-WeakMap is implemented as a HashTable internally; the table
-allocation is real (5 000 entries × ~32 B = 160 KB minimum), so
-`Table: 0 B` is wrong even if it's a "we don't measure WeakMap
-storage like a normal array" decision. Either:
+Every non-inline row shows `56 B`. That is not the buckets table
+size — it's `sizeof(_zend_array)`, the **HashTable header struct
+itself**, a constant. The actual buckets allocation (`arData`,
+the variable-size storage that grows with capacity and is the
+interesting number) lives on a different node:
 
-- The WeakMap node should report the actual `arData` size like
-  every other HashTable, or
-- The column should display a sentinel ("(weak)") so the user
-  isn't told 0 bytes for something that isn't 0.
+```
+ArrayHeaderContext         ← getLocations() returns ZendArrayMemoryLocation (56 B)
+└─ array_elements: ArrayElementsContext  ← getLocations() returns ZendArrayTableMemoryLocation (= arData)
+   ├─ value: …
+   └─ ...
+└─ possible_unused_area: ArrayPossibleOverheadContext (over-allocated tail)
+```
+
+`TopArraysPass::analyze` reads `$shallow = iterateNodeSizes()[$node]`
+where `$node` is the `ArrayHeaderContext`, so `$shallow` is the
+fixed 56 B and gets surfaced as the `Table` column / the
+`table_size` fact on the `large_array` finding. The user
+expectation is the opposite: "Table" reads as "the bytes the
+hash table is using", which is the `arData` allocation one node
+deeper.
+
+Two consequences:
+
+- The column is **uninformative noise on every row** — 56 B, 56 B,
+  56 B — and the WeakMap-`0 B` reading is just the inline-header
+  case (W7's old draft mistook this for a bug; it's actually the
+  intended output of the inline-header fix in commit `7b4392e`
+  and `InlineArrayHeaderContext`). The right framing is that the
+  column itself is wrong, not that one row is special.
+- The user can't read off the real bucket footprint without
+  jumping to `Type Breakdown` / `ZendMM Bin Histogram` and
+  reverse-engineering it from `nTableSize × 32 B` rounded up to
+  the nearest power of two — which depends on packed vs hash
+  mode and rehash history, so it's not actually computable from
+  `Elems` alone.
+
+There's also an internal inconsistency. The `sparse_array` finding
+in the same pass detects sparse storage with
+`element_count * 4 < table_size / 32` — i.e. it correctly reads
+`table_size` as the `arData` buckets size. So `large_array` and
+`sparse_array` already disagree about what `table_size` means
+inside the same `TopArraysPass`.
+
+The fix shape is straightforward: in `TopArraysPass::analyze`,
+walk to the `array_elements` child of each `ArrayHeader` and read
+its node size for the `Table` column. The path is already
+indexed (`$array_element_nodes` is loaded earlier in the same
+method), so the lookup is one extra hash hit per row. After the
+change:
+
+- `global_variables` (24 elements) → real arData (a few hundred
+  bytes, not 56 B)
+- `$weak->weak_map->entries` (5 000 elements) → real arData
+  (~160 KB at 32 B/bucket × next pow2 ≥ 8192), not 0 B
+- `$points` / `$closures` / `$gens` → an actually-varying number
+  proportional to capacity
+
+The 56 B `_zend_array` struct itself is uninteresting on its own
+and is already accounted for in `Retained`, so there's no need
+to surface it as a column.
+
+Same fix removes the W8-old false-positive "WeakMap reports 0 B"
+reading, since the `array_elements` child of the
+`InlineArrayHeaderContext` carries a normal
+`ZendArrayTableMemoryLocation` for `arData`. The 0 B was a
+column-bug symptom, not a WeakMap-accounting bug.
 
 ### W9. Suspended generator/fiber frames bleed into the call_stack finding
 
