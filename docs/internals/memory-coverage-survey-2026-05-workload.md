@@ -359,25 +359,7 @@ slots don't add up to the chunk's allocated-size accounting.
 
 `G5` already proposed an "Unaccounted regions" section. Promote it.
 
-### W4. `=== Top Strings ===` and `=== Observations ===` sections are silently omitted
-
-Driver: `apps/02_phpspreadsheet.php`, `apps/01_doctrine_orm.php`.
-
-```
-$ grep -c "^=== " 02_phpspreadsheet/report.txt   # 8 sections
-$ grep -c "^=== " 04_twig/report.txt              # 10 sections (Top Strings + Observations)
-```
-
-This is probably intentional ("don't show empty section") but it
-makes report diffs noisy and makes downstream tooling guess at
-section presence. Two fixes are reasonable:
-
-- Always emit the section header followed by `(no findings)` so
-  every report has a stable shape.
-- Emit a single-line manifest near the top: `Sections: overview,
-  findings, type_breakdown, top_classes, …`.
-
-### W5. `dedup_candidate` rows that fall back to bare `value` underspecify the bucket
+### W4. `dedup_candidate` rows that fall back to bare `value` underspecify the bucket
 
 Almost every report carries rows like:
 
@@ -469,7 +451,7 @@ takes. Mirroring the depth fix into the SQL fallback is still good
 hygiene but isn't where the bulk of the user-visible improvement
 lands.
 
-### W6. `Heap` line on workload-driven targets needs a "RSS / mgu(true)" gloss
+### W5. `Heap` line on workload-driven targets needs a "RSS / mgu(true)" gloss
 
 Heaps in the table above range from 7 MB to 310 MB. On the larger
 ones the user wants to know:
@@ -483,7 +465,7 @@ Today the Overview line only pairs `memory_get_usage()` /
 the dump path per G3) would make the workload-driven survey cases
 self-explanatory instead of requiring `ps`-cross-checking.
 
-### W7. Fiber VM stack bytes are aggregated but not localised per Fiber
+### W6. Fiber VM stack bytes are aggregated but not localised per Fiber
 
 Driver: `apps/10_special_features.php` constructs 200 Fibers, calls
 `->start()` on each (so they suspend at `Fiber::suspend(...)`), and
@@ -541,9 +523,9 @@ against `memory_get_usage()`, which excludes VM stack bytes
 entirely (heap-only), so Fiber stacks neither contribute to nor
 explain the unaccounted gap. The unaccounted bytes on driver 10
 are something else (likely opcache / extension-side allocations
-ZendMM didn't pointer-trace), independent of W7.
+ZendMM didn't pointer-trace), independent of W6.
 
-### W8. `Top Arrays` "Table" column shows the `_zend_array` struct, not the buckets table
+### W7. `Top Arrays` "Table" column shows the `_zend_array` struct, not the buckets table
 
 `Top Arrays` (and the `large_array` finding it builds on) carries
 a column literally labelled `Table`. Driver 10:
@@ -583,7 +565,7 @@ Two consequences:
 
 - The column is **uninformative noise on every row** — 56 B, 56 B,
   56 B — and the WeakMap-`0 B` reading is just the inline-header
-  case (W7's old draft mistook this for a bug; it's actually the
+  case (W6's old draft mistook this for a bug; it's actually the
   intended output of the inline-header fix in commit `7b4392e`
   and `InlineArrayHeaderContext`). The right framing is that the
   column itself is wrong, not that one row is special.
@@ -619,13 +601,13 @@ The 56 B `_zend_array` struct itself is uninteresting on its own
 and is already accounted for in `Retained`, so there's no need
 to surface it as a column.
 
-Same fix removes the W8-old false-positive "WeakMap reports 0 B"
+Same fix removes the W7-old false-positive "WeakMap reports 0 B"
 reading, since the `array_elements` child of the
 `InlineArrayHeaderContext` carries a normal
 `ZendArrayTableMemoryLocation` for `arData`. The 0 B was a
 column-bug symptom, not a WeakMap-accounting bug.
 
-### W9. Suspended generator/fiber frames leak into `call_stack` (two-bug stack)
+### W8. Suspended generator/fiber frames leak into `call_stack` (two-bug stack)
 
 Same driver. Captured call stack:
 
@@ -1081,7 +1063,7 @@ What the report **gets right**:
 
 What the report **misses or mis-renders**:
 
-- **Per-Fiber VM stack localisation** (W7): the headline `VM stack:
+- **Per-Fiber VM stack localisation** (W6): the headline `VM stack:
   3.38 MB` already includes the 200 × ~16 KB Fiber stacks; what's
   missing is attaching them as child nodes of each Fiber so
   `Top Arrays` / `bottleneck_path` can pin retained bytes to a
@@ -1093,8 +1075,8 @@ What the report **misses or mis-renders**:
   itemised — `$gens` retains only 906 KB total, much less than the
   ~16 KB-per-generator that PHP allocates for the suspended
   symbol table + execute_data. Worth a dedicated `GeneratorFrame`
-  location type, parallel to W7's per-Fiber emit.
-- **Call-stack wrong shape** (W9): a generator yield-site bleeds
+  location type, parallel to W6's per-Fiber emit.
+- **Call-stack wrong shape** (W8): a generator yield-site bleeds
   into the main thread's call stack.
 - **Reference type collapses to one ZendReference.** 1 000
   `$refs[$i] = &$shared` produces a single ZendReference object
