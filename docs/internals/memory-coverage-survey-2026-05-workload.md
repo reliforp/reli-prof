@@ -542,7 +542,7 @@ reading, since the `array_elements` child of the
 `ZendArrayTableMemoryLocation` for `arData`. The 0 B was a
 column-bug symptom, not a WeakMap-accounting bug.
 
-### W9. Suspended generator/fiber frames bleed into the call_stack finding
+### W9. Suspended generator/fiber frames leak into `call_stack` (two-bug stack)
 
 Same driver. Captured call stack:
 
@@ -553,33 +553,180 @@ Same driver. Captured call stack:
     #2 <main>:92
 ```
 
-Frame `#0` is a **suspended generator** body. The generator IIFE
-spans lines 44-49 in the driver and yields at line 47 — exactly
-matching one of the 1 000 generators primed via `current()`. But
-the actual main thread is sitting in `sleep` from line 92 of
-`<main>` (no caller above sleep). The generator's frame should
-not appear above sleep — they live on different `execute_data`
-chains.
+`#0` is a generator's saved frame at its yield site (lines 44-49
+of the driver, suspended at line 47). The actual main thread is
+in `sleep` from line 92 of `<main>` — no caller above sleep — so
+mixing the generator's frame with the main thread's chain is
+wrong on its face. Inspecting the .rmem export shows this is
+**two independent bugs stacked**, both with concrete fixes.
 
-Two reasonable interpretations:
+#### Bug 9a — `CallStackPass` picks the wrong `CallFramesContext`
 
-1. The substrate enumerates every reachable `execute_data` and
-   labels them as one flat `CallFramesContext`. That works for
-   walking node sizes but produces wrong call-stack output.
-2. The generator frame is correctly modelled but the report
-   formatter picks the deepest frame from any chain and joins
-   them.
+Every job that hosts an `execute_data` chain emits its own
+`CallFramesContext` node:
 
-Either way, only one of the 1 000 generators' frames surfaces
-(the rest are at the same yield site and presumably collide on
-some key). Surfacing them all under a separate "Suspended
-contexts" section, and keeping the main-thread call stack clean,
-matches user expectation. Worth pairing with a `--show-suspended`
-flag when there are too many.
+- `EmitCallFramesJob` for the main thread (1 node, root-rooted
+  via `call_frames`).
+- `EmitGeneratorJob` for each suspended generator with a non-null
+  `execute_data` (1 node per generator, `call_frames` child of a
+  `GeneratorContext`).
+- `EmitFiberJob` for each suspended fiber with a non-null
+  `execute_data` (1 node per fiber, `call_frames` child of a
+  `FiberContext`).
 
-Users trust the call stack to localise the work being done at
-capture; "main is in sleep at line 92" is the truth here, not
-"main is yielding inside a generator".
+Driver 10 therefore has **1 201 `CallFramesContext` nodes** in
+the substrate (1 main + 1 000 generators + 200 fibers).
+`CallStackPass::analyzeWithSubstrate` selects which one to render
+by picking the first match from `iterateNodeSizes()`:
+
+```php
+$callFramesNodeId = null;
+foreach ($this->substrate->iterateNodeSizes() as $node_id => $_) {
+    if ($this->substrate->getNodeType($node_id) === 'CallFramesContext') {
+        $callFramesNodeId = $node_id;
+        break;
+    }
+}
+```
+
+`iterateNodeSizes()` yields by ascending `node_id`, which is
+emission order — and on this driver that puts a generator's
+`CallFramesContext` first. The picker takes it and never reaches
+main's. Walking up the tree-parent chain confirms the choice:
+
+```
+#96485 (CallFramesContext) ← [call_frames] ← GeneratorContext
+#96510 (CallFramesContext) ← [call_frames] ← GeneratorContext
+…
+```
+
+**Fix shape:** restrict the selection to the main thread's
+`CallFramesContext`. Either check `getTreeParentNodeId` and skip
+when the tree parent's link is anything other than the root
+(`call_frames` directly under the global root), or have
+`EmitCallFramesJob` tag its node with an `is_main_thread=1`
+attribute that the picker filters on. The latter is more robust
+to future emit refactors.
+
+#### Bug 9b — `iterateStackChain` walks past the generator boundary
+
+Even if 9a is fixed, the generator's own `CallFramesContext`
+still has the wrong shape: it carries **3 frames** (the gen's
+own frame plus `sleep` and `<main>`) where it should carry just
+the gen's saved frame:
+
+```
+[0] {closure}(/tmp/reli-memscan/apps/10_special_features.php:44-49):47
+[1] sleep:-1
+[2] <main>:92
+```
+
+This comes from `EmitGeneratorJob::execute` walking
+`iterateStackChain` on the gen's saved `execute_data`:
+
+```php
+foreach ($execute_data->iterateStackChain($ctx->dereferencer) as $key => $frame) {
+    $call_frame_context = EmitCallFrameJob::collectCallFrameInline($frame, $ctx);
+    $call_frames_context->add((string)$key, $call_frame_context);
+}
+```
+
+and `iterateStackChain` itself unconditionally follows
+`prev_execute_data`:
+
+```php
+public function iterateStackChain(Dereferencer $dereferencer): iterable {
+    yield $this;
+    $stack = $this;
+    while (!is_null($stack->prev_execute_data)) {
+        yield $stack = $dereferencer->deref($stack->prev_execute_data);
+    }
+}
+```
+
+What the saved generator's `prev_execute_data` actually points
+at is a stale slot on main's VM stack:
+
+1. Main calls `$g->current()` at line 50. PHP pushes a
+   `Generator::current` internal frame *X* on main's VM stack
+   above main's frame. `EG.current_execute_data = X`.
+2. `zend_generator_resume(gen)` sets
+   `gen->execute_data->prev_execute_data = X` (the caller's frame
+   at the moment of resume), then `EG.current_execute_data =
+   gen->execute_data`.
+3. The generator runs to its yield. `ZEND_VM_LEAVE` restores
+   `EG.current_execute_data = X` and the gen's saved `execute_data`
+   keeps `prev_execute_data = X`.
+4. `Generator::current` returns to main. Frame *X* is popped; its
+   slot above main's frame on the VM stack is now free. `gen->prev`
+   still holds the *address* of that slot.
+5. Main's loop ends. Main calls `sleep(120)` at line 92. PHP
+   pushes a new frame for `sleep`. **The VM stack is LIFO, so
+   `sleep`'s frame lands in the same slot that frame *X* used to
+   occupy** — the address `gen->prev` records is now `sleep`'s
+   frame.
+
+When reli samples and walks `iterateStackChain` from the gen's
+saved `execute_data`:
+
+- yield gen frame (line 47)
+- `gen.prev_execute_data` → reads the slot that was *X* but is
+  now **sleep's frame** (a structurally valid `zend_execute_data`,
+  just not the gen's logical caller)
+- `sleep.prev` → main's frame
+- `main.prev` → null → stop
+
+Result: 3 frames, all dereferences "succeed" (the slot has been
+reused by another genuine frame, not freed memory), but the chain
+is fiction. Nothing in PHP or in reli's chain walker enforces the
+boundary that should exist at the generator's own frame.
+
+PHP itself signals this boundary via the `ZEND_CALL_GENERATOR`
+bit in `execute_data->This.u1.type_info` (i.e. `call_info`). The
+runtime sets it on every generator's saved frame; functions like
+`debug_backtrace()` consult it to stop walking past a generator
+into stale or unrelated stack contents. Reli has the constant
+defined:
+
+```
+src/Lib/PhpInternals/Constants/VersionAwareConstants.php:33
+    public const int ZEND_CALL_GENERATOR = (1 << 24);
+```
+
+but the codebase has zero callers for it — `iterateStackChain`,
+`EmitGeneratorJob`, `EmitFiberJob`, and the rest all walk
+`prev_execute_data` blindly.
+
+**Fix shape:** make the walker generator-aware. Either teach
+`iterateStackChain` to stop when the current frame has
+`ZEND_CALL_GENERATOR` set in its `call_info` (matching PHP's own
+backtrace), or short-circuit in `EmitGeneratorJob` to a single
+`yield $this` (the saved frame is a generator's own frame by
+construction; chasing prev never gives meaningful caller
+information for a suspended generator). The second is simpler
+and more local; the first is more general and also covers the
+edge case where some other walker reaches a generator-flagged
+frame from elsewhere.
+
+#### Why fix both
+
+Fixing only 9a (picker) hides the symptom for the report's
+`Call Stack at capture` line, but every generator's own
+`CallFramesContext` continues to carry bogus extra frames. Those
+frames participate in retained-size accounting, in tree-parent
+chains visible from `bottleneck_path`, and in any future pass
+that wants to ask "what does this Generator actually retain on
+its saved stack". So 9a alone is a UX patch, not a correctness
+fix; 9b is the correctness fix.
+
+Fiber's emit goes through the same `iterateStackChain` path. The
+practical impact differs because each Fiber's VM stack is its own
+mmapped region rather than a shared LIFO, so the stale-slot
+pattern from generators doesn't directly reproduce. But the
+walker still has no boundary check, so a Fiber whose
+`prev_execute_data` points back into wherever it was last resumed
+from is exposed to the same class of bug. The fix should cover
+both paths.
 
 ## Wasteful memory observed in the surveyed apps
 
