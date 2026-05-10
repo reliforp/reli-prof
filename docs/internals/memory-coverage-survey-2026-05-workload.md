@@ -356,6 +356,24 @@ Reasonable fixes, none mutually exclusive:
   shallow_size` (genuine dedup floor) rather than `cnt × shallow_size`,
   with the latter shown as "potential" alongside.
 
+**Cost note for the substrate path.** The hardcoded two-shape
+pattern in the resolver looks like a SQL-era leftover — when each
+hop was a prepared `SELECT parent_node_id, link_name FROM
+context_edges WHERE …`, walking deeper visibly added milliseconds
+per finding. On the substrate the equivalent calls are O(1) array
+lookups (`tree_parents[id]`, `tree_link_names[id]`,
+`node_classes[id]`, `node_types[id]` — see
+`GraphSubstrate.php:725-732`), and `dedup_candidate` emits at most
+ten findings per report (the SQL bucket query is `LIMIT 10`). So
+on the in-memory pipeline, walking the tree-parent chain to its
+nearest `object_properties` ancestor is bounded by tree depth
+(≈10-30 hops in real heaps) × 10 findings × a handful of array
+reads each — well below the noise floor of any other pass. Even
+the SQL fallback only pays one prepared `loadTreeParentInfo` per
+hop per finding (≤ 80 round-trips total at depth 8); index-backed
+that's a few ms. The cost of widening the resolver isn't really
+there in either pipeline.
+
 ### W6. `Heap` line on workload-driven targets needs a "RSS / mgu(true)" gloss
 
 Heaps in the table above range from 7 MB to 310 MB. On the larger
