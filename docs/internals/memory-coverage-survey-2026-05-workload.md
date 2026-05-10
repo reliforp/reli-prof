@@ -400,31 +400,65 @@ Today the Overview line only pairs `memory_get_usage()` /
 the dump path per G3) would make the workload-driven survey cases
 self-explanatory instead of requiring `ps`-cross-checking.
 
-### W7. Suspended Fiber stacks aren't accounted for
+### W7. Fiber VM stack bytes are aggregated but not localised per Fiber
 
 Driver: `apps/10_special_features.php` constructs 200 Fibers, calls
 `->start()` on each (so they suspend at `Fiber::suspend(...)`), and
-holds them in `$fibers`. The report shows:
+holds them in `$fibers`. The Top Arrays section reports:
 
 ```
 $fibers     68.13 KB retained, 200 elements
 Fiber       200 instances × 328 B = 64.06 KB
 ```
 
-i.e. only the Fiber wrapper objects are accounted for. Each Fiber
-allocates its own VM stack (default 16 KB) and that stack is alive
-between `start()` and `resume()` — but those bytes are **not** in
-the bin walker's totals. The driver's call_stack-shape capture
-shows that reli reaches into the suspended frame for the
-**generator** case (see W9), so the Fiber gap is specifically
-about **Fiber-private allocations** (its stack region + private
-context) rather than about reaching the suspended `execute_data`.
+Read superficially that suggests the per-Fiber 16 KB VM stacks
+aren't being seen. They are — just not in the place that line is
+measuring. Two pieces:
 
-The 2.66 MB unaccounted on this driver (82.6 % analyzed) is
-suspiciously close to `200 fibers × ~16 KB = 3.2 MB` of stack
-storage. A Fiber-stack walker that enumerates each Fiber's stack
-region as a `FiberStack` location type would close this gap and
-give per-Fiber retained sizes.
+- **Headline `VM stack: 3.38 MB`** in the Overview already includes
+  Fiber VM stacks. `EmitFiberJob` (`Collector/Job/EmitFiberJob.php`)
+  walks each suspended Fiber's `vm_stack` chain and adds every
+  segment to the same `MemoryLocations` collection that holds the
+  main thread's stack; `RegionAnalyzer` (`RegionAnalyzer.php:103-113`)
+  sums it into `vm_stack_total`, and `OverviewPass` renders that.
+  On driver 10 the figure works out to ≈ 256 KB (main) + 200 ×
+  ~16 KB (Fibers) ≈ 3.38 MB, so the bytes aren't lost.
+- **Per-Fiber localisation is missing.** `EmitFiberJob` only
+  records the `VmStackMemoryLocation` instances into the
+  bookkeeping `MemoryLocations` for region classification — it
+  never calls `$ctx->emitNode(...)` with one. The Fiber object
+  itself becomes a node (with a `FiberContext` carrying a
+  `call_frames` child for the suspended frame), but the VM stack
+  region the Fiber owns is not attached as a child node. As a
+  consequence, `Top Arrays` / `bottleneck_path` / `choke_point`
+  cannot say "$fibers[42] retains 16 KB of VM stack" — they can
+  only point at the Fiber wrapper object.
+
+Closing this gap is structural, not algorithmic: `EmitFiberJob`
+needs to emit each VM stack segment (or one aggregate
+`FiberVmStack` location summing them) as a child of the
+`FiberContext` node, with the addresses already in hand. The
+collection step that produces the addresses is already there;
+it's the emit + edge wiring that's absent.
+
+A separate hygiene note: the `MemoryLocations` collection is
+plumbed into `CollectorContext` via a constructor parameter
+named `$fiber_vm_stack_memory_locations`, but the call site in
+`MemoryLocationsCollector` (line 322) passes the **combined main
++ Fiber** collection there. The field name suggests a Fiber-only
+collection that doesn't exist; either rename the field to match
+the variable (`vm_stack_memory_locations`) or actually split the
+two collections. Worth touching at the same time as the emit fix
+so the field name reflects whatever the new shape is.
+
+Note on the original framing in this entry: an earlier draft
+attributed the driver's 2.66 MB unaccounted heap to missing
+Fiber-stack accounting. That was wrong — `% analyzed` is computed
+against `memory_get_usage()`, which excludes VM stack bytes
+entirely (heap-only), so Fiber stacks neither contribute to nor
+explain the unaccounted gap. The unaccounted bytes on driver 10
+are something else (likely opcache / extension-side allocations
+ZendMM didn't pointer-trace), independent of W7.
 
 ### W8. WeakMap entry table reports `Table: 0 B`
 
@@ -719,16 +753,19 @@ What the report **gets right**:
 
 What the report **misses or mis-renders**:
 
-- **Suspended Fiber stacks** (W7): 200 Fibers, only ~64 KB
-  accounted for the wrappers; ~3 MB of stack storage is in the
-  unaccounted bucket.
+- **Per-Fiber VM stack localisation** (W7): the headline `VM stack:
+  3.38 MB` already includes the 200 × ~16 KB Fiber stacks; what's
+  missing is attaching them as child nodes of each Fiber so
+  `Top Arrays` / `bottleneck_path` can pin retained bytes to a
+  specific `$fibers[i]`. The collection step is in
+  `EmitFiberJob`; the emit step is the gap.
 - **Suspended generator frames** show up as `Generator` objects
   (1 000 × 280 B = 273 KB) but their per-frame symbol tables (the
   driver's `$local = ['x' => $i, 'big' => 'gggg…']`) aren't
   itemised — `$gens` retains only 906 KB total, much less than the
   ~16 KB-per-generator that PHP allocates for the suspended
   symbol table + execute_data. Worth a dedicated `GeneratorFrame`
-  location type, parallel to W7's `FiberStack`.
+  location type, parallel to W7's per-Fiber emit.
 - **Call-stack wrong shape** (W9): a generator yield-site bleeds
   into the main thread's call stack.
 - **Reference type collapses to one ZendReference.** 1 000
