@@ -24,9 +24,10 @@ then `sleep(120)`. Reli attaches non-destructively via
 `inspector:memory:report snap.rmem` produces both `report` (text) and
 `report-json`.
 
-PHP target: 8.4.19 NTS (host PHP). Capture timeout 900 s (some
-working sets require it — see G12). Driver scripts and reports live
-at `/tmp/reli-memscan/` on the survey host.
+PHP target: 8.4.19 NTS (host PHP). Capture timeout 900 s (the
+03_phpparser working set has ~600 k AST node objects and takes ~8
+min wall to capture; everything else fits in 60 s). Driver scripts
+and reports live at `/tmp/reli-memscan/` on the survey host.
 
 ## Targets and headline numbers
 
@@ -34,19 +35,18 @@ at `/tmp/reli-memscan/` on the survey host.
 | --- | ------------------------------------------------- | --------- | -------- | ---------- | ------- |
 | 01  | doctrine/orm — 20 k Product entities hydrated     | 42.00 MB  | 34.20 MB | 84.3 %     | OK      |
 | 02  | phpoffice/phpspreadsheet — 80 k Cells in memory   | 48.00 MB  | 44.72 MB | 95.4 %     | OK      |
-| 03  | nikic/php-parser — 1.6 k file ASTs                | 434.00 MB | 403.55 MB| 94.4 %     | OK (8 min, W4) |
+| 03  | nikic/php-parser — 1.6 k file ASTs                | 434.00 MB | 403.55 MB| 94.4 %     | OK (8 min wall, ~600 k AST nodes) |
 | 04  | twig/twig — 200 templates compiled + rendered     | 28.00 MB  | 25.19 MB | 93.0 %     | OK      |
 | 05  | fakerphp/faker (ja_JP) — 30 k stdClass records    | 66.00 MB  | 55.77 MB | 85.5 %     | OK      |
-| 06  | monolog/monolog — 30 k LogRecord with closures    | 102.00 MB | 106.06 MB| **105.5 %** (G2) | OK |
+| 06  | monolog/monolog — 30 k LogRecord with closures    | 102.00 MB | 106.06 MB| **105.5 %** (W2) | OK |
 | 07  | webonyx/graphql-php — 5× 5 k-user query result    | 318.00 MB | 310.55 MB| 98.7 %     | OK      |
 | 08  | symfony/dependency-injection — 3 k services       | 12.00 MB  | 7.65 MB  | 86.8 %     | OK      |
 | 09  | league/csv + ramsey/uuid — 50 k row CSV round-trip| 36.00 MB  | 32.92 MB | 95.4 %     | OK      |
 | 10  | PHP-internal mix — WeakMap, Fiber, generator, …   | 16.00 MB  | 12.68 MB | 82.6 %     | OK      |
 
-Apart from #03 (still being investigated under a longer timeout),
-every snapshot reported. Headline gaps below are reproducible across
-runs and across drivers — i.e. they are gaps in the analyser, not
-artefacts of one heap shape.
+Every snapshot reported. Headline gaps below are reproducible
+across runs and across drivers — i.e. they are gaps in the
+analyser, not artefacts of one heap shape.
 
 ## Reli gaps surfaced by this survey
 
@@ -101,7 +101,7 @@ fixture.
 This is the only **wrong-data** finding in the batch — every other
 gap is missing data, mis-rendered framing, or denominator confusion.
 
-### W2. Confirms G2 — "% analyzed" exceeds 100 % on Monolog driver
+### W2. "% analyzed" exceeds 100 % when many objects share one op_array
 
 Driver: `apps/06_monolog.php`. Report header:
 
@@ -110,18 +110,150 @@ memory_get_usage(): 100.55 MB | memory_get_usage(true): 102.00 MB
 | Heap: 106.06 MB (105.5% analyzed)
 ```
 
-The denominator (`memory_get_usage()` ≈ 100.55 MB) is smaller than
-the numerator (sum-of-allocations ≈ 106.06 MB). G2 in the idle
-survey called this out for `laravel.live` (105.8 %). The Monolog
-case is the same defect, exposed by a heap dominated by 30 000
-`Closure`-with-bound-`$r` plus 30 000 `LogRecord` allocations: each
-op-array body / runtime cache slot is counted in the bin walker but
-not reflected in `memory_get_usage()`.
+This is a different mechanism from G2 in the idle survey (which
+attributed it to numerator/denominator unit mismatch — slot-rounded
+numerator vs `memory_get_usage()` denominator). After the
+`location_types_summary`-based numerator landed, the denominator
+matches the numerator's units; the leftover 5.51 MB excess on this
+driver is **double-counting in the numerator itself**.
 
-Suggested fix unchanged from G2: pick a denominator that includes
-ZendMM internal overhead (e.g. `chunks_total_bytes -
-chunks_total_free_bytes`), or clamp the displayed percentage with a
-note when the analysed sum exceeds the user-visible heap.
+Confirmed by exporting `snap.rmem` to SQLite and inspecting
+`context_node_locations`. The `INSERT INTO location_types_summary
+… SUM(size)` aggregate in `PdoMemoryOutput::insertLocationTypesSummaryFromDb`
+is taken over rows that include the same physical address multiple
+times:
+
+```
+rows-per-addr=1      groups=905,533
+rows-per-addr=2      groups=31
+rows-per-addr=3      groups=2
+rows-per-addr=30001  groups=4   ← 120,004 rows on 4 addresses
+```
+
+The 4 hot addresses are exactly the four sub-allocations of one
+`zend_op_array`:
+
+| address           | location_type           | size   | rows   | total bytes |
+| ----------------- | ----------------------- | ------ | ------ | ----------- |
+| 0x7f497c689300    | ZendOpArrayBody         | 256 B  | 30,001 | 7.32 MB     |
+| 0x7f497c65f090    | LocalVariableNameTable  |  16 B  | 30,001 | 469 KB      |
+| 0x7f497c657580    | ZendArgInfos            |  32 B  | 30,001 | 938 KB      |
+| 0x7f497c6e55d0    | RuntimeCache            |  24 B  | 30,001 | 703 KB      |
+|                   |                         |        |        | **9.39 MB** |
+
+The driver's processor
+
+```php
+$logger->pushProcessor(static function (\Monolog\LogRecord $r) {
+    $extra = $r->extra;
+    $extra['cb'] = static function ($x) use ($r) {  // <- 30 000 closures
+        return [$r->message, $x];
+    };
+    return $r->with(extra: $extra);
+});
+```
+
+instantiates 30 000 inner Closure objects, **all sharing one
+`zend_op_array`** (Zend compiles the inner `static function` once
+and binds new Closure objects to that single function struct). Reli
+walks each Closure's `func->op_array` chain and emits a separate
+`ZendOpArrayBody / LocalVariableNameTable / ZendArgInfos /
+RuntimeCache` location row for each Closure — so the same 328 B of
+op_array storage is counted 30 001 times.
+
+Dedup-by-`(address)` reduces the type-summary sum from 106.06 MB to
+96.68 MB (the 9.39 MB delta matches the four hot rows almost
+exactly). With the dedup applied, `% analyzed = 96.68 / 100.55 =
+96.2 %`, comfortably below 100 % and consistent with `% analyzed`
+on the other workload-driven targets.
+
+**Layer the duplicates land at.** The .rmem file itself carries the
+duplicates — they are not a SQL-export artefact. `rmem:query
+--sections` on `06_monolog/snap.rmem` reports `locations
+1,041,450 elements`, exactly matching `SELECT COUNT(*) FROM
+context_node_locations` after `inspector:memory:export-sqlite`.
+Distinct addresses are 920 009 — i.e. 121 441 redundant rows on
+the same physical addresses (the four hot 30 001-row groups account
+for 120 004 of those, the rest are small noise). So every consumer
+of the .rmem (live capture's report, dump→analyze→report,
+rmem:explore, rmem:mcp) sees the same inflated numerator.
+
+The bypassed dedup. `MemoryLocations::add()`
+(`src/Lib/PhpProcessReader/PhpMemoryReader/MemoryLocation/MemoryLocations.php`)
+already deduplicates on `address` when adding to the in-memory
+collection — the second add for the same address is dropped (or
+the larger one wins). But that map is only consulted to **guard
+the in-memory enumeration set**; the actual writers
+(`PdoContextTreeSink::emitNode()` for SQL,
+`BinaryContextTreeSink::emitNode()` for `.rmem`) iterate each
+context's `getLocations()` and emit every returned location
+without re-checking for an existing entry at that address. The
+binary sink even acknowledges this in a comment:
+
+```
+// No dedup: ContextAnalyzer guarantees each context is emitted
+// once via getMemoNodeId/setMemoNodeId. Substrate loader handles
+// any edge cases at read time.
+```
+
+The invariant that comment relies on (one context → one node row)
+is true; the *implicit* invariant the rest of the report depends
+on (one location → one row) is not.
+
+Walking the path on the closure case:
+
+1. `collectZendFunctionPointer` short-circuits when the **`ZendFunction`
+   struct address** has been seen before. For closures the function
+   struct is per-instance (Zend copies it during
+   `zend_create_closure`), so this check never fires.
+2. `user_function_definition_context_pool->getContextForLocation(...)`
+   is keyed by `op_array_header_memory_location`'s address (also
+   per-closure), so each closure gets a **fresh
+   `FunctionDefinitionContext`** — and a fresh `OpArrayContext`,
+   `RuntimeCacheContext`, `ArgInfosContext`, and
+   `LocalVariableNameTableContext` even though every one of those
+   `MemoryLocation` objects points at the **shared body / arg_info
+   / variable-name-table / runtime-cache addresses**.
+3. At emit time, each fresh context's `getLocations()` returns the
+   shared-address `MemoryLocation`. The sink writes 30 001 rows for
+   each of the four shared sub-allocations.
+
+The `MemoryLocations::add()` dedup never sees these because they
+are never added to a single shared `MemoryLocations` instance —
+each closure's collection is treated as its own batch.
+
+Three viable fixes, ordered cheapest-to-cleanest:
+
+- **Sink-side `(address, location_type)` dedup, both sinks.** Add a
+  `seen_emit_keys` set in `PdoContextTreeSink::emitNode()` and
+  `BinaryContextTreeSink::emitNode()` to suppress duplicate location
+  rows. Trims rmem and SQL output symmetrically, but the dedup is
+  paid in the writer hot path on every snapshot and the `// No
+  dedup` comment in the binary sink would need to flip.
+- **Aggregate-side dedup, SQL only.** `insertLocationTypesSummaryFromDb`
+  becomes `SELECT … SUM(size) FROM (SELECT DISTINCT address, size,
+  location_type FROM context_node_locations …)`. Cheapest patch but
+  asymmetric: it fixes the Overview / Type Breakdown numbers in
+  reports generated from the SQL substrate, leaves the .rmem
+  inflated, and leaves the wrong row count in `Type Breakdown`
+  (`ZendOpArrayBody count=30 279` reads as "30 279 distinct
+  op_arrays" when 30 000 of those are the same op_array).
+- **Don't emit shared op_array sub-locations per closure.** Recognise
+  in `collectUserFunctionDefinition` that body / arg_info /
+  variable-name-table / runtime-cache addresses are shared with the
+  prototype function, and use `MemoryLocations::addAlias()` instead
+  of `add()` for the per-closure references. The first closure
+  emits the actual node + locations under the prototype function;
+  every subsequent closure attaches its `Closure` node via an alias
+  edge into that prototype function's op_array context. The
+  `addAlias()` mechanism is already in the codebase for exactly
+  this shape, just not wired up here. Fixes the rmem at source so
+  every downstream consumer (SQL export, rmem:explore, rmem:mcp)
+  gets the smaller, correctly-deduped file for free.
+
+Cross-check on the other targets in this batch is pending; the G2
+laravel.live case from the idle survey may have the same root cause
+if its idle bootstrap retains many closures sharing one op_array.
 
 ### W3. `% analyzed` regularly trails the 95 % bar even on small heaps
 
@@ -144,31 +276,7 @@ slots don't add up to the chunk's allocated-size accounting.
 
 `G5` already proposed an "Unaccounted regions" section. Promote it.
 
-### W4. `inspector:memory` capture wall-time scales badly with class diversity
-
-Driver: `apps/03_phpparser.php` parses 1.6 k .php files with
-`nikic/php-parser` and retains ~1.6 k AST roots. The peak heap is
-~434 MB. The capture timed out at 240 s in the first pass; under a
-900 s budget it completed in **~8 min** wall (snap.rmem 1.5 GB).
-
-The other 318 MB heap (07_graphql) captured in ~70 s, so absolute
-heap size is not the predictor. The distinguishing feature of the
-parser working set is **class-table breadth**: nikic/php-parser
-ships ~150 distinct AST node classes, each with multiple subtypes,
-and most instances cluster around a handful of those classes — but
-the ELF-symbol enumeration on the class entries multiplies. Worth
-instrumenting `BinaryAnalysisCache` cold-attach and the `class_table`
-walker to confirm whether the bottleneck is
-
-1. enumerating `module_registry` once per attach (one-time, but
-   slow on very large class tables), or
-2. per-instance class-entry resolution in the bin walker (scales
-   with object count × class breadth).
-
-If (2), an attribute-side cache keyed by `class_entry` address
-would shrink it to (1).
-
-### W5. `=== Top Strings ===` and `=== Observations ===` sections are silently omitted
+### W4. `=== Top Strings ===` and `=== Observations ===` sections are silently omitted
 
 Driver: `apps/02_phpspreadsheet.php`, `apps/01_doctrine_orm.php`.
 
@@ -186,7 +294,7 @@ section presence. Two fixes are reasonable:
 - Emit a single-line manifest near the top: `Sections: overview,
   findings, type_breakdown, top_classes, …`.
 
-### W6. `dedup_candidate` `value: N copies x M B` rows expose stub identifiers
+### W5. `dedup_candidate` `value: N copies x M B` rows expose stub identifiers
 
 Almost every report ends with rows like:
 
@@ -210,7 +318,7 @@ called `value` is duplicated everywhere", which is wrong. Either:
 This is G7 / G9 from the idle survey, surfaced again on every
 target. Worth promoting to a real fix rather than a known limitation.
 
-### W7. `Heap` line on workload-driven targets needs a "RSS / mgu(true)" gloss
+### W6. `Heap` line on workload-driven targets needs a "RSS / mgu(true)" gloss
 
 Heaps in the table above range from 7 MB to 310 MB. On the larger
 ones the user wants to know:
@@ -224,7 +332,7 @@ Today the Overview line only pairs `memory_get_usage()` /
 the dump path per G3) would make the workload-driven survey cases
 self-explanatory instead of requiring `ps`-cross-checking.
 
-### W8. `companion_cluster` text duplicates information visible elsewhere
+### W7. `companion_cluster` text duplicates information visible elsewhere
 
 Driver: `apps/06_monolog.php`. The report carries:
 
@@ -250,7 +358,7 @@ Consider:
   ("paired with: …, 1:1 ratio") so the relationship is visible
   inline.
 
-### W9. Suspended Fiber stacks aren't accounted for
+### W8. Suspended Fiber stacks aren't accounted for
 
 Driver: `apps/10_special_features.php` constructs 200 Fibers, calls
 `->start()` on each (so they suspend at `Fiber::suspend(...)`), and
@@ -266,7 +374,7 @@ allocates its own VM stack (default 16 KB) and that stack is alive
 between `start()` and `resume()` — but those bytes are **not** in
 the bin walker's totals. The driver's call_stack-shape capture
 shows that reli reaches into the suspended frame for the
-**generator** case (see W11), so the Fiber gap is specifically
+**generator** case (see W10), so the Fiber gap is specifically
 about **Fiber-private allocations** (its stack region + private
 context) rather than about reaching the suspended `execute_data`.
 
@@ -276,7 +384,7 @@ storage. A Fiber-stack walker that enumerates each Fiber's stack
 region as a `FiberStack` location type would close this gap and
 give per-Fiber retained sizes.
 
-### W10. WeakMap entry table reports `Table: 0 B`
+### W9. WeakMap entry table reports `Table: 0 B`
 
 Same driver. `Top Arrays`:
 
@@ -294,7 +402,7 @@ storage like a normal array" decision. Either:
 - The column should display a sentinel ("(weak)") so the user
   isn't told 0 bytes for something that isn't 0.
 
-### W11. Suspended generator/fiber frames bleed into the call_stack finding
+### W10. Suspended generator/fiber frames bleed into the call_stack finding
 
 Same driver. Captured call stack:
 
@@ -580,7 +688,7 @@ What the report **misses or mis-renders**:
   ~16 KB-per-generator that PHP allocates for the suspended
   symbol table + execute_data. Worth a dedicated `GeneratorFrame`
   location type, parallel to W9's `FiberStack`.
-- **Call-stack wrong shape** (W11): a generator yield-site bleeds
+- **Call-stack wrong shape** (W10): a generator yield-site bleeds
   into the main thread's call stack.
 - **Reference type collapses to one ZendReference.** 1 000
   `$refs[$i] = &$shared` produces a single ZendReference object
@@ -614,4 +722,4 @@ results/<name>/
 
 `run.sh <name> apps/<name>.php` runs the full pipeline. Capture
 takes 10 s on small heaps to >5 min on the 03_phpparser-shape
-heaps (W4).
+heaps (~600 k AST node objects).
