@@ -400,33 +400,7 @@ Today the Overview line only pairs `memory_get_usage()` /
 the dump path per G3) would make the workload-driven survey cases
 self-explanatory instead of requiring `ps`-cross-checking.
 
-### W7. `companion_cluster` text duplicates information visible elsewhere
-
-Driver: `apps/06_monolog.php`. The report carries:
-
-```
-[MEDIUM] 11.45 MB impacted
-  companion_cluster: Closure (30,003, 9.84 MB) always paired with
-  Monolog\JsonSerializableDateTimeImmutable (30,000, 1.60 MB) — 11.45 MB
-```
-
-… and then re-states the same Closure / DateTime numbers in
-`Top Classes by Memory` and `Type Breakdown`. The companion-cluster
-finding is the most actionable of the three (it explains *why* the
-two classes' counts move together) but is the lowest in the report
-because severity is MEDIUM. On a long report the user keeps
-scrolling past it.
-
-Consider:
-
-- Promoting `companion_cluster` above `Top Classes by Memory`
-  whenever it explains ≥ 50 % of the dominant class' instance
-  count, *or*
-- Adding the companion class as a column in `Top Classes by Memory`
-  ("paired with: …, 1:1 ratio") so the relationship is visible
-  inline.
-
-### W8. Suspended Fiber stacks aren't accounted for
+### W7. Suspended Fiber stacks aren't accounted for
 
 Driver: `apps/10_special_features.php` constructs 200 Fibers, calls
 `->start()` on each (so they suspend at `Fiber::suspend(...)`), and
@@ -442,7 +416,7 @@ allocates its own VM stack (default 16 KB) and that stack is alive
 between `start()` and `resume()` — but those bytes are **not** in
 the bin walker's totals. The driver's call_stack-shape capture
 shows that reli reaches into the suspended frame for the
-**generator** case (see W10), so the Fiber gap is specifically
+**generator** case (see W9), so the Fiber gap is specifically
 about **Fiber-private allocations** (its stack region + private
 context) rather than about reaching the suspended `execute_data`.
 
@@ -452,7 +426,7 @@ storage. A Fiber-stack walker that enumerates each Fiber's stack
 region as a `FiberStack` location type would close this gap and
 give per-Fiber retained sizes.
 
-### W9. WeakMap entry table reports `Table: 0 B`
+### W8. WeakMap entry table reports `Table: 0 B`
 
 Same driver. `Top Arrays`:
 
@@ -470,7 +444,7 @@ storage like a normal array" decision. Either:
 - The column should display a sentinel ("(weak)") so the user
   isn't told 0 bytes for something that isn't 0.
 
-### W10. Suspended generator/fiber frames bleed into the call_stack finding
+### W9. Suspended generator/fiber frames bleed into the call_stack finding
 
 Same driver. Captured call stack:
 
@@ -505,10 +479,9 @@ contexts" section, and keeping the main-thread call stack clean,
 matches user expectation. Worth pairing with a `--show-suspended`
 flag when there are too many.
 
-This is worth fixing before W7 because users will trust the call
-stack to localise the work being done at capture; "main is in
-sleep at line 92" is the truth here, not "main is yielding inside
-a generator".
+Users trust the call stack to localise the work being done at
+capture; "main is in sleep at line 92" is the truth here, not
+"main is yielding inside a generator".
 
 ## Wasteful memory observed in the surveyed apps
 
@@ -746,7 +719,7 @@ What the report **gets right**:
 
 What the report **misses or mis-renders**:
 
-- **Suspended Fiber stacks** (W9): 200 Fibers, only ~64 KB
+- **Suspended Fiber stacks** (W7): 200 Fibers, only ~64 KB
   accounted for the wrappers; ~3 MB of stack storage is in the
   unaccounted bucket.
 - **Suspended generator frames** show up as `Generator` objects
@@ -755,8 +728,8 @@ What the report **misses or mis-renders**:
   itemised — `$gens` retains only 906 KB total, much less than the
   ~16 KB-per-generator that PHP allocates for the suspended
   symbol table + execute_data. Worth a dedicated `GeneratorFrame`
-  location type, parallel to W9's `FiberStack`.
-- **Call-stack wrong shape** (W10): a generator yield-site bleeds
+  location type, parallel to W7's `FiberStack`.
+- **Call-stack wrong shape** (W9): a generator yield-site bleeds
   into the main thread's call stack.
 - **Reference type collapses to one ZendReference.** 1 000
   `$refs[$i] = &$shared` produces a single ZendReference object
