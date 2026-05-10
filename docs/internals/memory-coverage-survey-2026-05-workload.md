@@ -294,29 +294,67 @@ section presence. Two fixes are reasonable:
 - Emit a single-line manifest near the top: `Sections: overview,
   findings, type_breakdown, top_classes, …`.
 
-### W5. `dedup_candidate` `value: N copies x M B` rows expose stub identifiers
+### W5. `dedup_candidate` rows that fall back to bare `value` underspecify the bucket
 
-Almost every report ends with rows like:
+Almost every report carries rows like:
 
 ```
 [LOW] 1.16 MB impacted
   dedup_candidate: value: 30,339 copies x 40 B = 1.16 MB
   11/30339 copies have identical content (0%). Example: ""
-[shared_fanin] value -> ? (211,215 refs -> 61,150 targets, 3.5 each)
 ```
 
-`value` here is the literal `link_name` of the bucket value's tree
-edge — not a property name, not a class. A user who hasn't read
-`memory-report-architecture.md` will read these as "some property
-called `value` is duplicated everywhere", which is wrong. Either:
+Read superficially, `value` looks like the only key the bucket is
+grouped on, which would make the row near-meaningless. **It isn't.**
+The SQL aggregation in `DedupCandidatePass::loadDedupRowsFromSql`
+buckets by `(link_name, child shallow_size, child class_name, child
+location_type)` and gates with `cnt > 50 AND cnt × size > 10 240`.
+`ZendArrayMemoryLocation` targets are rejected outright. The B6
+note in `docs/internals/memory-report-ux-improvements.md` was
+specifically there to keep heterogeneous classes that happen to
+share a shallow size out of the same bucket.
 
-- Suppress `dedup_candidate` rows where the only available
-  identifier is the generic edge name (`value`, `key`); or
-- Prefix them with the parent path (`$h->records[*]['extra']`-style)
-  so the user can localise them.
+So binning is fine. The complaint is that the **rendered label**
+strips the bucket key down to `link_name` only, in two stacked ways:
 
-This is G7 / G9 from the idle survey, surfaced again on every
-target. Worth promoting to a real fix rather than a known limitation.
+- **Shallow parent resolver.** `resolveDedupOwnerInfoFromSubstrate`
+  recognises only two parent shapes: parent is `object_properties`
+  directly, or `bucket → array_elements → array_header →
+  object_properties` (one level of array nesting under a property).
+  Anything deeper or differently-rooted (`$obj->prop[L1][L2] → x`,
+  arrays attached to a global symbol, generators' static_variables,
+  closure use-bindings, etc.) returns `source_class=null`, and
+  `buildDedupLabel` then degrades to bare `link_name`. The Monolog
+  case `[value] LogRecord-cnt=30000` (4.56 MB) goes through
+  `recordsByLevel[Level::Info][i] → LogRecord` which is exactly the
+  two-level-nested shape that misses the resolver's pattern.
+- **No `target_location_type` fallback in the suffix.**
+  `buildDedupLabel` appends `({$target_class})` when target_class
+  is non-null. Internal types — `ZendString`, `ZendReference`, etc.
+  — leave `class_name = NULL`, so 30 339 same-shape strings render
+  with no target hint at all even though the SQL bucket key knew
+  they were all `ZendStringMemoryLocation`.
+
+There's also a separate hazard in the **impact figure itself**.
+`total_waste = cnt × shallow_size` is the upper bound assuming all
+N members are dedupable. The hypothesis line carries
+`identical_count / cnt` (e.g. `11/30339 (0%)`) — that's the actually
+measurable dedup potential, ~440 B in this case, not 1.16 MB. Sorting
+by `cnt × size` therefore hoists buckets where almost nothing is
+identical above the buckets where dedup actually saves something.
+
+Reasonable fixes, none mutually exclusive:
+
+- Walk the tree-parent chain N hops in
+  `resolveDedupOwnerInfoFromSubstrate` until either an
+  `object_properties` ancestor is found or a sentinel (global
+  symbol table, function table) is hit. The discovered chain
+  becomes the rendered prefix (`$obj->prop[L1][L2][value]` etc.).
+- When `target_class` is null, use `target_location_type` for the
+  suffix (`(ZendString)`, `(ZendReference)`).
+- Rank dedup_candidate findings by `(identical_count - 1) ×
+  shallow_size` (genuine dedup floor) rather than `cnt × shallow_size`,
+  with the latter shown as "potential" alongside.
 
 ### W6. `Heap` line on workload-driven targets needs a "RSS / mgu(true)" gloss
 
