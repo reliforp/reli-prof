@@ -54,7 +54,7 @@ Numbering continues from the idle survey. Gaps confirmed against
 this batch of targets are linked back to that doc; new gaps get
 fresh `Wxx` IDs (`W` for "workload pass").
 
-### W1. Call-stack frame text is corrupted on the substrate path for some captures
+### W1. Call-stack frame text is mangled by Symfony Console when the report contains broken UTF-8
 
 Driver: `apps/05_faker.php`. Output:
 
@@ -64,42 +64,125 @@ Driver: `apps/05_faker.php`. Output:
     #<main>n>:25
 ```
 
-Expected: `#1 <main>:25`. The same .rmem reproduces it across re-runs
-of `inspector:memory:report`. The JSON report shows the correct
-`hypothesis: "#0 sleep:-1\n#1 <main>:25"` — so the structured finding
-is right; the text formatter (or the substrate-backed
-`CallStackPass`) is corrupting frame 1's label after the JSON branch
-has already serialised it.
-
-The same .rmem produces a clean stack for every other capture in the
-batch. Faker is the largest top-of-frame symbol-table driver here
-(30 000 stdClass with 11 dynamic properties each); the corruption is
-data-dependent, not a transient FFI read.
-
-The on-disk data is fine. Exporting the .rmem to SQLite and reading
-the raw `context_node_attributes` rows for the `<main>` frame shows:
+Expected: `#1 <main>:25`. Reproducible across re-runs of
+`inspector:memory:report` with the same `.rmem`. The JSON
+formatter on the same Finding emits the correct
+`hypothesis: "#0 sleep:-1\n#1 <main>:25"`. The on-disk data is
+also fine — exporting `.rmem` to SQLite and reading the raw
+`context_node_attributes` rows shows the right values:
 
 ```
 node_id=1149989  function_name = <main>
 node_id=1149989  lineno        = 25
 ```
 
-i.e. the capture stored the right values; the substrate-backed
-`CallStackPass::analyzeWithSubstrate()` (or `NodeLabeler` ahead of
-it) is splicing extra characters in only when going through the
-text formatter — the JSON-formatter goes through a different code
-path that reads the same fields and emits `"#1 <main>:25"`
-correctly.
+i.e. capture and analysis are clean; the corruption is purely a
+rendering-time event. Walking the layers:
 
-Likely cause: a stale-buffer bug in the binary-path `frame_labels`
-loader where the function_name and lineno of consecutive frames are
-read into overlapping buffers. Worth reproducing by running the
-existing report-tests (`tests/Inspector/Output/MemoryOutput/Report/Pass/CallStackPassTest.php`)
-under valgrind, or by capturing this exact 05_faker .rmem into a
-fixture.
+| Layer                                                        | Output         |
+| ------------------------------------------------------------ | -------------- |
+| `Finding->hypothesis` directly off `ReportGenerator::generateFromBinary` | correct `#1 <main>:25` |
+| `TextReportFormatter::format($result)` return value          | correct `    #1 <main>:25` |
+| Same return value written through `Symfony\…\StreamOutput::write` | **`    #<main>n>:25`** |
+| Same return value written through `file_put_contents` (the `-o file` path of the command) | correct |
+| `inspector:memory:report` with stdout-redirect (`> file`)    | corrupt        |
+| `inspector:memory:report -o file`                            | correct        |
 
-This is the only **wrong-data** finding in the batch — every other
-gap is missing data, mis-rendered framing, or denominator confusion.
+So the corruption fires only when the formatted report passes
+through `Symfony\Component\Console\Output\StreamOutput::write`,
+which runs the buffer through `OutputFormatter::format` to
+expand `<info>…</info>`-style tags. The `-o` flag bypasses
+`StreamOutput` entirely (it goes through `file_put_contents`),
+which is why redirecting via that flag prints the right text.
+
+#### Why only this driver
+
+Stripping the report by section shows the trigger is in the
+`Top Strings` section. `TextReportFormatter::format` builds the
+`Path` column with byte-based truncation:
+
+```php
+// Formatter/TextReportFormatter.php:603-605
+$display_path = strlen($path) > 30
+    ? '...' . substr($path, -27)
+    : $path;
+```
+
+`substr` is byte-aware, not UTF-8-aware. When a path ends in
+multi-byte characters (e.g. Faker's `ja_JP` locale produces
+Japanese strings reachable via Top Strings paths), the cut can
+land mid-character, leaving stray UTF-8 trailing bytes with no
+lead. On the faker capture this surfaces as a literal
+`...��承知しょうちで�']` in the rendered Top Strings table — the
+`��` are unmapped trailing bytes:
+
+```
+context bytes: 2e 2e 2e   81 94   e6 89 bf …
+                "..."     ↑ orphan trailing pair (no UTF-8 lead)
+                          followed by valid 承 (U+627F)
+```
+
+Bisecting against a `StreamOutput::write` of the full text:
+chopping the report at byte `9365` of the suffix following the
+`<main>:25` line is the OK→corrupt transition, and that exact
+boundary lands inside the `81 94 …` orphan-byte run. Removing
+the entire `Top Strings` section makes the corruption stop;
+adding the broken-bytes line back makes it return.
+
+#### How broken UTF-8 later in the buffer corrupts `<main>` earlier
+
+`OutputFormatter::format` runs a single `preg_replace_callback`
+over the entire input string with a regex that matches
+`<tag>…</tag>` markup. The regex is byte-mode (no `/u`
+modifier), so PCRE treats orphan UTF-8 bytes as raw bytes — but
+PCRE's offset bookkeeping during multi-match callbacks across a
+buffer that contains malformed UTF-8 segments doesn't end up
+position-stable. Combined with the regex's optional `\\<` /
+`\\>` escape branches, the rewrite that emits the unstyled
+`<main>` body picks the wrong slice of the input, eating the
+preceding `1 ` (frame number) and pasting `n>` after the
+already-emitted closing `>`. The visible result is `<main>` ↔
+`1 ` swapped within the same line, with two stray bytes
+appearing on the far side. This isn't a deliberate Symfony
+behaviour; it's an interaction of "we don't validate UTF-8" +
+"we don't escape `<`" + "the input contains both broken bytes
+and tag-shaped substrings".
+
+The mechanism is non-trivial to characterise byte-for-byte
+without instrumenting PCRE itself, but the empirical chain is
+unambiguous: remove the broken bytes from the input → no
+corruption; keep the broken bytes but route the buffer through
+`file_put_contents` instead of `StreamOutput` → no corruption.
+The interaction is a live trap whenever a reli report contains
+both a tag-shaped substring (`<main>` is the canonical one;
+`<closure>`, `<root>`, etc. are equally exposed) and a
+broken-UTF-8 byte sequence further down — both of which arise
+naturally from real captures.
+
+#### Fix shape
+
+Two complementary changes, both small:
+
+- **Stop emitting broken UTF-8.** Replace the byte-based
+  `substr` calls in `TextReportFormatter` (lines 274, 604, 1246
+  in particular) with `mb_substr(..., 'UTF-8')`. Top Strings'
+  `Path` column was the trigger this time; the same shape
+  (`'...' . substr($x, -N)`) at the other two call sites is
+  exposed to the same trap whenever a path or class name ends
+  in multi-byte content. There's already an `mb_substr` form at
+  line 1026, which shows the project knows the right primitive
+  exists.
+- **Stop letting Symfony reinterpret the buffer.** Either
+  `OutputFormatter::escape($text)` the formatted text before
+  passing it to `$output->write`, or have the text formatter
+  emit through `fwrite(STDOUT, …)` directly (mirroring the `-o`
+  path). Even after the `mb_substr` fix, a class name or
+  function name that itself contains `<…>` would hit the same
+  Symfony parser; escaping is the durable fix.
+
+The first change is the immediate bug fix. The second is the
+hardening that makes it never come back, the same way the `-o`
+path is already immune.
 
 ### W2. "% analyzed" exceeds 100 % when many objects share one op_array
 
