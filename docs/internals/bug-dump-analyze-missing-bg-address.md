@@ -73,67 +73,101 @@ unaccounted. See `docs/memory/case-laravel-snappy-leak.md`.
    — when `bg_address === null` the job emits an empty `modules` root
    and returns before reaching the shutdown-function walk.
 
-## Design space
+## Design: layered resolution
 
-### Recommended: persist per-module addresses in the dump header
+The pipeline ends up with three tiers, ordered by cost and by how
+much state the dump has to carry. Each tier gracefully degrades to
+the next; a walker that gets `null` back keeps its current
+short-circuit behaviour.
+
+### Tier 1 (primary): dump-time resolve → persist in the header
 
 - Bump dump format to v3. After `cg_address` (+ `rss_bytes` if v2),
-  add a small extensible block — e.g. `uint32 count` followed by
-  `count` × (string key, int64 value) — for module-globals
-  addresses. Pre-seed it with `basic_globals`; new modules add a
-  key without further format churn.
+  add an extensible block of module-globals addresses — e.g.
+  `uint32 count` followed by `count` × `(uint32 key_len, key_bytes,
+  int64 address)`. Pre-seed it with `basic_globals`; future module
+  walkers add a key without another format bump.
 - `MemoryDumpCommand` resolves the symbols at dump time via
   `PhpGlobalsFinder` (it already calls `findExecutorGlobals` /
   `findCompilerGlobals`; adding `findBasicGlobals` next to them is
   one line, plus the dumper-side serialization).
 - `MemoryDumpReaderFactory::parse()` reads the map; missing keys
-  fall back to `null` so existing module-globals walkers (which
-  already `if (=== null) return;`) keep working uniformly.
-- This is the only choice that holds up across the realistic
-  build matrix: distros, alpine, custom builds, FrankenPHP-style
-  static-link executables, etc. Symbol availability at dump time
-  is checked by the same `PhpGlobalsFinder` the live path already
-  trusts; whatever it can resolve, the dumper persists.
+  fall through to tier 2.
+- This tier is the only one that works against minimal dumps (no
+  `--include-binary`, no `--dependency-root`). It covers the common
+  case across the realistic build matrix (distros, alpine, custom
+  builds, FrankenPHP-style static-link executables, etc.) — symbol
+  availability at dump time is judged by the same `PhpGlobalsFinder`
+  the live path already trusts.
 
-### Why not "re-resolve at analyze time"
+### Tier 2 (fallback): analyze-time resolve against the dump's binary view
 
-- Plausible in theory (`CoreDumpReader.php:58` does it for core
-  dumps), but it requires the binary to be present at analyze time
-  via `--include-binary` or `--dependency-root`, and to retain its
-  dynamic symbol table. Stripped production binaries break this.
-  The lexbor scanner exists precisely because that constraint
-  doesn't hold for the lexbor symbol in upstream php builds.
-- For `basic_globals` the symbol is part of php itself and is
-  almost always resolvable wherever reli can attach in the first
-  place, so this path *would* work most of the time — but the
-  dump-time resolution path is cheaper, simpler, and has none of
-  these caveats. The cases where dump-time resolution fails
-  (e.g. heavily stripped static linker) are exactly the cases
-  where analyze-time resolution would fail too.
+- Triggered when a symbol the analyzer wants is absent from the
+  tier-1 map and the binary is reachable through the dump (via
+  `--include-binary` at capture time or `--dependency-root` at
+  analyze time).
+- `MemoryDumpReaderFactory::createFromPath()` reuses the same
+  `PhpGlobalsFinder` machinery that `CoreDumpReader.php:58` already
+  invokes against core dumps. The dump's reconstructed memory map
+  + binary segments are exactly the substrate that finder expects;
+  no new resolver is needed.
+- Use cases this rescues:
+  - Old dump + newer reli that supports more module walkers
+    (header was written before the symbol was on the list).
+  - Bespoke / out-of-tree extensions whose symbols the dumper
+    didn't know to resolve speculatively.
+- Failure mode: stripped binary → finder returns null → tier 3 (or
+  the walker short-circuits). Identical to today's behaviour for
+  those targets.
 
-### When brute-force scanning is the right answer
+### Tier 3 (per-module opt-in): brute-force scanning
 
 - Only when the symbol is structurally absent from a representative
-  share of target binaries. ext/uri / lexbor is the canonical
-  example. A new module-globals walker should default to
-  header-persisted addresses; brute-force is an opt-in per-module
-  fallback, not a substrate.
+  share of target binaries — ext/uri / lexbor is the canonical
+  example, because the lexbor symbol is stripped from typical
+  upstream php builds. Tier 1 and tier 2 can't help there.
+- This is a per-module scanner, not a substrate. A new
+  module-globals walker should default to tiers 1+2 and only opt
+  in to tier 3 when there's a concrete reason the symbol is
+  unavailable on production targets.
+
+### Resolution algorithm at the createFromPath chokepoint
+
+```
+for each module_globals symbol the analyzer wants:
+  if dump_header.module_globals[symbol] is set:
+    use it                                # tier 1
+  else if binary segments are accessible:
+    try PhpGlobalsFinder::find<Sym>(...)
+    if resolved: use it                   # tier 2
+    else: null
+  else:
+    null                                  # walker short-circuits
+                                          # or falls through to its
+                                          # per-module tier-3 scan
+```
+
+Tier 2 deliberately does not also retry symbols that the tier-1
+map records as "resolved" — the persisted address came from the
+live process and is authoritative. The map only needs the
+`address = -1` "present-but-unresolved" sentinel if the dumper
+wants to suppress tier 2 retries for known-stripped symbols; for
+now, leaving the key absent and letting tier 2 try cheaply is
+simpler.
 
 ## Concrete changes
+
+### Tier 1: format bump + dump-time resolve
 
 1. Bump dump format to v3.
    - Header layout: after `cg_address` (+ `rss_bytes` if v2), append
      an extensible map of module-globals addresses. Suggested wire
      format: `uint32 count`, then `count` repetitions of
-     `(uint32 key_len, key_bytes, int64 address)`. `address = -1`
-     reserved for "symbol present but unresolved" if the dumper ever
-     needs to distinguish that from "key absent."
+     `(uint32 key_len, key_bytes, int64 address)`.
    - Pre-seed with `"basic_globals"`. Future module-globals walkers
      add their key in the dumper without another format bump.
    - `MemoryDumpReaderFactory::parse()` reads the map for v3+; v1/v2
-     dumps yield an empty map, which means every lookup falls back
-     to `null` and existing walkers keep their current short-circuit
-     behavior.
+     dumps yield an empty map.
 
 2. `MemoryDumpCommand`: call
    `$this->php_globals_finder->findBasicGlobals(...)` next to the
@@ -147,27 +181,55 @@ unaccounted. See `docs/memory/case-laravel-snappy-leak.md`.
    accept a `array<string, int>` of module-globals addresses and
    serialize it into the v3 header.
 
-4. `MemoryDumpReaderFactory::createFromPath()` looks up
-   `'basic_globals'` in the parsed map and forwards it as the
-   `bg_address` argument to `new MemoryDumpReader(...)`. A thin
-   helper like `?int $bg_address = $parsed['module_globals']['basic_globals'] ?? null`
-   keeps the call site obvious.
+### Tier 2: analyze-time resolve when the binary is available
 
-5. Tests:
-   - Unit test for `MemoryDumpReaderFactory::parse()` round-tripping
-     v3 headers (including empty map, single-entry map, unknown
-     extra keys), and confirming v1/v2 dumps still parse with the
-     map absent.
-   - Integration test (target-version group) that constructs a PHP
-     target which registers a shutdown function holding a class
-     instance, dumps + analyzes it, and asserts the instance is
-     reachable from the `modules->...->shutdown_function[N]` path —
-     mirroring the live `inspector:memory` behavior verified
-     manually.
+4. Introduce a small helper at `MemoryDumpReaderFactory::createFromPath()`
+   that, for each module-globals symbol the readers need, does:
+   - look up the parsed v3 map first;
+   - if absent and the dump exposes binary segments (a) directly
+     via `--include-binary` or (b) via the existing
+     `dependency-root` path resolver, call the corresponding
+     `PhpGlobalsFinder::find<Sym>Globals(...)` against the
+     reconstructed `ProcessMemoryMap` + binary view. The substrate
+     is identical to `CoreDumpReader.php:50-58`.
+   - swallow finder failures into `null` (walker short-circuits as
+     today).
+5. Wire the helper output as the constructor arguments to
+   `new MemoryDumpReader(...)` so the rest of the pipeline sees a
+   single resolved `?int` per symbol regardless of which tier
+   produced it.
+
+### Tests
+
+6. Unit tests for `MemoryDumpReaderFactory::parse()` round-tripping
+   v3 headers (empty map, single-entry, unknown extra keys),
+   plus confirmation that v1/v2 dumps still parse with the map
+   absent.
+7. Unit test for the createFromPath resolution helper: tier-1 hit
+   wins; tier-1 miss + binary available → tier-2 hit; both miss →
+   null. Use a fixture dump rather than a live PHP process so the
+   test stays in the unit suite.
+8. Integration test (target-version group) that constructs a PHP
+   target which registers a shutdown function holding a class
+   instance, dumps + analyzes it, and asserts the instance is
+   reachable from the `modules->...->shutdown_function[N]` path —
+   mirroring the live `inspector:memory` behavior verified
+   manually.
+9. Optional second integration test: take a v3 dump *without*
+   `basic_globals` in the header (simulate an older reli) but with
+   `--include-binary`, then analyze with a newer reli that asks for
+   `basic_globals`. Tier 2 should rescue it. This pins down that
+   old dumps stay future-analyzable.
 
 Doing the extensible-map shape now rather than a one-off
 `int64 bg_address` field costs the same line count and avoids
 re-bumping the format the next time a module-globals walker lands.
+Wiring tier 2 alongside tier 1 in the same change is cheap because
+the `PhpGlobalsFinder` substrate is already shared with
+`CoreDumpReader`, and it future-proofs old dumps against newer
+walkers — "data is in the dump but invisible" is exactly the
+state we're already in for one symbol; landing both tiers at once
+closes that whole class of regression.
 
 ## Reproduction
 
@@ -201,3 +263,13 @@ is: against the same PID,
   ext/openssl key store). Doing the dump-header map shape now means
   that gap closes by adding one key to the dumper-side resolution
   list, without another format bump.
+- **`--include-binary` remains a user-facing trade-off.** Tier 1 covers
+  the symbols reli knows about at dump time; tier 2 only rescues
+  symbols added later (or for out-of-tree extensions) and only when
+  the binary travels with the dump. Users who want their dumps to
+  stay analyzable across reli upgrades should pass `--include-binary`
+  (or keep the originating binary discoverable via
+  `--dependency-root`); minimal-dump users accept that newly-added
+  module-globals walkers may require re-capture against a live
+  process. Worth documenting on the `inspector:memory:dump` help text
+  and in `docs/memory/memory-dump.md` so the choice is informed.
