@@ -11,14 +11,28 @@ objects pinned by `register_shutdown_function`. The walk works on the
 shutdown-function hashtable.
 
 The deeper issue this is the first symptom of: **reli currently has no
-consistent story for per-module global addresses in the offline
-pipeline.** EG/CG are pre-resolved at dump time and persisted in the
-header. BG is pre-resolved at dump time but **not** persisted — so it
-silently disappears on offline. ext/uri's lexbor state goes the
-opposite way and re-discovers itself entirely at analyze time via
-`maybeAttachLexborState` (using the dump's reconstructed memory map +
-binary). Whoever adds the next module-globals walker will hit this
-same fork in the road. Pick one direction and stick to it.
+mechanism to thread a per-module globals address through to the
+offline analyzer at all.** EG and CG are the only addresses the dump
+format carries; everything else is implicitly assumed to be either
+(a) reachable via EG/CG, (b) re-discoverable from raw memory contents
+without symbol resolution, or (c) gone. BG falls into (c) today even
+though resolving it at dump time costs nothing — the value is
+computed and then dropped on the floor before the header is written.
+
+ext/uri's lexbor state is **not** an example of an alternative
+"resolve at analyze time" design — it's a forced workaround. The
+lexbor symbol is stripped from typical production php builds, so
+`findXxxGlobals`-style resolution is structurally impossible and the
+scanner falls back to brute-force range identification from the
+dump's memory map. That technique is module-specific and expensive;
+it is not a general substitute for symbol resolution.
+
+Whoever adds the next module-globals walker (curl, mysqlnd, openssl,
+…) will hit the same gap. The architectural question is just: where
+in the pipeline does the address get pinned down? The only realistic
+answer for symbols that the linker actually exposes is "at dump time,
+into the dump header." Brute-force scanning is the lexbor-shaped
+escape hatch for the cases where that fails.
 
 ## Impact
 
@@ -59,112 +73,101 @@ unaccounted. See `docs/memory/case-laravel-snappy-leak.md`.
    — when `bg_address === null` the job emits an empty `modules` root
    and returns before reaching the shutdown-function walk.
 
-## Design space (pick one direction before writing code)
+## Design space
 
-Three viable shapes — they trade off format churn vs. analyze-time
-cost vs. binary-availability assumptions. The fix for `bg_address` is
-small in every direction; the **architectural choice is which one
-becomes the convention for future module-globals walkers** (curl,
-mysqlnd, ext/openssl, whatever EmitModulesJob grows next).
+### Recommended: persist per-module addresses in the dump header
 
-### Option A: persist per-module addresses in the dump header
-
-- Bump dump format to v3. Reserve a small extensible block (e.g. a
-  `uint32 count` followed by `count` × (string key, int64 value))
-  for module-globals addresses; populate `eg_address`, `cg_address`,
-  `bg_address`, and future entries via the same mechanism.
-- `MemoryDumpCommand` resolves all known module-globals symbols at
-  dump time via `PhpGlobalsFinder` and serializes the map.
+- Bump dump format to v3. After `cg_address` (+ `rss_bytes` if v2),
+  add a small extensible block — e.g. `uint32 count` followed by
+  `count` × (string key, int64 value) — for module-globals
+  addresses. Pre-seed it with `basic_globals`; new modules add a
+  key without further format churn.
+- `MemoryDumpCommand` resolves the symbols at dump time via
+  `PhpGlobalsFinder` (it already calls `findExecutorGlobals` /
+  `findCompilerGlobals`; adding `findBasicGlobals` next to them is
+  one line, plus the dumper-side serialization).
 - `MemoryDumpReaderFactory::parse()` reads the map; missing keys
-  fall back to `null`.
-- **Pros**: no binary needed at analyze time; symbol resolution
-  cost is paid once at dump; works with the current minimal-dump
-  default (no `--include-binary`).
-- **Cons**: dumper has to know upfront which symbols any future job
-  might need (or speculatively resolve all of them). Format churn
-  whenever the set changes, unless the map is fully generic from
-  day one.
+  fall back to `null` so existing module-globals walkers (which
+  already `if (=== null) return;`) keep working uniformly.
+- This is the only choice that holds up across the realistic
+  build matrix: distros, alpine, custom builds, FrankenPHP-style
+  static-link executables, etc. Symbol availability at dump time
+  is checked by the same `PhpGlobalsFinder` the live path already
+  trusts; whatever it can resolve, the dumper persists.
 
-### Option B: re-resolve symbols at analyze time
+### Why not "re-resolve at analyze time"
 
-- Make `MemoryDumpReaderFactory::createFromPath()` invoke
-  `PhpGlobalsFinder::findBasicGlobals` (and friends) against the
-  binary view reconstructed from the dump's memory map + included
-  segments, exactly like `CoreDumpReader.php:58` already does for
-  core dumps.
-- The lexbor module already takes this path
-  (`MemoryLocationsCollector::maybeAttachLexborState` →
-  `LexborScanRangeFinder`), so the substrate exists.
-- **Pros**: zero format change; uniform with the lexbor path;
-  extending to a new module is just "wire up another finder at
-  analyze time."
-- **Cons**: requires the binary to be reachable — either via
-  `--include-binary` at dump time or `--dependency-root` at analyze
-  time. Silent skip if neither is available is the failure mode
-  we're already in.
+- Plausible in theory (`CoreDumpReader.php:58` does it for core
+  dumps), but it requires the binary to be present at analyze time
+  via `--include-binary` or `--dependency-root`, and to retain its
+  dynamic symbol table. Stripped production binaries break this.
+  The lexbor scanner exists precisely because that constraint
+  doesn't hold for the lexbor symbol in upstream php builds.
+- For `basic_globals` the symbol is part of php itself and is
+  almost always resolvable wherever reli can attach in the first
+  place, so this path *would* work most of the time — but the
+  dump-time resolution path is cheaper, simpler, and has none of
+  these caveats. The cases where dump-time resolution fails
+  (e.g. heavily stripped static linker) are exactly the cases
+  where analyze-time resolution would fail too.
 
-### Option C: hybrid — header carries the always-needed addresses, analyze-time fallback for the rest
+### When brute-force scanning is the right answer
 
-- Persist EG/CG/BG in the header (these three are universal and
-  cheap to resolve), and route everything else through the
-  analyze-time finder mechanism.
-- **Pros**: covers the common case without `--include-binary`;
-  leaves the door open for extension-specific globals that
-  shouldn't bloat the header.
-- **Cons**: two code paths to keep in sync; the bar for "promote
-  this symbol to the header" is fuzzy.
+- Only when the symbol is structurally absent from a representative
+  share of target binaries. ext/uri / lexbor is the canonical
+  example. A new module-globals walker should default to
+  header-persisted addresses; brute-force is an opt-in per-module
+  fallback, not a substrate.
 
-### Decision criteria
-
-- Is the project willing to commit to "offline analysis works only
-  with `--include-binary` or `--dependency-root` for module-globals
-  features"? → Option B.
-- Is the project trying to keep the minimal-dump default
-  feature-complete? → Option A (or C).
-- Recommendation: **C as the convention, A as the concrete first
-  step.** Shipping `bg_address` in the header is the minimum to
-  unblock the shutdown-function walk regardless of binary access.
-  Future modules can opt into either side as the cost/benefit
-  calls for, with the lexbor pattern documented as the
-  analyze-time blueprint.
-
-## Concrete changes for the chosen `bg_address` step (Option A scoped down)
+## Concrete changes
 
 1. Bump dump format to v3.
    - Header layout: after `cg_address` (+ `rss_bytes` if v2), append
-     `int64 bg_address` (use `-1` / `0` as the "unavailable" sentinel
-     since BG can legitimately have address 0 on ZTS-with-offset-zero
-     edge cases; pick whichever sentinel is consistent with the other
-     "absent" markers).
-   - `MemoryDumpReaderFactory::parse()` reads `bg_address` for v3+;
-     v1/v2 dumps keep yielding `null` (no behavior change).
+     an extensible map of module-globals addresses. Suggested wire
+     format: `uint32 count`, then `count` repetitions of
+     `(uint32 key_len, key_bytes, int64 address)`. `address = -1`
+     reserved for "symbol present but unresolved" if the dumper ever
+     needs to distinguish that from "key absent."
+   - Pre-seed with `"basic_globals"`. Future module-globals walkers
+     add their key in the dumper without another format bump.
+   - `MemoryDumpReaderFactory::parse()` reads the map for v3+; v1/v2
+     dumps yield an empty map, which means every lookup falls back
+     to `null` and existing walkers keep their current short-circuit
+     behavior.
 
 2. `MemoryDumpCommand`: call
    `$this->php_globals_finder->findBasicGlobals(...)` next to the
    existing `findExecutorGlobals` / `findCompilerGlobals` calls and
    pass the result through `$this->memory_dumper->dump(...)`.
+   Swallow resolution failures (log + continue with the key absent
+   from the map) rather than aborting the dump — losing the
+   shutdown-function walk is strictly better than losing the dump.
 
 3. `MemoryDumper::dump()` (signature change) and downstream writer
-   accept the new `?int $bg_address` and serialize it into the v3
-   header.
+   accept a `array<string, int>` of module-globals addresses and
+   serialize it into the v3 header.
 
-4. `MemoryDumpReaderFactory::createFromPath()` forwards
-   `$parsed['bg_address'] ?? null` into `new MemoryDumpReader(...)`.
+4. `MemoryDumpReaderFactory::createFromPath()` looks up
+   `'basic_globals'` in the parsed map and forwards it as the
+   `bg_address` argument to `new MemoryDumpReader(...)`. A thin
+   helper like `?int $bg_address = $parsed['module_globals']['basic_globals'] ?? null`
+   keeps the call site obvious.
 
 5. Tests:
    - Unit test for `MemoryDumpReaderFactory::parse()` round-tripping
-     v3 headers, and confirming v1/v2 dumps still parse with
-     `bg_address = null`.
+     v3 headers (including empty map, single-entry map, unknown
+     extra keys), and confirming v1/v2 dumps still parse with the
+     map absent.
    - Integration test (target-version group) that constructs a PHP
      target which registers a shutdown function holding a class
      instance, dumps + analyzes it, and asserts the instance is
      reachable from the `modules->...->shutdown_function[N]` path —
-     mirroring the live `inspector:memory` behavior verified manually.
+     mirroring the live `inspector:memory` behavior verified
+     manually.
 
-If Option A is generalized to an arbitrary `string => int64` map
-instead of a single `bg_address` field, the format bump is the same
-size of change, and every subsequent module-globals symbol becomes
-a one-line addition. Worth doing now rather than re-bumping later.
+Doing the extensible-map shape now rather than a one-off
+`int64 bg_address` field costs the same line count and avoids
+re-bumping the format the next time a module-globals walker lands.
 
 ## Reproduction
 
@@ -184,13 +187,17 @@ is: against the same PID,
 ## Notes
 
 - ext/uri's lexbor branch attaches to `modules_context` via
-  `maybeAttachLexborState` regardless of `bg_address` — it's an
-  example of Option B already in production for one module. Only the
-  shutdown-function subtree is currently gated on `bg_address`.
+  `maybeAttachLexborState` regardless of `bg_address`. That path is a
+  brute-force scanner used because the lexbor symbol is stripped from
+  typical production php builds — i.e. an unavoidable workaround, not
+  a design pattern to extend. The right precedent to follow for new
+  module-globals walkers is EG/CG (resolve at dump time, persist in
+  header), not lexbor.
 - Older PHP versions (< 8.1) are unaffected by the new closure-via-
   `fci_cache` path on 8.5+ but are still gated on `bg_address`, so the
   fix benefits every supported version.
 - The same gap will reappear for any future module-globals walker
   (e.g. ext/curl resource registry, ext/mysqlnd connection pool,
-  ext/openssl key store) that relies on a `findXxxGlobals`-style
-  pre-resolved address. Land the architectural decision once.
+  ext/openssl key store). Doing the dump-header map shape now means
+  that gap closes by adding one key to the dumper-side resolution
+  list, without another format bump.
