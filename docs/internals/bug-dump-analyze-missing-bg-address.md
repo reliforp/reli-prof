@@ -106,11 +106,27 @@ short-circuit behaviour.
   tier-1 map and the binary is reachable through the dump (via
   `--include-binary` at capture time or `--dependency-root` at
   analyze time).
-- `MemoryDumpReaderFactory::createFromPath()` reuses the same
-  `PhpGlobalsFinder` machinery that `CoreDumpReader.php:58` already
-  invokes against core dumps. The dump's reconstructed memory map
-  + binary segments are exactly the substrate that finder expects;
-  no new resolver is needed.
+- **Most of the substrate already exists for rdump.**
+  `MemoryAnalyzeCommand.php:105-108` accepts `--dependency-root`
+  and threads it through `MemoryDumpReaderFactory::createFromPath()`
+  as a `path_mapping['/'] = …` entry. The factory wires that into a
+  `MappedPathResolver` shared by `DumpFileMemoryReader` and the DI
+  `ProcessPathResolver`. `MemoryLocationsCollector::buildSymbolResolver`
+  (`MemoryLocationsCollector.php:487-533`) already builds a
+  `NativeSymbolResolver` against that exact substrate for per-slot
+  scans — i.e. analyze-time symbol resolution against rdump is
+  *currently in production*, just not wired to module-globals
+  resolution.
+- Implementation reduces to glue: at the createFromPath chokepoint,
+  for each module-globals symbol absent from the tier-1 map, call
+  the corresponding `PhpGlobalsFinder::find<Sym>Globals(...)` with
+  a `ProcessSpecifier` that points at the dump-backed reader.
+  Swallow finder failures into `null`.
+- `--include-binary` and `--dependency-root` are interchangeable
+  inputs to this tier — the former serves the binary from inside
+  the rdump via `DumpFileMemoryReader`, the latter from the
+  filesystem via `MappedPathResolver`. Both feed the same
+  `NativeSymbolResolver` pipeline; tier 2 doesn't care which.
 - Use cases this rescues:
   - Old dump + newer reli that supports more module walkers
     (header was written before the symbol was on the list).
