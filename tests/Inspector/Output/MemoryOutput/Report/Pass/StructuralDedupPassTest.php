@@ -42,7 +42,8 @@ class StructuralDedupPassTest extends BaseTestCase
         $db = $this->createDirectDb();
         $this->seedEmptyClassScenario($db, 'App\\Marker', 60);
 
-        $findings = (new StructuralDedupPass($db, 1))->analyze();
+        $substrate = \Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate::loadFromDb($db, 1);
+        $findings = (new StructuralDedupPass($db, 1, $substrate))->analyze();
 
         $this->assertNotNull($this->findFinding(
             $findings,
@@ -61,7 +62,8 @@ class StructuralDedupPassTest extends BaseTestCase
         $db = $this->createDirectDb();
         $this->seedEmptyClassScenario($db, $class_name, 60);
 
-        $findings = (new StructuralDedupPass($db, 1))->analyze();
+        $substrate = \Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate::loadFromDb($db, 1);
+        $findings = (new StructuralDedupPass($db, 1, $substrate))->analyze();
 
         $this->assertNull(
             $this->findFinding($findings, 'empty_object', $class_name),

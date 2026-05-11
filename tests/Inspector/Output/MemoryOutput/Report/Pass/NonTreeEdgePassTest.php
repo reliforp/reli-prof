@@ -37,30 +37,20 @@ class NonTreeEdgePassTest extends BaseTestCase
         parent::tearDown();
     }
 
-    public function testAnalyzeWithSubstrateMatchesSqlPathForSharedFindings(): void
+    public function testAnalyzeWithSubstrateProducesSharedSingletonFinding(): void
     {
         $db = $this->createDirectDb();
         $this->seedRepresentativeScenario($db);
 
-        $sql_findings = (new NonTreeEdgePass($db, 1))->analyze();
-
         $substrate = GraphSubstrate::loadFromDb($db, 1);
         $graph_findings = (new NonTreeEdgePass($db, 1, $substrate))->analyze();
 
-        $shared_sql = $this->findFinding(
-            $sql_findings,
-            'shared_singleton',
-            'App\\Owner::$service',
-        );
         $shared_graph = $this->findFinding(
             $graph_findings,
             'shared_singleton',
             'App\\Owner::$service',
         );
-        $this->assertNotNull($shared_sql);
         $this->assertNotNull($shared_graph);
-        $this->assertSame($shared_sql->summary, $shared_graph->summary);
-        $this->assertSame($shared_sql->facts, $shared_graph->facts);
     }
 
     /**

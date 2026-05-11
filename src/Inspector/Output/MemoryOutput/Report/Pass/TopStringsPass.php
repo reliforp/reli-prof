@@ -23,9 +23,6 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class TopStringsPass implements PassInterface
 {
-    private ?\PDOStatement $parentStmt = null;
-    private ?\PDOStatement $nodeTypeStmt = null;
-
     /**
      * @param list<array{node_id: int, size: int, preview: string}>|null $top_strings_data Pre-computed (binary path)
      * @param array<int, string>|null $frame_labels Pre-loaded frame labels (binary path)
@@ -35,7 +32,7 @@ final class TopStringsPass implements PassInterface
     public function __construct(
         private \PDO $db,
         private int $run_id,
-        private ?GraphSubstrate $substrate = null,
+        private GraphSubstrate $substrate,
         private ?array $top_strings_data = null,
         private ?array $frame_labels = null,
         private ?array $canonical_names = null,
@@ -132,22 +129,9 @@ final class TopStringsPass implements PassInterface
     /**
      * Walk from node to root via tree parent edges, resolved entirely
      * from the substrate's in-memory tree-link / parent / type indexes.
-     * Falls back to the old prepared-statement walk only when the
-     * substrate isn't available (Phase 2 SQL paths still use it).
-     *
-     * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
     private function buildFullPath(int $node_id, NodeLabeler $labeler): string
     {
-        if ($this->substrate !== null && $this->substrate->hasTreeLinkIndex()) {
-            return $this->buildFullPathFromSubstrate($node_id, $labeler);
-        }
-        return $this->buildFullPathFromSql($node_id, $labeler);
-    }
-
-    private function buildFullPathFromSubstrate(int $node_id, NodeLabeler $labeler): string
-    {
-        assert($this->substrate !== null);
         $parts = [];
         $types = [];
         $cur = $node_id;
@@ -166,52 +150,6 @@ final class TopStringsPass implements PassInterface
             array_unshift($types, $this->substrate->getNodeType($cur) ?? '');
             $cur = $parent;
         }
-        return PathFormatter::toPhpSyntax($parts, $types);
-    }
-
-    /**
-     * @psalm-suppress MixedArrayAccess, MixedAssignment
-     */
-    private function buildFullPathFromSql(int $node_id, NodeLabeler $labeler): string
-    {
-        if ($this->parentStmt === null) {
-            $this->parentStmt = $this->db->prepare(
-                "SELECT parent_node_id, link_name FROM context_edges"
-                . " WHERE child_node_id = ? AND is_tree = 1"
-                . " AND run_id = {$this->run_id} LIMIT 1"
-            );
-            $this->nodeTypeStmt = $this->db->prepare(
-                "SELECT type FROM context_nodes"
-                . " WHERE node_id = ? AND run_id = {$this->run_id} LIMIT 1"
-            );
-        }
-
-        $parts = [];
-        $types = [];
-        $cur = $node_id;
-        for ($i = 0; $i < 20; $i++) {
-            $this->parentStmt->execute([$cur]);
-            $row = $this->parentStmt->fetch(\PDO::FETCH_NUM);
-            if (!$row) {
-                break;
-            }
-            if ($row[0] === null) {
-                array_unshift($parts, (string)$row[1]);
-                array_unshift($types, '');
-                break;
-            }
-            $parent = (int)$row[0];
-            $link = (string)$row[1];
-            $resolved = $labeler->resolvePathLabel($link, $cur);
-            array_unshift($parts, $resolved);
-
-            assert($this->nodeTypeStmt !== null);
-            $this->nodeTypeStmt->execute([$cur]);
-            $nt = $this->nodeTypeStmt->fetchColumn();
-            array_unshift($types, $nt !== false ? (string)$nt : '');
-            $cur = $parent;
-        }
-
         return PathFormatter::toPhpSyntax($parts, $types);
     }
 }

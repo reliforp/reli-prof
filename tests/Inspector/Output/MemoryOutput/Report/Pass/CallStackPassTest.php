@@ -96,32 +96,6 @@ class CallStackPassTest extends BaseTestCase
     }
 
     /**
-     * SQL fallback path (no substrate). Same fixture, same expected
-     * stack: this exercises the 4-JOIN query and the SQL frame
-     * formatting branch.
-     */
-    public function testSqlFallbackPathReturnsSameResult(): void
-    {
-        $db = $this->createDirectDb();
-        $this->seedCallStack(
-            $db,
-            [
-                ['fn' => 'main', 'line' => '1'],
-                ['fn' => 'App\\Foo::bar', 'line' => '42'],
-            ],
-        );
-
-        $pass = new CallStackPass($db, 1);
-        $findings = $pass->analyze();
-
-        $this->assertCount(1, $findings);
-        $this->assertSame(
-            ['main:1', 'App\\Foo::bar:42'],
-            $findings[0]->facts['frames'],
-        );
-    }
-
-    /**
      * Insert a CallFramesContext with one CallFrameContext child per
      * frame. Each child carries `function_name` (and optionally
      * `lineno`) attributes — the same shape NodeLabeler / the SQL

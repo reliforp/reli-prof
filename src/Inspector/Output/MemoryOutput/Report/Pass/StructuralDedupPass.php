@@ -115,7 +115,7 @@ final class StructuralDedupPass implements PassInterface
     public function __construct(
         private \PDO $db,
         private int $run_id,
-        private ?GraphSubstrate $substrate = null,
+        private GraphSubstrate $substrate,
         private ?LinkNameResolver $link_resolver = null,
     ) {
     }
@@ -134,9 +134,7 @@ final class StructuralDedupPass implements PassInterface
     #[\Override]
     public function analyze(): array
     {
-        $shape_groups = $this->substrate !== null
-            ? $this->analyzeWithGraph()
-            : $this->analyzeWithSql();
+        $shape_groups = $this->analyzeWithGraph();
 
         $findings = [];
 
@@ -230,8 +228,6 @@ final class StructuralDedupPass implements PassInterface
      */
     private function analyzeWithGraph(): array
     {
-        assert($this->substrate !== null);
-
         $resolver = $this->link_resolver ?? new LinkNameResolver($this->db, $this->run_id);
 
         /** @var array<string, array{class: string, size: int, props: string, count: int, total_size: int, example_id: int}> */
@@ -282,64 +278,6 @@ final class StructuralDedupPass implements PassInterface
             $shape_groups[$hash]['count']++;
             $shape_groups[$hash]['total_size'] += $size;
         }
-
-        return array_values($shape_groups);
-    }
-
-    /**
-     * SQL-based analysis (fallback when no substrate).
-     * @return list<array{class: string, size: int, props: string, count: int, total_size: int, example_id: int}>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedReturnTypeCoercion
-     * @psalm-suppress MixedArgument, MixedOperand
-     */
-    private function analyzeWithSql(): array
-    {
-        $rows = $this->db->query("
-            SELECT
-                cnl.node_id,
-                cnl.class_name,
-                cnl.size,
-                group_concat(e_prop.link_name, '|') as property_names
-            FROM context_node_locations cnl
-            JOIN context_edges e_to_obj
-                ON e_to_obj.parent_node_id = cnl.node_id
-                AND e_to_obj.link_name = 'object_properties'
-                AND e_to_obj.is_tree = 1
-                AND e_to_obj.run_id = {$this->run_id}
-            LEFT JOIN context_edges e_prop
-                ON e_prop.parent_node_id = e_to_obj.child_node_id
-                AND e_prop.is_tree = 1
-                AND e_prop.run_id = {$this->run_id}
-            WHERE cnl.location_type = 'ZendObjectMemoryLocation'
-                AND cnl.class_name IS NOT NULL
-                AND cnl.run_id = {$this->run_id}
-            GROUP BY cnl.node_id
-        ")->fetchAll(\PDO::FETCH_ASSOC);
-
-        /** @var array<string, array{class: string, size: int, props: string, count: int, total_size: int, example_id: int}> */
-        $shape_groups = [];
-        foreach ($rows as $s) {
-            $props = $s['property_names']
-                ? explode('|', $s['property_names'])
-                : [];
-            sort($props);
-            $prop_sig = implode(',', $props);
-            $hash = $s['class_name'] . '|' . $s['size'] . '|' . $prop_sig;
-
-            if (!isset($shape_groups[$hash])) {
-                $shape_groups[$hash] = [
-                    'class' => $s['class_name'],
-                    'size' => (int)$s['size'],
-                    'props' => $prop_sig,
-                    'count' => 0,
-                    'total_size' => 0,
-                    'example_id' => (int)$s['node_id'],
-                ];
-            }
-            $shape_groups[$hash]['count']++;
-            $shape_groups[$hash]['total_size'] += (int)$s['size'];
-        }
-        unset($rows);
 
         return array_values($shape_groups);
     }

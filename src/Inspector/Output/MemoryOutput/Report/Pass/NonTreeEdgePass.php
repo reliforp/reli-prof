@@ -32,7 +32,7 @@ final class NonTreeEdgePass implements PassInterface
     public function __construct(
         private \PDO $db,
         private int $run_id,
-        private ?GraphSubstrate $substrate = null,
+        private GraphSubstrate $substrate,
         private ?array $precomputed_edge_stats = null,
     ) {
     }
@@ -46,86 +46,6 @@ final class NonTreeEdgePass implements PassInterface
     #[\Override]
     public function analyze(): array
     {
-        if ($this->substrate !== null) {
-            return $this->analyzeWithSubstrate();
-        }
-
-        return $this->analyzeWithSql();
-    }
-
-    /**
-     * @return list<Finding>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand
-     * @psalm-suppress PossiblyInvalidArgument, InvalidArgument, RiskyTruthyFalsyComparison
-     * @psalm-suppress MixedArgumentTypeCoercion
-     */
-    private function analyzeWithSql(): array
-    {
-        $stmt = $this->db->query("
-            SELECT
-                e.link_name,
-                count(*) as ref_count,
-                count(DISTINCT e.child_node_id) as target_count,
-                round(
-                    count(*) * 1.0
-                    / max(1, count(DISTINCT e.child_node_id)),
-                    1
-                ) as avg_refs,
-                (SELECT cnl_src.class_name
-                    FROM context_edges e_pp
-                    JOIN context_node_locations cnl_src
-                        ON cnl_src.node_id = e_pp.parent_node_id
-                        AND cnl_src.run_id = {$this->run_id}
-                        AND cnl_src.location_type = 'ZendObjectMemoryLocation'
-                    WHERE e_pp.child_node_id = e.parent_node_id
-                        AND e_pp.link_name = 'object_properties'
-                        AND e_pp.run_id = {$this->run_id}
-                    LIMIT 1
-                ) as source_class,
-                (SELECT cnl_tgt.class_name
-                    FROM context_node_locations cnl_tgt
-                    WHERE cnl_tgt.node_id = e.child_node_id
-                        AND cnl_tgt.run_id = {$this->run_id}
-                        AND cnl_tgt.class_name IS NOT NULL
-                    LIMIT 1
-                ) as target_class
-            FROM context_edges e
-            WHERE e.run_id = {$this->run_id}
-                AND e.is_tree = 0
-                AND e.strength = 'strong'
-            GROUP BY e.link_name
-            HAVING count(*) > 10
-            ORDER BY count(*) DESC
-            LIMIT 20
-        ");
-
-        $findings = [];
-        while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-            $finding = $this->buildSharedFinding(
-                (string)$row['link_name'],
-                (int)$row['ref_count'],
-                (int)$row['target_count'],
-                (string)($row['source_class'] ?? ''),
-                (string)($row['target_class'] ?? ''),
-            );
-            if ($finding !== null) {
-                $findings[] = $finding;
-            }
-        }
-
-        return $findings;
-    }
-
-    /**
-     * @return list<Finding>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedOperand, InvalidOperand
-     * @psalm-suppress PossiblyInvalidArgument, InvalidArgument, RiskyTruthyFalsyComparison
-     * @psalm-suppress MixedArgumentTypeCoercion
-     */
-    private function analyzeWithSubstrate(): array
-    {
-        assert($this->substrate !== null);
-
         if ($this->precomputed_edge_stats !== null) {
             $rows = $this->precomputed_edge_stats;
         } else {
@@ -247,7 +167,6 @@ final class NonTreeEdgePass implements PassInterface
 
     private function resolveDirectSourceClass(int $parent_node_id): ?string
     {
-        assert($this->substrate !== null);
         if ($this->substrate->getTreeLinkName($parent_node_id) !== 'object_properties') {
             return null;
         }

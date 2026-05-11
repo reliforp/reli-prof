@@ -122,34 +122,6 @@ class DynamicPropertiesPassTest extends BaseTestCase
     }
 
     /**
-     * Without a substrate the pass falls back to the raw SQL path.
-     * Same fixture, same expectation: one finding for the class above
-     * the threshold.
-     */
-    public function testSqlFallbackPathReturnsSameResult(): void
-    {
-        $db = $this->createDirectDb();
-        $this->seedDynamicProperties(
-            $db,
-            instance_count: 15,
-            header_size: 56,
-            used_table_size: 192,
-            unused_table_size: 128,
-            property_count: 4,
-        );
-
-        // No substrate argument → SQL path.
-        $pass = new DynamicPropertiesPass($db, 1);
-        $findings = $pass->analyze();
-
-        $this->assertCount(1, $findings);
-        $this->assertSame('App\\Sloppy', $findings[0]->facts['class_name']);
-        $this->assertSame(15, $findings[0]->facts['count']);
-        $this->assertSame(15 * 376, $findings[0]->facts['dynamic_properties_size']);
-        $this->assertSame(15 * 312, $findings[0]->facts['estimated_avoidable_bytes_if_static']);
-    }
-
-    /**
      * Insert N App\Sloppy instances under a synthetic root, each one
      * carrying a `dynamic_properties` array header plus its used table,
      * spare capacity region, and N property entries.

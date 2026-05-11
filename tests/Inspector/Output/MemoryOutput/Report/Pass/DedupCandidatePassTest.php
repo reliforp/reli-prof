@@ -37,41 +37,26 @@ class DedupCandidatePassTest extends BaseTestCase
         parent::tearDown();
     }
 
-    public function testAnalyzeWithSubstrateMatchesSqlPathForDedupFindings(): void
+    public function testAnalyzeWithSubstrateProducesDedupFinding(): void
     {
         $db = $this->createDirectDb();
         $this->seedRepresentativeScenario($db);
 
-        $sql_findings = (new DedupCandidatePass($db, 1))->analyze();
-
         $substrate = GraphSubstrate::loadFromDb($db, 1);
         $graph_findings = (new DedupCandidatePass($db, 1, $substrate))->analyze();
 
-        $dedup_sql = $this->findFinding(
-            $sql_findings,
-            'dedup_candidate',
-            'App\\Owner::$names[value]',
-        );
         $dedup_graph = $this->findFinding(
             $graph_findings,
             'dedup_candidate',
             'App\\Owner::$names[value]',
         );
 
-        $this->assertNotNull($dedup_sql);
         $this->assertNotNull($dedup_graph);
-        $this->assertSame($dedup_sql->summary, $dedup_graph->summary);
-        $this->assertSame(
-            $dedup_sql->facts['count'],
-            $dedup_graph->facts['count'],
-        );
-        $this->assertSame(60, $dedup_sql->facts['count']);
-        $sql_examples = $dedup_sql->facts['examples'] ?? null;
+        $this->assertSame(60, $dedup_graph->facts['count']);
         $graph_examples = $dedup_graph->facts['examples'] ?? null;
-        self::assertIsArray($sql_examples);
         self::assertIsArray($graph_examples);
         $this->assertSame(
-            $sql_examples['sample_value'] ?? null,
+            'same-shared-string',
             $graph_examples['sample_value'] ?? null,
         );
     }
@@ -81,7 +66,8 @@ class DedupCandidatePassTest extends BaseTestCase
         $db = $this->createDirectDb();
         $this->seedSharedSingletonScenario($db);
 
-        $findings = (new DedupCandidatePass($db, 1))->analyze();
+        $substrate = GraphSubstrate::loadFromDb($db, 1);
+        $findings = (new DedupCandidatePass($db, 1, $substrate))->analyze();
 
         $this->assertNull($this->findFinding(
             $findings,
@@ -102,7 +88,8 @@ class DedupCandidatePassTest extends BaseTestCase
         $db = $this->createDirectDb();
         $this->seedHeterogeneousClassScenario($db);
 
-        $findings = (new DedupCandidatePass($db, 1))->analyze();
+        $substrate = GraphSubstrate::loadFromDb($db, 1);
+        $findings = (new DedupCandidatePass($db, 1, $substrate))->analyze();
 
         // Without the per-class group key the SQL would have produced a
         // single bucket of count=120 mixing both classes. With the fix
