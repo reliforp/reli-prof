@@ -29,7 +29,7 @@ final class PropertyScalingPass implements PassInterface
         private \PDO $db,
         private int $run_id,
         private array $class_objects_summary,
-        private ?GraphSubstrate $substrate = null,
+        private GraphSubstrate $substrate,
         private ?LinkNameResolver $link_resolver = null,
     ) {
     }
@@ -65,18 +65,13 @@ final class PropertyScalingPass implements PassInterface
             return [];
         }
 
-        if ($this->substrate !== null) {
-            $props = $this->analyzeWithGraph($dominant_class);
-        } else {
-            $props = $this->analyzeWithSql($dominant_class);
-        }
+        $props = $this->analyzeWithGraph($dominant_class);
 
         if ($props === []) {
             return [];
         }
 
-        $use_retained = $this->substrate !== null
-            && $this->substrate->hasSubtreeSizes();
+        $use_retained = $this->substrate->hasSubtreeSizes();
 
         $per_instance = [];
         $shared = [];
@@ -198,7 +193,6 @@ final class PropertyScalingPass implements PassInterface
      */
     private function analyzeWithGraph(string $dominant_class): array
     {
-        assert($this->substrate !== null);
         $use_retained = $this->substrate->hasSubtreeSizes();
 
         $resolver = $this->link_resolver ?? new LinkNameResolver($this->db, $this->run_id);
@@ -300,65 +294,6 @@ final class PropertyScalingPass implements PassInterface
     }
 
     /**
-     * SQL-based analysis (Phase 2 fallback).
-     * @return list<array<string, mixed>>
-     * @psalm-suppress MixedArrayAccess, MixedAssignment, InvalidOperand
-     */
-    private function analyzeWithSql(string $dominant_class): array
-    {
-        $stmt = $this->db->query("
-            SELECT
-                e_prop.link_name,
-                count(*) as total_refs,
-                count(DISTINCT e_prop.child_node_id) as distinct_targets,
-                min(e_prop.child_node_id) as sample_child_id,
-                sum(CASE WHEN e_prop.is_tree = 1
-                    THEN COALESCE(cnl_val.size, 0) ELSE 0
-                END) as tree_size
-            FROM context_node_locations cnl_obj
-            JOIN context_edges e_to_props
-                ON e_to_props.parent_node_id = cnl_obj.node_id
-                AND e_to_props.link_name = 'object_properties'
-                AND e_to_props.run_id = {$this->run_id}
-            JOIN context_edges e_prop
-                ON e_prop.parent_node_id = e_to_props.child_node_id
-                AND e_prop.run_id = {$this->run_id}
-            LEFT JOIN context_node_locations cnl_val
-                ON cnl_val.node_id = e_prop.child_node_id
-                AND cnl_val.run_id = {$this->run_id}
-            WHERE cnl_obj.class_name = "
-            . $this->db->quote($dominant_class) . "
-                AND cnl_obj.run_id = {$this->run_id}
-            GROUP BY e_prop.link_name
-            ORDER BY tree_size DESC
-        ");
-
-        $results = [];
-        while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-            $distinct = (int)$row['distinct_targets'];
-            $total_refs = (int)$row['total_refs'];
-
-            if ($distinct === 1) {
-                $scaling = 'SHARED';
-            } elseif ($distinct >= $total_refs * 0.9) {
-                $scaling = 'PER-INSTANCE';
-            } else {
-                $scaling = 'PARTIALLY SHARED';
-            }
-
-            $results[] = [
-                'property' => $row['link_name'],
-                'distinct_targets' => $distinct,
-                'total_refs' => $total_refs,
-                'size' => (int)$row['tree_size'],
-                'scaling' => $scaling,
-                'sample_child_id' => (int)$row['sample_child_id'],
-            ];
-        }
-        return $results;
-    }
-
-    /**
      * Classify sharing reason for each shared property.
      * @param list<array<string, mixed>> $shared
      * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
@@ -369,61 +304,12 @@ final class PropertyScalingPass implements PassInterface
             return;
         }
 
-        $child_ids = [];
-        foreach ($shared as $s) {
-            $child_ids[] = (int)$s['sample_child_id'];
-        }
-
-        $info = [];
-        if ($this->substrate !== null) {
-            // Substrate path: get node type directly, skip location_type
-            // (it's only used for label refinement, not critical)
-            foreach ($child_ids as $cid) {
-                $type = $this->substrate->getNodeType($cid) ?? '';
-                $info[$cid] = ['type' => $type, 'loc_type' => ''];
-            }
-        } else {
-            $placeholders = implode(',', $child_ids);
-            $stmt = $this->db->query(
-                "SELECT cn.node_id, cn.type, cnl.location_type"
-                . " FROM context_nodes cn"
-                . " LEFT JOIN context_node_locations cnl"
-                . " ON cnl.node_id = cn.node_id"
-                . " AND cnl.run_id = cn.run_id"
-                . " WHERE cn.run_id = {$this->run_id}"
-                . " AND cn.node_id IN ({$placeholders})"
-            );
-            while ($r = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-                $info[(int)$r['node_id']] = [
-                    'type' => (string)($r['type'] ?? ''),
-                    'loc_type' => (string)($r['location_type'] ?? ''),
-                ];
-            }
-        }
-
         foreach ($shared as &$s) {
             $cid = (int)$s['sample_child_id'];
-            $node_info = $info[$cid] ?? null;
-
-            if ($node_info === null) {
-                $s['share_reason'] = 'shared';
-                continue;
-            }
-
-            $type = $node_info['type'];
-            $loc = $node_info['loc_type'];
-
-            if ($type === 'PhpReferenceContext') {
-                $s['share_reason'] = 'PHP reference';
-            } elseif (str_contains($loc, 'Object')) {
-                $s['share_reason'] = 'same instance';
-            } elseif (str_contains($loc, 'Array')) {
-                $s['share_reason'] = 'array, CoW';
-            } elseif (str_contains($loc, 'String')) {
-                $s['share_reason'] = 'interned string';
-            } else {
-                $s['share_reason'] = 'shared';
-            }
+            $type = $this->substrate->getNodeType($cid) ?? '';
+            $s['share_reason'] = $type === 'PhpReferenceContext'
+                ? 'PHP reference'
+                : 'shared';
         }
     }
 }

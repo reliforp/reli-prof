@@ -51,9 +51,11 @@ final class ReportGenerator
     /**
      * Generate a report from an existing SQLite database.
      *
-     * @return ReportResult
-     */
-    /**
+     * @param bool $full_analysis Retained for CLI compatibility but no
+     *   longer used: report passes now always consume the snapshot
+     *   through {@see GraphSubstrate}, so the previous "skip Phase 3,
+     *   run SQL passes" mode is gone. Stage C of the substrate
+     *   unification (issue #787) will retire or repurpose the flag.
      * @param bool|null $ffi_csr true=force on, false=force off, null=auto
      * @param int $bulk_fetch_chunk rows per chunked fetchAll inside the
      *   substrate loaders. 0 disables chunking (single fetchAll, max
@@ -72,6 +74,7 @@ final class ReportGenerator
      *   the caller). 0 disables mmap. SQLite silently caps to its
      *   compile-time SQLITE_MAX_MMAP_SIZE (typically 2 GiB - 16 KiB),
      *   so values above that are honoured up to the cap.
+     * @psalm-suppress UnusedParam $full_analysis kept for CLI compatibility
      */
     public function generateFromDb(
         \PDO $db,
@@ -90,7 +93,6 @@ final class ReportGenerator
         $this->ensureReportIndexes($db);
 
         $meta = $this->loadMeta($db, $run_id);
-        $node_count = (int)($meta['node_count'] ?? 0);
         $edge_count = (int)($meta['edge_count'] ?? 0);
 
         // Phase 1: Summary-based passes (always run)
@@ -118,38 +120,11 @@ final class ReportGenerator
         $findings = array_merge($findings, (new BinPeriodicityPass($summary))->analyze());
         $findings = array_merge($findings, (new BinShapePass($summary))->analyze());
 
-        // Phase 2: SQL-based passes (< 500K nodes, or --full-analysis)
-        $run_phase3 = $full_analysis ? $edge_count > 0 : ($edge_count > 0 && $edge_count < 500000);
-        if ($full_analysis || $node_count < 500000) {
-            // CallStackPass has a substrate-backed analyzeWithSubstrate
-            // path that's an order of magnitude cheaper than its
-            // 4-JOIN SQL fallback. Defer it to Phase 3 when the
-            // substrate is going to be built; the SQL fallback only
-            // runs on small graphs that skip Phase 3 entirely.
-            if (!$run_phase3) {
-                $findings = array_merge($findings, $this->runPass(new CallStackPass($db, $run_id)));
-            }
-            // DynamicProperties / PropertyScaling / TopArrays / TopStrings /
-            // NonTreeEdge / StructuralDedup are all "deferred to Phase 3 if
-            // graph is available" — when the substrate isn't built we run
-            // their SQL fallbacks here, otherwise the Phase 3 block below
-            // takes over and feeds them the substrate.
-            if (!$run_phase3) {
-                $findings = array_merge($findings, $this->runPass(new DynamicPropertiesPass($db, $run_id)));
-                $findings = array_merge($findings, $this->runPass(
-                    new PropertyScalingPass($db, $run_id, $class_objects)
-                ));
-                $findings = array_merge($findings, $this->runPass(new TopArraysPass($db, $run_id)));
-                $findings = array_merge($findings, $this->runPass(new TopStringsPass($db, $run_id)));
-                $findings = array_merge($findings, $this->runPass(new NonTreeEdgePass($db, $run_id)));
-                $findings = array_merge($findings, $this->runPass(
-                    new DedupCandidatePass($db, $run_id)
-                ));
-                $findings = array_merge($findings, $this->runPass(new StructuralDedupPass($db, $run_id)));
-            }
-        }
-
-        // Phase 3: Graph-based passes (< 500K edges, or --full-analysis)
+        // Phase 3: Graph-based passes. The substrate is always built when
+        // there are edges to analyse; report passes only consume the
+        // snapshot via the substrate, so the on-disk format (.db / .rmem)
+        // is just a loader selection.
+        $run_phase3 = $edge_count > 0;
         if ($run_phase3) {
             $substrate = GraphSubstrate::createFromDb($db, $run_id, $ffi_csr, $bulk_fetch_chunk);
             $meta['scc_count'] = count($substrate->getSccProfiles());
@@ -163,13 +138,10 @@ final class ReportGenerator
 
             // Shared resolver replaces the per-edge SQL N+1 that used to
             // dominate PerPropertyMemory / Ownership / StructuralDedup /
-            // PropertyScaling / NonTreeEdgePass.
-            //
-            // The substrate now carries a tree-edge link_name index built
-            // for free during loadEdgesFfi/loadEdges, so the resolver
-            // delegates to it and answers every lookup in O(1) memory —
-            // the legacy eager/lazy paths are kept as fallbacks for code
-            // paths that don't have a substrate (Phase 2 SQL passes).
+            // PropertyScaling / NonTreeEdgePass. The substrate carries a
+            // tree-edge link_name index built for free during
+            // loadEdgesFfi/loadEdges, so the resolver delegates to it
+            // and answers every lookup in O(1) memory.
             $link_resolver = new LinkNameResolver(
                 db: $db,
                 run_id: $run_id,
@@ -289,10 +261,9 @@ final class ReportGenerator
     /**
      * Generate a report from a .rmem binary file.
      *
-     * Binary input goes straight to Phase 3 substrate analysis — there
-     * is no SQL fallback for Phase 2 passes. The Phase 1 summary passes
-     * read summary/location_types/class_objects data that was serialized
-     * into the binary file's summary section.
+     * Binary input goes straight to Phase 3 substrate analysis. The
+     * Phase 1 summary passes read summary/location_types/class_objects
+     * data that was serialized into the binary file's summary section.
      *
      * @param bool|null $ffi_csr true=force on, false=force off, null=auto
      * @param int $worker_count number of parallel workers for Phase 3

@@ -99,7 +99,9 @@ final class MemoryCompareCommand extends ReliCommand
             'full-analysis',
             null,
             InputOption::VALUE_NEGATABLE,
-            'run all analysis passes for both snapshots (default: off)',
+            'retained for compatibility (no-op as of #787 Stage A).'
+            . ' Report passes always run through GraphSubstrate;'
+            . ' the flag will be redefined or retired in Stage C of #787.',
             false,
         );
         $this->addMemoryLimitOption();

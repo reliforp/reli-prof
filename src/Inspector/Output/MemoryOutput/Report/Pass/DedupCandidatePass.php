@@ -22,7 +22,6 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 final class DedupCandidatePass implements PassInterface
 {
     private ?\PDOStatement $node_location_stmt = null;
-    private ?\PDOStatement $tree_parent_stmt = null;
 
     /**
      * @param list<array{
@@ -42,7 +41,7 @@ final class DedupCandidatePass implements PassInterface
     public function __construct(
         private \PDO $db,
         private int $run_id,
-        private ?GraphSubstrate $substrate = null,
+        private GraphSubstrate $substrate,
         private ?array $precomputed_dedup_candidates = null,
     ) {
     }
@@ -93,38 +92,27 @@ final class DedupCandidatePass implements PassInterface
             // of the N copies" and is intrinsically bounded by the heap
             // total — no `cnt × retained` over-count, no clamp needed.
             // See T2.1 in docs/internals/memory-report-implementation-handoff.md.
-            if ($this->substrate !== null) {
-                $member_node_ids = $sample_child_node_ids
-                    ?? $this->loadDedupMemberNodeIds(
-                        $link_name,
-                        $shallow_size,
-                        $target_class,
-                        $target_location_type,
-                    );
-                if ($member_node_ids !== []) {
-                    $union_size = $this->substrate->unionReachableTreeSize($member_node_ids);
-                    if ($union_size > 0) {
-                        $total = $union_size;
-                        $size = $cnt > 0 ? (int)($union_size / $cnt) : $shallow_size;
-                    }
+            $member_node_ids = $sample_child_node_ids
+                ?? $this->loadDedupMemberNodeIds(
+                    $link_name,
+                    $shallow_size,
+                    $target_class,
+                    $target_location_type,
+                );
+            if ($member_node_ids !== []) {
+                $union_size = $this->substrate->unionReachableTreeSize($member_node_ids);
+                if ($union_size > 0) {
+                    $total = $union_size;
+                    $size = $cnt > 0 ? (int)($union_size / $cnt) : $shallow_size;
                 }
             }
 
             $sample_parent_node_id = $row['sample_parent_node_id'];
-            if ($this->substrate !== null) {
-                [
-                    'source_class' => $dedup_src,
-                    'owner_prop' => $owner_prop,
-                ] = $this->resolveDedupOwnerInfoFromSubstrate($sample_parent_node_id);
-                $dedup_tgt = $target_class ?? $this->substrate->getNodeClass($sample_child_node_id);
-            } else {
-                [
-                    'source_class' => $dedup_src,
-                    'owner_prop' => $owner_prop,
-                ] = $this->resolveDedupOwnerInfoFromSql($sample_parent_node_id);
-                $dedup_tgt = $target_class
-                    ?? $this->loadNodeLocationInfo($sample_child_node_id)['class_name'];
-            }
+            [
+                'source_class' => $dedup_src,
+                'owner_prop' => $owner_prop,
+            ] = $this->resolveDedupOwnerInfoFromSubstrate($sample_parent_node_id);
+            $dedup_tgt = $target_class ?? $this->substrate->getNodeClass($sample_child_node_id);
 
             $dedup_label = $this->buildDedupLabel(
                 $dedup_src,
@@ -333,8 +321,6 @@ final class DedupCandidatePass implements PassInterface
      */
     private function resolveDedupOwnerInfoFromSubstrate(int $parent_node_id): array
     {
-        assert($this->substrate !== null);
-
         $source_class = $this->resolveDirectSourceClassFromSubstrate($parent_node_id);
         if ($source_class !== null) {
             return [
@@ -388,79 +374,8 @@ final class DedupCandidatePass implements PassInterface
         ];
     }
 
-    /**
-     * @return array{source_class: ?string, owner_prop: ?string}
-     */
-    private function resolveDedupOwnerInfoFromSql(int $parent_node_id): array
-    {
-        $source_class = $this->resolveDirectSourceClassFromSql($parent_node_id);
-        if ($source_class !== null) {
-            return [
-                'source_class' => $source_class,
-                'owner_prop' => null,
-            ];
-        }
-
-        $array_element_info = $this->loadTreeParentInfo($parent_node_id);
-        $array_elements_node_id = $array_element_info['parent_node_id'];
-        if ($array_elements_node_id === null) {
-            return [
-                'source_class' => null,
-                'owner_prop' => null,
-            ];
-        }
-
-        $array_elements_info = $this->loadTreeParentInfo($array_elements_node_id);
-        if ($array_elements_info['link_name'] !== 'array_elements') {
-            return [
-                'source_class' => null,
-                'owner_prop' => null,
-            ];
-        }
-
-        $array_header_node_id = $array_elements_info['parent_node_id'];
-        if ($array_header_node_id === null) {
-            return [
-                'source_class' => null,
-                'owner_prop' => null,
-            ];
-        }
-
-        $array_header_info = $this->loadTreeParentInfo($array_header_node_id);
-        $owner_prop = $array_header_info['link_name'];
-        $object_properties_node_id = $array_header_info['parent_node_id'];
-        if ($object_properties_node_id === null) {
-            return [
-                'source_class' => null,
-                'owner_prop' => null,
-            ];
-        }
-
-        $object_properties_info = $this->loadTreeParentInfo($object_properties_node_id);
-        if ($object_properties_info['link_name'] !== 'object_properties') {
-            return [
-                'source_class' => null,
-                'owner_prop' => null,
-            ];
-        }
-
-        $owner_node_id = $object_properties_info['parent_node_id'];
-        if ($owner_node_id === null) {
-            return [
-                'source_class' => null,
-                'owner_prop' => null,
-            ];
-        }
-
-        return [
-            'source_class' => $this->loadNodeLocationInfo($owner_node_id)['class_name'],
-            'owner_prop' => $owner_prop,
-        ];
-    }
-
     private function resolveDirectSourceClassFromSubstrate(int $parent_node_id): ?string
     {
-        assert($this->substrate !== null);
         if ($this->substrate->getTreeLinkName($parent_node_id) !== 'object_properties') {
             return null;
         }
@@ -471,53 +386,6 @@ final class DedupCandidatePass implements PassInterface
         }
 
         return $this->substrate->getNodeClass($owner_node_id);
-    }
-
-    private function resolveDirectSourceClassFromSql(int $parent_node_id): ?string
-    {
-        $parent_info = $this->loadTreeParentInfo($parent_node_id);
-        if ($parent_info['link_name'] !== 'object_properties') {
-            return null;
-        }
-
-        $owner_node_id = $parent_info['parent_node_id'];
-        if ($owner_node_id === null) {
-            return null;
-        }
-
-        return $this->loadNodeLocationInfo($owner_node_id)['class_name'];
-    }
-
-    /**
-     * @return array{parent_node_id: ?int, link_name: ?string}
-     * @psalm-suppress MixedAssignment
-     */
-    private function loadTreeParentInfo(int $child_node_id): array
-    {
-        if ($this->tree_parent_stmt === null) {
-            $this->tree_parent_stmt = $this->db->prepare(
-                "SELECT parent_node_id, link_name FROM context_edges"
-                . " WHERE run_id = ? AND child_node_id = ? AND is_tree = 1"
-                . " LIMIT 1"
-            );
-        }
-
-        $this->tree_parent_stmt->execute([$this->run_id, $child_node_id]);
-        /** @var array{parent_node_id?: int|null, link_name?: string}|false $row */
-        $row = $this->tree_parent_stmt->fetch(\PDO::FETCH_ASSOC);
-        if ($row === false) {
-            return [
-                'parent_node_id' => null,
-                'link_name' => null,
-            ];
-        }
-
-        return [
-            'parent_node_id' => array_key_exists('parent_node_id', $row)
-                ? ($row['parent_node_id'] !== null ? $row['parent_node_id'] : null)
-                : null,
-            'link_name' => $row['link_name'] ?? null,
-        ];
     }
 
     /**

@@ -44,10 +44,12 @@ class PropertyScalingPassTest extends BaseTestCase
         // each); total per_instance ≈ 204800 B. Heap clamp default = 0.
         $this->seedScalingScenario($db, 'App\\GraphNode', 200, 1024);
 
+        $substrate = GraphSubstrate::loadFromDb($db, 1);
         $findings = (new PropertyScalingPass(
             $db,
             1,
             ['App\\GraphNode' => ['count' => 200, 'memory_usage' => 200 * 64]],
+            $substrate,
         ))->analyze();
 
         $finding = $this->findFinding($findings, 'property_scaling', 'App\\GraphNode');

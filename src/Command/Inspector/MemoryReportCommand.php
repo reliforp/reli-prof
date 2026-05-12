@@ -77,7 +77,10 @@ final class MemoryReportCommand extends ReliCommand
             'full-analysis',
             null,
             InputOption::VALUE_NEGATABLE,
-            'run all analysis passes (default: on; --no-full-analysis to limit for very large snapshots)',
+            'retained for compatibility (no-op as of #787 Stage A).'
+            . ' Report passes always run through GraphSubstrate;'
+            . ' --no-full-analysis no longer skips passes. The flag'
+            . ' will be redefined or retired in Stage C of #787.',
             true,
         );
         $this->addOption(
