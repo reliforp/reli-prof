@@ -380,4 +380,38 @@ class BinaryReportDataProviderTest extends TestCase
             $captured_at,
         );
     }
+
+    /**
+     * Numeric-string values dedup'd into the string_counts map have their
+     * keys silently coerced to int by PHP, so buildDedupExamples must not
+     * assume keys are strings when reading them back out (regression test
+     * for the strlen(int) TypeError surfaced by grafana-zabbix-#2408
+     * memory dumps, where many tag values were short purely-numeric
+     * strings).
+     */
+    public function testBuildDedupExamplesHandlesNumericStringKeys(): void
+    {
+        $reflection = new \ReflectionMethod(
+            BinaryReportDataProvider::class,
+            'buildDedupExamples',
+        );
+        $reflection->setAccessible(true);
+
+        $string_counts = [
+            // PHP coerces these keys to int(12345) / int(67890) at
+            // insertion time — the bug was treating array_keys() output
+            // as guaranteed-string and calling strlen() on the result.
+            '12345' => 10,
+            '67890' => 5,
+        ];
+
+        /** @var array<string, mixed> $result */
+        $result = $reflection->invoke(null, $string_counts, []);
+
+        $this->assertSame('string', $result['type']);
+        $this->assertSame(10, $result['identical_count']);
+        $this->assertSame('12345', $result['sample_value']);
+        $this->assertSame(['12345', '67890'], $result['samples']);
+        $this->assertSame(2, $result['distinct_values']);
+    }
 }

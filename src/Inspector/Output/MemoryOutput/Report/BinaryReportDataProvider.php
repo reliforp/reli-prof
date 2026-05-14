@@ -1357,7 +1357,17 @@ final class BinaryReportDataProvider
     ): array {
         if ($string_counts !== []) {
             arsort($string_counts);
-            $values = array_keys($string_counts);
+            // PHP coerces numeric-string array keys to int at insertion
+            // time (accumulateDedupGroup writes `$group['string_counts'][$value]
+            // = ...`), so the keys we read back from $string_counts may be
+            // int|string at runtime even though the docblock declares
+            // array<string, int>. Cast back to string before any
+            // string-shaped operation (strlen/substr).
+            /** @psalm-suppress RedundantCastGivenDocblockType */
+            $values = array_map(
+                static fn ($value): string => (string)$value,
+                array_keys($string_counts),
+            );
             $top_value = $values[0] ?? '';
             if (strlen($top_value) > 60) {
                 $top_value = substr($top_value, 0, 57) . '...';

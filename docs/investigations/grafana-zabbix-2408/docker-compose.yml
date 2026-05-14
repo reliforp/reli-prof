@@ -1,0 +1,62 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: zbx-mysql
+    command:
+      - mysqld
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_bin
+      - --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpw
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: zabbixpw
+    networks: [zbx-net]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-prootpw"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  zabbix-server:
+    image: zabbix/zabbix-server-mysql:alpine-6.0-latest
+    container_name: zbx-server
+    environment:
+      DB_SERVER_HOST: mysql
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: zabbixpw
+      MYSQL_ROOT_PASSWORD: rootpw
+    networks: [zbx-net]
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  zabbix-web:
+    image: zabbix/zabbix-web-apache-mysql:alpine-6.0-latest
+    container_name: zbx-web
+    environment:
+      DB_SERVER_HOST: mysql
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: zabbixpw
+      MYSQL_ROOT_PASSWORD: rootpw
+      ZBX_SERVER_HOST: zabbix-server
+      PHP_TZ: UTC
+      # crank memory so we can actually observe big responses
+      ZBX_MAXEXECUTIONTIME: "600"
+      ZBX_MEMORYLIMIT: "2G"
+      ZBX_POSTMAXSIZE: "256M"
+    networks: [zbx-net]
+    ports:
+      - "127.0.0.1:18080:8080"
+    cap_add:
+      - SYS_PTRACE
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+networks:
+  zbx-net:
+    external: true
