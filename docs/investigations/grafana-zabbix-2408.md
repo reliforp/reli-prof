@@ -9,218 +9,226 @@ limit and exhausting PHP memory on the Zabbix side. The release notes
 attribute the change to "resolving operational data and item values at
 problem creation timestamps rather than using current values."
 
-The Zabbix-side cost is the part we could observe with reli. This note
-records the reproduction recipe and the profile.
+This note pins what 6.3.1/6.3.2 actually added by diffing the plugin
+source between v6.3.0 and v6.3.2, and then takes a reli `memory:dump`
+of the Zabbix PHP frontend serving each version's API call mix. The
+two dumps are compared with `inspector:memory:compare`, which shows
+the regression's memory cost directly.
+
+## What changed in grafana-zabbix between 6.3.0 and 6.3.2
+
+`git diff v6.3.0..v6.3.2 -- src/datasource/zabbix/zabbix.ts` adds a
+new pipeline stage `enrichProblemsWithItemHistory()` to both
+`getProblems()` and `getProblemsHistory()`. The interesting body:
+
+```ts
+private async enrichProblemsWithItemHistory(problems: ProblemDTO[]) {
+  const allItems = _.uniqBy(problems.flatMap((p) => p.items || []), 'itemid');
+  const itemsWithType = allItems.filter((item) => item.value_type !== undefined);
+
+  const timestamps = problems.map((p) => p.timestamp);
+  const timeFrom = Math.min(...timestamps) - 3600;        // 1h lookback
+  const timeTill = Math.max(...timestamps) + 60;
+  const history = await this.zabbixAPI.getHistory(itemsWithType, timeFrom, timeTill);
+  // ...substitutes {ITEM.VALUE}/{ITEM.LASTVALUE} from `history`...
+}
+```
+
+* **One `history.get` call** is issued for the union of items across
+  all currently-active problems.
+* **The time window** is `min(timestamps) - 1h` to
+  `max(timestamps) + 1m`. With long-running unresolved problems
+  this trivially spans hours, days, or longer.
+* `history.get` returns **every recorded data point** for every item
+  inside that window. There is no per-problem narrowing, no LIMIT,
+  no aggregation — it's the raw history table.
+
+So at 7,360 hosts × N items each × an hours-long-to-days-long window,
+this single API call materialises **millions** of `(itemid, clock,
+value, ns)` rows on the Zabbix PHP side. The 113–362 MB response is
+this history.get payload, not the `problem.get` one.
+
+Note: the `selectItems` change on `trigger.get` (adding
+`'value_type'`) in the same release is what feeds the
+`itemsWithType` filter above — both diffs are part of the same
+feature.
 
 ## Reproduction (scaled down)
 
 Zabbix 6.0.46 stack via docker compose (`mysql:8.0`,
 `zabbix-server-mysql:alpine-6.0-latest`,
-`zabbix-web-apache-mysql:alpine-6.0-latest`, PHP-FPM 8.3 inside the web
-container). 80 hosts, 1 trapper item + 1 trigger per host, each trigger
-carries 12 tags and a non-trivial `opdata` field. 5,000 synthetic
-problem rows are inserted directly into `events` / `problem` /
-`problem_tag`, each referencing one of the 80 triggers and tagged with
-15 entries. A `problem.get` against this dataset returns ~20 MB of JSON
-— two orders of magnitude smaller than the issue's reported figure but
-large enough to show the same hotspot pattern.
+`zabbix-web-apache-mysql:alpine-6.0-latest`, PHP-FPM 8.3 inside the
+web container). 80 hosts, 1 trapper item + 1 trigger per host.
+5,000 synthetic problem rows are seeded into `events` / `problem` /
+`problem_tag`. **160,000 synthetic `history_uint` rows** are seeded
+across the last 24 h (`2000 points × 80 items`), so that a
+`history.get` over the wide window the plugin builds returns a
+meaningful payload.
 
-## The single knob
+* `problem.get` (with `output:"extend"`, `selectTags`,
+  `selectAcknowledges`, `selectSuppressionData`): **20 MB** JSON,
+  ~2.5 s — this is the 6.3.0 baseline shape.
+* `history.get(itemids=[…80 items], time_from=now-25h,
+  time_till=now+1m, output:"extend")`: **11.5 MB** JSON,
+  160,000 rows, ~0.5 s — the new call 6.3.2 added.
 
-Two variants of `problem.get`, otherwise identical:
+Two orders of magnitude smaller than the upstream report, but the
+same shape.
 
-| `output` parameter | Response size | Wall time |
-| --- | ---: | ---: |
-| `["eventid", "name", "clock", "severity", "objectid", "acknowledged"]` | 18.7 MB | **0.36 s** |
-| `"extend"` (i.e. includes `opdata`) | 20.5 MB | **2.50 s** |
+## Comparing the two dumps
 
-The response grows by 10 %, the request gets **7× slower**. The cost
-isn't in serialization — it's in macro resolution.
-
-## reli: CPU profile (`inspector:daemon` + `rbt:analyze`)
-
-```text
-php ./reli inspector:daemon -P 'php-fpm: pool zabbix' -T 8 \
-    -f rbt -o /tmp/zbx/profiles -s 1000000 \
-    --php-version=v83 --php-regex='php-fpm83$'
-
-# ... fire several problem.get calls with output:"extend" ...
-
-cat /tmp/zbx/profiles/*.rbt | php ./reli rbt:analyze --top=20 --no-line --crop=140
-```
-
-Self-time:
-
-```
-| count | pct    | frame                                       |
-|-------|--------|---------------------------------------------|
-| 1554  |  22.5% | CMacrosResolverGeneral::extractMacros       |
-|  786  |  11.4% | CMacrosResolver::resolveMediaTypeUrls       |
-|  669  |   9.7% | CMacroParser::parse                         |
-|  586  |   8.5% | mysqli_query                                |
-|  446  |   6.4% | json_encode                                 |
-|  439  |   6.3% | CUserMacroParser::parse                     |
-|  372  |   5.4% | mysqli_fetch_assoc                          |
-|  359  |   5.2% | CMacroFunctionParser::parse                 |
-|  177  |   2.6% | CProblem::addRelatedObjects                 |
-```
-
-Total-time (inclusive):
-
-```
-| 6790  |  98.1% | <main>                                            |
-| 6330  |  91.5% | CJsonRpc::execute                                 |
-| 5883  |  85.0% | CProblem::get                                     |
-| 5823  |  84.1% | CProblem::addRelatedObjects                       |
-| 3345  |  48.3% | CMacrosResolverHelper::resolveTriggerOpdata       |
-| 3343  |  48.3% | CMacrosResolverHelper::resolveTriggerDescriptions |
-| 3337  |  48.2% | CMacrosResolver::resolveTriggerDescriptions       |
-| 3146  |  45.5% | CMacrosResolverGeneral::extractMacros             |
-```
-
-`CProblem::addRelatedObjects` calls `resolveTriggerOpdata` and
-`resolveTriggerDescriptions`, each of which scans every problem's
-trigger expression looking for `{ITEM.LASTVALUE}` / `{$MACRO}` /
-`{HOST.*}` style references in the `opdata` and `event_name` fields,
-fetches the referenced entities, and substitutes. The macro parser
-(`CMacroParser::parse`, `CUserMacroParser::parse`,
-`CMacroFunctionParser::parse`) is invoked per character per field
-per problem — together they dominate the request.
-
-## reli: memory snapshot (`inspector:watch --action=memory-dump`)
+Memory captures of the same PHP-FPM worker pool while each path
+runs:
 
 ```text
-php ./reli inspector:watch -p <fpm-worker> \
+# 6.3.0 shape — problem.get only
+php ./reli inspector:watch -P 'php-fpm: pool zabbix' \
     --cpu-usage=50 --action=memory-dump \
-    --action-output-dir=/tmp/zbx/dumps \
-    --poll-interval=100 --cooldown=0 --max-triggers=2 \
+    --action-output-dir=/tmp/zbx/cmp \
+    --max-triggers=1 \
     --php-version=v83 --php-regex='php-fpm83$'
+# … fire problem.get a few times …
+
+# 6.3.2 shape — same, but with history.get firing
+# … same watch invocation, then fire history.get in a loop …
+
+# Convert raw dumps to .rmem for compare
+php ./reli inspector:memory:analyze v630_problem.rdump -f rmem -o v630_problem.rmem
+php ./reli inspector:memory:analyze v632_history.rdump -f rmem -o v632_history.rmem
+
+# Diff
+php ./reli inspector:memory:compare v630_problem.rmem v632_history.rmem
 ```
 
-ZendMM summary (`inspector:memory:analyze -f sqlite3`, table `summary`)
-taken mid-request:
+Comparison output, abridged:
 
+```text
+=== Summary Delta ===
+  memory_get_usage()             18.40 MB → 111.23 MB    +92.84 MB (+504.6%)
+  memory_get_usage(true)         20.00 MB → 129.93 MB   +109.93 MB (+549.7%)
+  Heap usage                     15.84 MB →  86.86 MB    +71.02 MB (+448.3%)
+  RSS                            27.50 MB → 138.67 MB   +111.17 MB (+404.3%)
+
+=== Location Type Delta ===
+  ZendArrayTable             +146,482  → +24.99 MB
+  ZendArrayTableOverhead     +146,506  → +19.79 MB
+  ZendString                 +583,534  → +16.07 MB
+  ZendArray                  +146,497  →  +7.82 MB
+
+=== Findings Diff ===
+  + [HIGH]   81.77 MB  choke_point: $jsonRpc->_response[0]['result']  (160,000 children)
+  + [MEDIUM] 83.33 MB  large_array: 160,000 elements — $jsonRpc->_response[0]['result']
+  + [WARN]    4.00 MB  zendmm_chunks_pinned_by_fragmentation: 2 in-use chunks ≥90% empty
+  - [HIGH]    5.36 MB  choke_point: CProblem::addRelatedObjects()::$result (5,081 children)
+  - [MEDIUM]  3.43 MB  large_array: 5,081 elements — CProblem::addRelatedObjects()::$problems
 ```
-zend_mm_heap_total           = 20.0 MB
-zend_mm_heap_usage           = 14.9 MB
-memory_get_usage             = 17.4 MB
-memory_get_peak_usage        = 17.4 MB
-memory_get_real_usage        = 214 MB    <-- chunks reserved from OS
-cached_chunks_size           = 194 MB
-cached_chunks_count          = 97
-peak_chunks_count            = 10
-```
 
-The response weighs 20 MB. `memory_get_usage` is 17 MB and
-`memory_get_peak_usage` is 17 MB — the engine never had more than
-17 MB simultaneously emalloc'd, and `peak_chunks_count` confirms
-that no more than **10 chunks (20 MB) were ever live at once**.
-Yet ZendMM has 214 MB of chunks reserved from the OS, of which
-194 MB is sitting in the chunk cache (97 chunks). That means
-~107 distinct chunks have been allocated from the OS over the life
-of this request even though never more than 10 were in flight at
-once: macro resolution churns short-lived intermediate
-zend_strings, each free returns the slot to ZendMM, and once the
-slot's parent chunk empties the chunk goes to the cache rather
-than back to the kernel. The next round of allocations refills a
-*different* set of small bins on top of those cached chunks, so the
-cache grows monotonically across rounds.
+Read top-down:
 
-`bin_walk` confirms what those slots hold: the largest
-periodic-allocation classes in the 256-byte bin are zend_strings
-whose fingerprints decode to the literal `"operational data y..."`
-content from our trigger `opdata` field — **1456 + 1411 + 815 + ...
-copies of essentially the same string** still live on the heap at
-the dump moment. Per-problem macro resolution allocates a fresh
-zend_string for every expansion step and discards them as it goes;
-with thousands of problems × tens of macro tokens per `opdata`, the
-chunk cache inflates to ~10× the response size before the request
-returns.
+* The PHP frontend's live emalloc jumps from 18 MB to 111 MB
+  (`memory_get_usage`). The OS-level RSS jumps from 27 MB to 139 MB.
+  The `memory_limit` budget consumed grows from 20 MB to 130 MB.
+* The structural cost is overwhelmingly **160,000 small arrays**:
+  one ZendArray + 4 hash buckets per history row, each row holding
+  4 zend_strings (`itemid`, `clock`, `value`, `ns`). Bin-shape
+  detection puts +144,659 `zend_string(len=10)` (the `clock`
+  timestamps), +149,932 `zend_string(len=5)` (the values),
+  +130,740 `zend_string(len=4)` (short keys / itemids), all in the
+  small bins.
+* The chokepoint diff names the responsible object explicitly:
+  `$jsonRpc->_response[0]['result']` — the `CHistory::get` return
+  array. The `CProblem::addRelatedObjects()` chokepoint visible in
+  the 6.3.0 baseline disappears because the dump was taken inside
+  `CHistory::get` rather than `CProblem::get`.
 
-### Does this trip `memory_limit`?
+**Amplification factor for the new call:** the JSON response is
+11.5 MB, the PHP-side cost to build it is ~83 MB of array
+structures + ~16 MB of zend_strings ≈ **7× the wire size**, plus
+fragmentation cost (the `zendmm_chunks_pinned_by_fragmentation`
+warning).
 
-Not in this reproduction. The `ZBX_MEMORYLIMIT=2G` we set for the
-container leaves plenty of headroom against the observed 214 MB.
-But the relationship between cached chunks and `memory_limit` is
-worth being precise about, because the production report did hit it:
+## Implication at the reporter's scale
 
-* PHP's `memory_limit` is enforced inside `zend_mm_alloc_pages`
-  (`Zend/zend_alloc.c`), only when ZendMM needs a fresh OS chunk —
-  i.e. **only on cache miss**. Pulls from `heap->cached_chunks`
-  short-circuit before the limit comparison, so emalloc'ing into
-  pre-cached chunks never raises a memory_limit error, no matter
-  how high `real_size` is.
-* When the cache is empty, the comparison is
-  `ZEND_MM_CHUNK_SIZE > heap->limit - heap->real_size`. If it
-  trips, `zend_mm_gc(heap)` runs first to scan live chunks for
-  empty ones it can recycle into the cache; only when GC also
-  comes back empty does `zend_mm_safe_error` fire the "Allowed
-  memory size of %zu bytes exhausted" fatal.
-* `memory_get_usage(true)` returns `real_size`. In this dump it is
-  214 MB even though the in-flight emalloc total is only 17 MB.
-  The 214 MB is **how much of the `memory_limit` budget is
-  already committed** before B starts using cache; nothing
-  observable happens until B asks for an OS chunk that gc cannot
-  rescue.
-* So at 20 MB of response, peak `real_size` ≈ 214 MB — fine under
-  any reasonable `memory_limit`, and macro-resolution's churn
-  profile (short-lived zend_strings → chunks empty quickly) is
-  the kind gc is good at rescuing. The fault model shows up when
-  the amplification factor (~10× here) is multiplied by a
-  multi-hundred-megabyte response AND the working set contains
-  enough long-lived allocations that gc can't return chunks to
-  the cache fast enough: a 113 MB response on the reporter's
-  environment would put peak `real_size` in the 1 GB range, and
-  a 362 MB response in the multi-GB range, easily blowing the
-  Zabbix-default `memory_limit` (384M). The "PHP memory
-  allocation failures" in the upstream report are this amplified
-  `real_size` exhausting the limit at a moment gc cannot
-  reclaim, not the response size itself.
+A 113 MB `history.get` response from the reporter's environment
+(7,360 hosts, multi-hour problem ages) would, on the same
+amplification ratio, hit ~800 MB of live PHP-side emalloc; a 362 MB
+response would land in multi-GB territory. Zabbix's default
+`memory_limit` of 384M is well below either. The reporter's "PHP
+encountered memory allocation failures" message is this
+amplification multiplied by their dataset size — not the JSON
+serialization itself.
 
-The fix lever is therefore upstream: either keep `real_size`
-proportional to the response (don't allocate-and-free short-lived
-zend_strings during macro resolution) or invoke `gc_mem_caches()`
-to release cached chunks mid-request when the resolver finishes a
-problem.
+## What the prior reli profile of `problem.get` showed (and why
+## it isn't the regression)
 
-## Where the cost actually lives in Zabbix
+The first dump in this investigation was taken while a `problem.get`
+with `output:"extend"` was running. That dump showed
+`CMacrosResolverHelper::resolveTriggerOpdata` and
+`resolveTriggerDescriptions` consuming 48% inclusive CPU time each,
+and 5,081 children retained at `CProblem::addRelatedObjects()`.
+**That hot path also exists in 6.3.0** — both versions call
+`problem.get` with similar parameters, and `selectTags=extend`
+doesn't change between releases. It is an independent, pre-existing
+cost of the Problems panel, **not the 6.3.1/6.3.2 regression**. The
+`memory:compare` output above puts that conclusion on solid
+footing: the baseline-only findings are the macro-resolver
+chokepoint, the target-only findings are the new `history.get`
+result, and the +93 MB delta is entirely on the target side.
 
-`CProblem::addRelatedObjects()` in `frontends/php/include/classes/api/services/CProblem.php`
-unconditionally calls both `resolveTriggerOpdata` and
-`resolveTriggerDescriptions` for every problem the API returns when
-the caller's `output` includes the corresponding fields
-(`opdata`, `name` when generated from `event_name`). `"extend"`
-implicitly includes `opdata`. There is no "skip resolution" flag
-exposed on `problem.get`.
+## Mitigations
 
-This is why grafana-zabbix flipped the cost ratio when it started
-asking for richer problem data: the new flow asks for `output:
-extend` (or explicitly for `opdata`) per problem, which forces
-Zabbix to run the macro resolver across the entire result set.
+### grafana-zabbix side (the actual fix lever)
 
-## Mitigations (Zabbix side, for a fix upstream)
+1. Narrow `history.get`'s scope:
+   * Per-problem queries with `time_from = problem.timestamp` and
+     a small surrounding window (~1 polling interval, not 1 h
+     lookback over the union).
+   * `limit` per item.
+   * `lastvalue` from the trigger's own items (already in the
+     `trigger.get` response — no second round trip needed for
+     `{ITEM.LASTVALUE}` resolution).
+2. Cap the eager fetch and fall back to lazy / on-hover resolution
+   for the rest. The Problems panel renders a table; macro
+   substitution per visible row is what users see, not the
+   thousands of off-screen ones.
+3. Page `problem.get` results (the reporter's suggestion).
+4. If `enrichProblemsWithItemHistory` must remain global, batch by
+   `value_type` and parallelize against the API.
 
-1. `CProblem::addRelatedObjects` could memoize macro resolution per
-   `(triggerid, opdata-template)` — within a single response,
-   thousands of problems share the same trigger and same opdata
-   template; the resolver is recomputing identical work.
-2. Avoid allocating an intermediate zend_string for every macro
-   expansion step. `CMacrosResolverGeneral::extractMacros` builds
-   its output by repeated `str_replace`/concatenation; preallocating
-   the buffer would keep the chunk cache from inflating.
-3. Expose an `expandOpdata` / `expandDescription` flag (default on
-   for back-compat, off for `problem.get`) so clients that don't
-   need expanded operational data can opt out without dropping the
-   field entirely.
+### Zabbix side (defense in depth)
 
-## Mitigations (grafana-zabbix side)
+1. `CHistory::get`'s output assembly is a one-pass DB scan that
+   materialises every row as a PHP array of small zend_strings.
+   The amplification factor (7×) is intrinsic to how PHP holds
+   integer-like values as zend_string by default; converting
+   numeric history values to PHP int / float at result-assembly
+   time (where the column metadata makes the type known) would
+   cut the per-row footprint substantially.
+2. Streaming output. `api_jsonrpc.php` builds the full result tree
+   in memory before encoding; for large `history.get` payloads, a
+   streaming JSON encoder would let the row arrays be released
+   incrementally rather than retained until response send.
+3. `gc_mem_caches()` at the end of expensive endpoints to release
+   cached ZendMM chunks proactively.
 
-1. Restrict `output` to exactly the columns the panel renders. The
-   Problems panel doesn't visualize `opdata` directly — it can be
-   omitted from the request entirely.
-2. If `opdata` is needed, batch problems by `triggerid` and
-   resolve once per trigger on the plugin side.
-3. Page `problem.get` results (issue reporter's suggestion).
+## Memory limit nuance
+
+`memory_limit` is enforced inside `zend_mm_alloc_pages`
+(`Zend/zend_alloc.c`), only when ZendMM needs a fresh OS chunk —
+i.e. only on cache miss. Pulls from `heap->cached_chunks` short-
+circuit before the limit comparison, so emalloc'ing into pre-cached
+chunks never raises a memory_limit error, no matter how high
+`real_size` already is. When the cache is empty, the comparison is
+`ZEND_MM_CHUNK_SIZE > heap->limit - heap->real_size`; on failure,
+`zend_mm_gc(heap)` walks live chunks and rescues those whose page
+maps are entirely free. The "Allowed memory size of %zu bytes
+exhausted" fatal only fires when (a) the cache is empty AND (b) gc
+finds no fully-empty live chunk to recycle. This is why the macro
+resolver path — which churns short-lived zend_strings that empty
+their pages on a predictable rhythm — does not trip the limit in
+practice, while the history.get path — which builds one giant
+array structure and holds it until `json_encode` runs — is the
+genuine risk.
 
 ## Reli usage notes uncovered on the way
 
@@ -238,11 +246,18 @@ Zabbix to run the macro resolver across the entire result set.
   "failed to find ZendMM main chunk" — same root cause as the
   per-request SAPI note in `CLAUDE.md`. Run the dump under
   `inspector:watch` with `--cpu-usage=N` so it fires only mid-request.
-* `inspector:memory:analyze -f report` crashed on this dump with
-  `TypeError: strlen(): Argument #1 ($string) must be of type string,
-  int given` in `BinaryReportDataProvider::buildDedupExamples` at
+* `inspector:memory:compare` wants `.rmem` or SQLite, not raw
+  `.rdump`. Run `inspector:memory:analyze -f rmem -o foo.rmem`
+  first on each side.
+* `inspector:memory:analyze -f report` crashed on the first dump in
+  this investigation with `TypeError: strlen(): Argument #1
+  ($string) must be of type string, int given` in
+  `BinaryReportDataProvider::buildDedupExamples` at
   `src/Inspector/Output/MemoryOutput/Report/BinaryReportDataProvider.php:1362`.
-  `-f sqlite3` works fine. Worth filing as a follow-up reli bug.
+  Tag values in real `problem.get` dumps are frequently short
+  numeric strings (event IDs, item IDs, integer metrics), and PHP
+  silently coerces those to int when used as array keys. Fixed in
+  this branch.
 
 ## Artifacts
 
@@ -252,5 +267,7 @@ The repro driver scripts are checked in alongside this note under
 * `docker-compose.yml` — the Zabbix stack.
 * `seed_via_api.py` — host / item / trigger creation via the Zabbix API.
 * `scale_problems.py` — bulk insertion of synthetic problem rows.
+* `seed_history.py` — bulk insertion of synthetic `history_uint` rows
+  so `history.get` over the wide window returns a meaty payload.
 * `run.sh` — end-to-end repro: bring the stack up, seed, fire the
-  request under reli.
+  request under reli, dump, and run `memory:compare`.

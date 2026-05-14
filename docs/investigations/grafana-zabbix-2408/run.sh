@@ -40,10 +40,12 @@ AUTH=$(curl -sS -X POST http://127.0.0.1:18080/api_jsonrpc.php \
 echo -n "$AUTH" > /tmp/zbx/auth.txt
 echo "  auth: $AUTH"
 
-echo "[5/6] Seeding hosts, items, triggers, and synthetic problems..."
+echo "[5/6] Seeding hosts, items, triggers, synthetic problems, and history..."
 N_HOSTS=${N_HOSTS:-80} N_TAGS_PER_TRIGGER=${N_TAGS_PER_TRIGGER:-12} python3 "$DIR/seed_via_api.py"
 N_PROBLEMS=${N_PROBLEMS:-5000} N_TAGS=${N_TAGS:-15} TAG_VALUE_LEN=${TAG_VALUE_LEN:-200} \
     python3 "$DIR/scale_problems.py"
+N_HIST_PER_ITEM=${N_HIST_PER_ITEM:-2000} WINDOW_SEC=${WINDOW_SEC:-86400} \
+    python3 "$DIR/seed_history.py"
 
 echo "[6/6] Profiling problem.get with reli..."
 cd "$REPO"
