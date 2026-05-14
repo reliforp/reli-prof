@@ -111,25 +111,62 @@ cached_chunks_count          = 97
 peak_chunks_count            = 10
 ```
 
-The response weighs 20 MB. The "currently allocated" PHP figure
-(`memory_get_usage`) is 17 MB — the peak the engine has had to
-juggle in-flight is **214 MB of chunks reserved from the OS**, of
-which 194 MB is sitting in ZendMM's chunk cache. The juggled set is
-intermediate strings produced during macro substitution. `bin_walk`
-confirms it: the largest periodic-allocation classes in the 256-byte
-bin are zend_strings whose fingerprints decode to the literal
-`"operational data y..."` content from our trigger `opdata` field —
-**1456 + 1411 + 815 + 765 + ... copies of essentially the same
-string** still live on the heap at the dump moment. Per-problem
-macro resolution allocates a fresh zend_string for every
-expansion step and discards them as it goes; with thousands of
-problems × tens of macro tokens per `opdata`, the chunk cache
-inflates to ~10× the response size before the request returns.
+The response weighs 20 MB. `memory_get_usage` is 17 MB and
+`memory_get_peak_usage` is 17 MB — the engine never had more than
+17 MB simultaneously emalloc'd, and `peak_chunks_count` confirms
+that no more than **10 chunks (20 MB) were ever live at once**.
+Yet ZendMM has 214 MB of chunks reserved from the OS, of which
+194 MB is sitting in the chunk cache (97 chunks). That means
+~107 distinct chunks have been allocated from the OS over the life
+of this request even though never more than 10 were in flight at
+once: macro resolution churns short-lived intermediate
+zend_strings, each free returns the slot to ZendMM, and once the
+slot's parent chunk empties the chunk goes to the cache rather
+than back to the kernel. The next round of allocations refills a
+*different* set of small bins on top of those cached chunks, so the
+cache grows monotonically across rounds.
 
-Extrapolated to the issue reporter's 7,360-host environment, a
-113–362 MB JSON response would correspond to a multi-GB peak chunk
-cache on the Zabbix frontend — exactly the "PHP encountered memory
-allocation failures" symptom in the upstream report.
+`bin_walk` confirms what those slots hold: the largest
+periodic-allocation classes in the 256-byte bin are zend_strings
+whose fingerprints decode to the literal `"operational data y..."`
+content from our trigger `opdata` field — **1456 + 1411 + 815 + ...
+copies of essentially the same string** still live on the heap at
+the dump moment. Per-problem macro resolution allocates a fresh
+zend_string for every expansion step and discards them as it goes;
+with thousands of problems × tens of macro tokens per `opdata`, the
+chunk cache inflates to ~10× the response size before the request
+returns.
+
+### Does this trip `memory_limit`?
+
+Not in this reproduction. The `ZBX_MEMORYLIMIT=2G` we set for the
+container leaves plenty of headroom against the observed 214 MB.
+But the relationship between cached chunks and `memory_limit` is
+worth being precise about, because the production report did hit it:
+
+* PHP's `memory_limit` check is against `heap->real_size` — the
+  total bytes currently held from the OS, including the chunks
+  ZendMM has cached. The cache is "free" from ZendMM's
+  perspective (re-allocation from cache doesn't grow `real_size`)
+  but it is **not** free from `memory_limit`'s perspective until
+  the cache evicts a chunk back to the kernel.
+* `memory_get_usage(true)` returns `real_size`. In this dump it is
+  214 MB even though the in-flight emalloc total is only 17 MB.
+* So at 20 MB of response, peak `real_size` ≈ 214 MB — fine under
+  any reasonable `memory_limit`. The fault model only shows up
+  when the amplification factor (~10× here) is multiplied by a
+  multi-hundred-megabyte response: a 113 MB response on the
+  reporter's environment would put peak `real_size` in the 1 GB
+  range, and a 362 MB response in the multi-GB range, easily
+  blowing the Zabbix-default `memory_limit` (384M). The "PHP
+  memory allocation failures" in the upstream report are this
+  amplified `real_size`, not the response size itself.
+
+The fix lever is therefore upstream: either keep `real_size`
+proportional to the response (don't allocate-and-free short-lived
+zend_strings during macro resolution) or invoke `gc_mem_caches()`
+to release cached chunks mid-request when the resolver finishes a
+problem.
 
 ## Where the cost actually lives in Zabbix
 
