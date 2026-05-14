@@ -144,23 +144,38 @@ container leaves plenty of headroom against the observed 214 MB.
 But the relationship between cached chunks and `memory_limit` is
 worth being precise about, because the production report did hit it:
 
-* PHP's `memory_limit` check is against `heap->real_size` — the
-  total bytes currently held from the OS, including the chunks
-  ZendMM has cached. The cache is "free" from ZendMM's
-  perspective (re-allocation from cache doesn't grow `real_size`)
-  but it is **not** free from `memory_limit`'s perspective until
-  the cache evicts a chunk back to the kernel.
+* PHP's `memory_limit` is enforced inside `zend_mm_alloc_pages`
+  (`Zend/zend_alloc.c`), only when ZendMM needs a fresh OS chunk —
+  i.e. **only on cache miss**. Pulls from `heap->cached_chunks`
+  short-circuit before the limit comparison, so emalloc'ing into
+  pre-cached chunks never raises a memory_limit error, no matter
+  how high `real_size` is.
+* When the cache is empty, the comparison is
+  `ZEND_MM_CHUNK_SIZE > heap->limit - heap->real_size`. If it
+  trips, `zend_mm_gc(heap)` runs first to scan live chunks for
+  empty ones it can recycle into the cache; only when GC also
+  comes back empty does `zend_mm_safe_error` fire the "Allowed
+  memory size of %zu bytes exhausted" fatal.
 * `memory_get_usage(true)` returns `real_size`. In this dump it is
   214 MB even though the in-flight emalloc total is only 17 MB.
+  The 214 MB is **how much of the `memory_limit` budget is
+  already committed** before B starts using cache; nothing
+  observable happens until B asks for an OS chunk that gc cannot
+  rescue.
 * So at 20 MB of response, peak `real_size` ≈ 214 MB — fine under
-  any reasonable `memory_limit`. The fault model only shows up
-  when the amplification factor (~10× here) is multiplied by a
-  multi-hundred-megabyte response: a 113 MB response on the
-  reporter's environment would put peak `real_size` in the 1 GB
-  range, and a 362 MB response in the multi-GB range, easily
-  blowing the Zabbix-default `memory_limit` (384M). The "PHP
-  memory allocation failures" in the upstream report are this
-  amplified `real_size`, not the response size itself.
+  any reasonable `memory_limit`, and macro-resolution's churn
+  profile (short-lived zend_strings → chunks empty quickly) is
+  the kind gc is good at rescuing. The fault model shows up when
+  the amplification factor (~10× here) is multiplied by a
+  multi-hundred-megabyte response AND the working set contains
+  enough long-lived allocations that gc can't return chunks to
+  the cache fast enough: a 113 MB response on the reporter's
+  environment would put peak `real_size` in the 1 GB range, and
+  a 362 MB response in the multi-GB range, easily blowing the
+  Zabbix-default `memory_limit` (384M). The "PHP memory
+  allocation failures" in the upstream report are this amplified
+  `real_size` exhausting the limit at a moment gc cannot
+  reclaim, not the response size itself.
 
 The fix lever is therefore upstream: either keep `real_size`
 proportional to the response (don't allocate-and-free short-lived
