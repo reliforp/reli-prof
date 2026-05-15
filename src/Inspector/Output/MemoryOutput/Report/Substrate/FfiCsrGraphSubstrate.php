@@ -18,7 +18,7 @@ use Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheReader;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheWriter;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
-use Reli\Inspector\Output\MemoryOutput\Report\BinaryReportDataProvider;
+use Reli\Inspector\Output\MemoryOutput\RegionFilter;
 use Reli\Lib\FFI\FFIHelper;
 
 /**
@@ -346,21 +346,20 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
 
         // ---- Phase 3: Load node classes + canonical address grouping ----
         // The on-disk `node_sizes` section is intentionally NOT used here:
-        // it is a pre-summed shortcut written before region classification
-        // is reduced to the "relevant" set used by every other reporting
-        // surface (see BinaryReportDataProvider::RELEVANT_REGIONS). Pre-
-        // summed values cannot be region-filtered at read time, so a
-        // single bogus 'outside'-region entry (e.g., a stale
-        // php_stream_memory_data->data dereferenced as a zend_string with
-        // a garbage `len`, emitted by EmitResourceJob::collectMemoryStreamData)
-        // is enough to push the slot — and the running sum — past
-        // PHP_INT_MAX, at which point PHP promotes the addition to float
-        // and the `int $nodeSizesSum` property assignment raises
-        // "Cannot assign float to property". Sizes are therefore always
-        // computed below from the locations section with the same region
-        // filter Type Breakdown / location_types_summary apply, keeping
-        // every surface ($nodeSizesSum, getNodeSize, ChokePoint,
-        // Top Strings) consistent.
+        // it is a pre-summed shortcut written before the size-attribution
+        // region policy ({@see RegionFilter}) is applied, and pre-summed
+        // values cannot be region-filtered at read time. Sizes are
+        // therefore always computed below from the locations section with
+        // the shared filter, keeping every surface ($nodeSizesSum,
+        // getNodeSize, ChokePoint, Top Strings) consistent.
+        //
+        // The on-disk `node_classes` fast-path stays trusted because
+        // class_id is intern()'d only for ZendObjectMemoryLocation rows
+        // (BinaryContextTreeSink::emitNode), and ZendObject allocations
+        // never land in 'outside' — they live in zend_mm chunks. The
+        // pathological 'outside' case (a stale php_stream_memory_data->data
+        // dereferenced as a zend_string) carries class_id=NULL_STRING_ID
+        // and contributes nothing to per-node class attribution.
         if ($reader->hasSection('node_classes')) {
             $classesData = $reader->getSectionData('node_classes');
             $slotsCount = $reader->getSectionElementCount('node_classes');
@@ -451,16 +450,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $region_id = unpack('V', $locData, $off + 40)[1];
                 }
 
-                // Mirror computeLocationTypesSummary: drop locations
-                // tagged with a non-null, non-relevant region (the
-                // collector classifies anything outside the four
-                // tracked allocator regions as 'outside'). Keeps the
-                // size totals from blowing past PHP_INT_MAX when a
-                // dangling pointer surfaces as a multi-exabyte zend_string.
-                $region = $dict->lookup($region_id);
-                $sizeRelevant = $region === null
-                    || in_array($region, BinaryReportDataProvider::RELEVANT_REGIONS, true);
-                if ($sizeRelevant) {
+                // Apply the shared size-attribution region policy. See RegionFilter.
+                if (RegionFilter::isRelevant($dict->lookup($region_id))) {
                     if ($directMap !== null) {
                         $slot = $node_id + $directOffset;
                         $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : $directMap[$slot];
@@ -1529,16 +1520,13 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // properties directly via $this-> is fine — no need for the
         // by-reference aliasing dance, which Psalm can't model.
 
-        // Same region filter as rmem's loadFromBinary and
-        // PdoMemoryOutput::insertLocationTypesSummaryFromDb. Excludes
-        // dangling/persistent 'outside'-region locations whose `size`
-        // can be garbage; keeps NULL region for backward compat.
+        // Apply the shared size-attribution region policy. See RegionFilter.
+        $regionPredicate = RegionFilter::sqlPredicate('region');
         $stmt = $db->prepare(
             "SELECT node_id, sum(size) as s, min(class_name) as cls
              FROM context_node_locations
              WHERE run_id = ? AND node_id > ?
-               AND (region IN ('zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena')
-                    OR region IS NULL)
+               AND {$regionPredicate}
              GROUP BY node_id
              ORDER BY node_id
              LIMIT {$chunk}"

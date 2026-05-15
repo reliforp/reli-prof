@@ -18,6 +18,7 @@ use PhpCast\Cast;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\StringDict;
+use Reli\Inspector\Output\MemoryOutput\RegionFilter;
 use Reli\Lib\FFI\FFIHelper;
 
 /**
@@ -28,29 +29,6 @@ use Reli\Lib\FFI\FFIHelper;
  */
 final class BinaryReportDataProvider
 {
-    /**
-     * Regions whose locations participate in size aggregation.
-     *
-     * Matches the SQL filter used by
-     * {@see \Reli\Inspector\Output\MemoryOutput\PdoMemoryOutput::insertLocationTypesSummaryFromDb}
-     * and the inline filter in {@see self::computeLocationTypesSummary}.
-     * Locations with a non-null region outside this set are typically
-     * dangling/persistent allocations (e.g., a stale
-     * `php_stream_memory_data->data` dereferenced as a `zend_string`,
-     * walked by EmitResourceJob::collectMemoryStreamData) and must be
-     * excluded from per-node size sums; otherwise their
-     * garbage `size` inflates `node_sizes` past `PHP_INT_MAX` and the
-     * FFI CSR substrate raises "Cannot assign float to property" on
-     * `$nodeSizesSum`. A null region preserves backward compatibility
-     * with pre-region-tagging rmem files.
-     */
-    public const RELEVANT_REGIONS = [
-        'zend_mm_heap',
-        'zend_mm_huge',
-        'vm_stack',
-        'compiler_arena',
-    ];
-
     /**
      * Find node IDs that have a specific location_type.
      *
@@ -128,11 +106,7 @@ final class BinaryReportDataProvider
         $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
         $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
 
-        // Collect all ZendStringMemoryLocation entries.
-        // Apply the same region filter as computeLocationTypesSummary so
-        // that bogus 'outside'-region strings (e.g., a stale
-        // php_stream_memory_data->data dereferenced as a zend_string with
-        // garbage `len`) don't surface as multi-exabyte rows.
+        // Apply the shared size-attribution region policy. See RegionFilter.
         /** @var list<array{node_id: int, size: int, string_value_id: int}> $candidates */
         $candidates = [];
         if ($locRows !== null) {
@@ -141,8 +115,7 @@ final class BinaryReportDataProvider
                 if ($type !== 'ZendStringMemoryLocation') {
                     continue;
                 }
-                $region = $dict->lookup($locRows[$i]->region_id);
-                if ($region !== null && !in_array($region, self::RELEVANT_REGIONS, true)) {
+                if (!RegionFilter::isRelevant($dict->lookup($locRows[$i]->region_id))) {
                     continue;
                 }
                 $candidates[] = [
@@ -161,8 +134,7 @@ final class BinaryReportDataProvider
                     continue;
                 }
                 $region_id = unpack('V', $data, $off + 40)[1];
-                $region = $dict->lookup($region_id);
-                if ($region !== null && !in_array($region, self::RELEVANT_REGIONS, true)) {
+                if (!RegionFilter::isRelevant($dict->lookup($region_id))) {
                     continue;
                 }
                 $candidates[] = [
@@ -615,8 +587,8 @@ final class BinaryReportDataProvider
             $region_id = unpack('V', $data, $offset + 40)[1];
             $offset += Format::LOCATION_ROW_SIZE;
 
-            $region = $dict->lookup($region_id);
-            if ($region !== null && !in_array($region, self::RELEVANT_REGIONS, true)) {
+            // Apply the shared size-attribution region policy. See RegionFilter.
+            if (!RegionFilter::isRelevant($dict->lookup($region_id))) {
                 continue;
             }
 
@@ -654,8 +626,6 @@ final class BinaryReportDataProvider
         $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
         $dict = $reader->getStringDict();
 
-        $relevant_regions = ['zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena'];
-
         /** @var array<string, array{count: int, memory_usage: int}> $result */
         $result = [];
         $offset = 0;
@@ -668,8 +638,8 @@ final class BinaryReportDataProvider
             if ($class_id === Format::NULL_STRING_ID) {
                 continue;
             }
-            $region = $dict->lookup($region_id);
-            if ($region !== null && !in_array($region, $relevant_regions, true)) {
+            // Apply the shared size-attribution region policy. See RegionFilter.
+            if (!RegionFilter::isRelevant($dict->lookup($region_id))) {
                 continue;
             }
 

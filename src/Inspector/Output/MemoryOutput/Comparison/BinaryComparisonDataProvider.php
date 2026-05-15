@@ -15,6 +15,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Comparison;
 
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
+use Reli\Inspector\Output\MemoryOutput\RegionFilter;
 use Reli\Inspector\Output\MemoryOutput\Report\ReportGenerator;
 use Reli\Inspector\Output\MemoryOutput\Report\ReportResult;
 
@@ -232,8 +233,6 @@ final class BinaryComparisonDataProvider implements ComparisonDataProvider
         $count = $this->reader->getSectionElementCount(Format::SECTION_LOCATIONS);
         $dict = $this->reader->getStringDict();
 
-        $relevant_regions = ['zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena'];
-
         $offset = 0;
         for ($i = 0; $i < $count; $i++) {
             // LocationRow layout (48 bytes):
@@ -246,8 +245,8 @@ final class BinaryComparisonDataProvider implements ComparisonDataProvider
             $region_id = unpack('V', $data, $offset + 40)[1];
             $offset += Format::LOCATION_ROW_SIZE;
 
-            $region = $dict->lookup($region_id);
-            if ($region !== null && !in_array($region, $relevant_regions, true)) {
+            // Apply the shared size-attribution region policy. See RegionFilter.
+            if (!RegionFilter::isRelevant($dict->lookup($region_id))) {
                 continue;
             }
 
