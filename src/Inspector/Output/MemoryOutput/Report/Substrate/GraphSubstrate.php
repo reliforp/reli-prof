@@ -15,6 +15,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Substrate;
 
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
+use Reli\Inspector\Output\MemoryOutput\Report\BinaryReportDataProvider;
 
 class GraphSubstrate
 {
@@ -190,7 +191,13 @@ class GraphSubstrate
             }
         }
 
-        // Load locations → node_sizes + node_classes
+        // Load locations → node_sizes + node_classes.
+        // Skip locations whose region is non-null and outside
+        // BinaryReportDataProvider::RELEVANT_REGIONS — mirroring the
+        // filter computeLocationTypesSummary applies — so that bogus
+        // 'outside'-region entries (e.g., dangling stream_memory_data
+        // strings with garbage `len`) don't inflate per-node sizes and
+        // surface as broken multi-exabyte rows in ChokePoint / Top Strings.
         if ($reader->hasSection(Format::SECTION_LOCATIONS)) {
             $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
             $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
@@ -205,6 +212,12 @@ class GraphSubstrate
                 assert(is_array($row));
                 /** @var array{node_id: int, location_type_id: int, class_id: int, address: int, size: int, string_value_id: int, refcount: int, type_info: int, region_id: int, bin_overhead: int} $row */
                 $offset += Format::LOCATION_ROW_SIZE;
+
+                $region = $dict->lookup($row['region_id']);
+                if ($region !== null && !in_array($region, BinaryReportDataProvider::RELEVANT_REGIONS, true)) {
+                    continue;
+                }
+
                 $node_id = $row['node_id'];
                 $size = $row['size'];
                 $substrate->node_sizes[$node_id] = ($substrate->node_sizes[$node_id] ?? 0) + $size;

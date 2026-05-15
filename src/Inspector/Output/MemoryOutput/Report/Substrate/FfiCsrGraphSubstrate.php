@@ -18,6 +18,7 @@ use Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheReader;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\DerivedCacheWriter;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
+use Reli\Inspector\Output\MemoryOutput\Report\BinaryReportDataProvider;
 use Reli\Lib\FFI\FFIHelper;
 
 /**
@@ -343,20 +344,28 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
         unset($nodeData, $nodeRows);
 
-        // ---- Phase 3: Load node sizes + classes + canonical address grouping ----
-        // If on-disk node_sizes and node_classes sections exist, use them
-        // for sizes and classes (skipping the expensive locations scan for
-        // those two purposes). Canonical address grouping still needs
-        // the locations section.
-        $sizesLoaded = false;
-        if ($reader->hasSection('node_sizes') && $reader->hasSection('node_classes')) {
-            $sizesData = $reader->getSectionData('node_sizes');
+        // ---- Phase 3: Load node classes + canonical address grouping ----
+        // The on-disk `node_sizes` section is intentionally NOT used here:
+        // it is a pre-summed shortcut written before region classification
+        // is reduced to the "relevant" set used by every other reporting
+        // surface (see BinaryReportDataProvider::RELEVANT_REGIONS). Pre-
+        // summed values cannot be region-filtered at read time, so a
+        // single bogus 'outside'-region entry (e.g., a stale
+        // php_stream_memory_data->data dereferenced as a zend_string with
+        // a garbage `len`, emitted by EmitResourceJob::collectMemoryStreamData)
+        // is enough to push the slot — and the running sum — past
+        // PHP_INT_MAX, at which point PHP promotes the addition to float
+        // and the `int $nodeSizesSum` property assignment raises
+        // "Cannot assign float to property". Sizes are therefore always
+        // computed below from the locations section with the same region
+        // filter Type Breakdown / location_types_summary apply, keeping
+        // every surface ($nodeSizesSum, getNodeSize, ChokePoint,
+        // Top Strings) consistent.
+        if ($reader->hasSection('node_classes')) {
             $classesData = $reader->getSectionData('node_classes');
-            $slotsCount = $reader->getSectionElementCount('node_sizes');
+            $slotsCount = $reader->getSectionElementCount('node_classes');
 
-            $ffiNodeSizes = $substrate->ffiNodeSizes;
             $nodeClassIds = $substrate->nodeClassIds;
-            $substrate->nodeSizesSum = 0;
 
             for ($i = 0; $i < min($slotsCount, $nc); $i++) {
                 // node_id == i (dense), map to CSR index
@@ -369,11 +378,6 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 if ($csrIdx < 0) {
                     continue;
                 }
-
-                $size_u = unpack('P', $sizesData, $i * 8);
-                $size = $size_u[1];
-                $ffiNodeSizes[$csrIdx] = $size;
-                $substrate->nodeSizesSum += $size;
 
                 $cls_u = unpack('V', $classesData, $i * 4);
                 $cls_id = $cls_u[1];
@@ -388,12 +392,14 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     }
                 }
             }
-            $sizesLoaded = true;
         }
 
-        // Load canonical map from on-disk section if available.
+        // Load canonical map from on-disk section if available. The previous
+        // `$sizesLoaded &&` guard was a code-locality choice (group on-disk
+        // fast-paths together), not a correctness dependency; canonical_map
+        // is self-contained and orthogonal to sizes, so decouple it.
         $canonicalLoaded = false;
-        if ($sizesLoaded && $reader->hasSection('canonical_map')) {
+        if ($reader->hasSection('canonical_map')) {
             $canonData = $reader->getSectionData('canonical_map');
             $canonSlots = $reader->getSectionElementCount('canonical_map');
             for ($i = 0; $i < min($canonSlots, $nc); $i++) {
@@ -417,39 +423,44 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $canonicalLoaded = true;
         }
 
-        // If canonical was not loaded from cache, scan locations.
-        // Also needed if sizes/classes weren't loaded from on-disk sections.
+        // Scan locations for size accumulation (always) and, if
+        // canonical_map wasn't on-disk, for canonical address grouping.
         /** @var array<int, list<int>> $addr_to_nodes address → [node_id, ...] for canonical */
         $addr_to_nodes = [];
-        if (!$canonicalLoaded && $reader->hasSection(Format::SECTION_LOCATIONS)) {
+        if ($reader->hasSection(Format::SECTION_LOCATIONS)) {
             $locCount = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
             $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
             $locData = $locRows === null ? $reader->getSectionData(Format::SECTION_LOCATIONS) : null;
             $ffiNodeSizes = $substrate->ffiNodeSizes;
             $nodeClassIds = $substrate->nodeClassIds;
 
-            if (!$sizesLoaded) {
-                $substrate->nodeSizesSum = 0;
-            }
+            $substrate->nodeSizesSum = 0;
             for ($i = 0; $i < $locCount; $i++) {
                 if ($locRows !== null) {
                     $node_id = $locRows[$i]->node_id;
                     $address = $locRows[$i]->address;
-                    if (!$sizesLoaded) {
-                        $class_id = $locRows[$i]->class_id;
-                        $size = $locRows[$i]->size;
-                    }
+                    $class_id = $locRows[$i]->class_id;
+                    $size = $locRows[$i]->size;
+                    $region_id = $locRows[$i]->region_id;
                 } else {
                     $off = $i * Format::LOCATION_ROW_SIZE;
                     $node_id = unpack('V', $locData, $off)[1];
                     $address = unpack('P', $locData, $off + 12)[1];
-                    if (!$sizesLoaded) {
-                        $class_id = unpack('V', $locData, $off + 8)[1];
-                        $size = unpack('P', $locData, $off + 20)[1];
-                    }
+                    $class_id = unpack('V', $locData, $off + 8)[1];
+                    $size = unpack('P', $locData, $off + 20)[1];
+                    $region_id = unpack('V', $locData, $off + 40)[1];
                 }
 
-                if (!$sizesLoaded) {
+                // Mirror computeLocationTypesSummary: drop locations
+                // tagged with a non-null, non-relevant region (the
+                // collector classifies anything outside the four
+                // tracked allocator regions as 'outside'). Keeps the
+                // size totals from blowing past PHP_INT_MAX when a
+                // dangling pointer surfaces as a multi-exabyte zend_string.
+                $region = $dict->lookup($region_id);
+                $sizeRelevant = $region === null
+                    || in_array($region, BinaryReportDataProvider::RELEVANT_REGIONS, true);
+                if ($sizeRelevant) {
                     if ($directMap !== null) {
                         $slot = $node_id + $directOffset;
                         $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : $directMap[$slot];
@@ -457,15 +468,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                         $csrIdx = $phpMap[$node_id] ?? -1;
                     }
                     if ($csrIdx >= 0) {
-                        /** @psalm-suppress PossiblyUndefinedVariable */
-                        $ffiNodeSizes[$csrIdx] = $ffiNodeSizes[$csrIdx] + (int)$size;
-                        /** @psalm-suppress PossiblyUndefinedVariable */
-                        $substrate->nodeSizesSum += (int)$size;
+                        $ffiNodeSizes[$csrIdx] = $ffiNodeSizes[$csrIdx] + $size;
+                        $substrate->nodeSizesSum += $size;
 
-                        /** @psalm-suppress PossiblyUndefinedVariable */
-                        if ((int)$class_id !== Format::NULL_STRING_ID && $nodeClassIds[$csrIdx] === -1) {
-                            /** @psalm-suppress PossiblyUndefinedVariable */
-                            $className = $dict->lookup((int)$class_id);
+                        if ($class_id !== Format::NULL_STRING_ID && $nodeClassIds[$csrIdx] === -1) {
+                            $className = $dict->lookup($class_id);
                             if ($className !== null) {
                                 if (!isset($substrate->classDictReverse[$className])) {
                                     $substrate->classDictReverse[$className] = count($substrate->classDict);
@@ -477,8 +484,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     }
                 }
 
-                // Canonical address grouping (was Phase 3.5)
-                if ($address !== 0) {
+                // Canonical address grouping (was Phase 3.5). Runs for all
+                // locations — even outside-region ones contribute address
+                // identity, which is independent of size attribution.
+                if (!$canonicalLoaded && $address !== 0) {
                     $addr_to_nodes[$address][] = $node_id;
                 }
             }
