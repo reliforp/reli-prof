@@ -74,6 +74,12 @@ final class RegionFilter
      * string is parenthesised and contains no parameter markers (the
      * region list is a closed set of internal identifiers, not user
      * input).
+     *
+     * IMPORTANT: `$column` is interpolated raw — pass only trusted
+     * internal column identifiers (e.g. literals like `'region'`). Do
+     * NOT pass user-supplied input here. Every existing call site uses
+     * the fixed `'region'` literal; preserve that invariant when adding
+     * new ones.
      */
     public static function sqlPredicate(string $column): string
     {
