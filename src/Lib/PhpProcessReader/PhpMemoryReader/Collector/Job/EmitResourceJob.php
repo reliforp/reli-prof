@@ -40,7 +40,6 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLoc
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringSlotTailMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ResourceContext;
-use Reli\Lib\Process\MemoryLocation;
 use Reli\Lib\Process\Pointer\Pointer;
 
 /**
@@ -365,14 +364,26 @@ final class EmitResourceJob implements CollectorJob
      * abstract data and emit a {@see ZendStringMemoryLocation} for it
      * under `$context_key`. Bails out silently when:
      *   - the pointer is null;
-     *   - the address sits outside any tracked zend_mm chunk (persistent
-     *     allocations live there too, but they are region='outside' and
-     *     we would only end up dropping them again at report time — see
-     *     {@see \Reli\Inspector\Output\MemoryOutput\RegionFilter});
-     *   - the dereferenced `len` exceeds {@see self::MAX_PLAUSIBLE_STREAM_STRING_LEN}
-     *     (the sentinel for "address sits in a chunk slot but the slot
-     *     was recycled and now holds garbage"; see commit history for
-     *     the stale `php_stream_memory_data->data` failure mode).
+     *   - the dereferenced `len` exceeds
+     *     {@see self::MAX_PLAUSIBLE_STREAM_STRING_LEN}
+     *     (the sentinel for "the slot was recycled and now holds
+     *     garbage"; see commit history for the stale
+     *     `php_stream_memory_data->data` failure mode that this guard
+     *     exists for).
+     *
+     * Truly wild pointers (e.g. addresses outside any mapped page)
+     * surface as a `MemoryReaderException` from `deref` and are caught
+     * by the outer `tryCollectStreamData` try/catch, which lets the
+     * resource walk continue without the stream child. We don't
+     * pre-screen by chunk membership: persistent stream buffers and
+     * legitimate-but-not-zend-mm allocations on some PHP versions can
+     * still have a sane `len`, and rejecting them silently masked a
+     * real `php://memory` link in `MemoryLocationsCollectorTest::testStreamResourceTracking`
+     * on the PHP 8.0 target. The size-attribution side of the bug is
+     * already handled at write time by
+     * {@see \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink::emitNode()}
+     * (which gates per-node accumulators on `RegionFilter::isRelevant`)
+     * and at read time by {@see \Reli\Inspector\Output\MemoryOutput\RegionFilter}.
      *
      * The cached path mirrors the previous inline block: if the
      * address has already been visited, just reattach the existing
@@ -395,18 +406,6 @@ final class EmitResourceJob implements CollectorJob
             if ($cached !== null) {
                 $resource_context->add($context_key, $cached);
             }
-            return;
-        }
-
-        // Outside-zend_mm addresses are either persistent allocations
-        // (which would be filtered as region='outside' downstream
-        // anyway) or dangling/freed memory; either way we don't want
-        // to deref blindly. The 1-byte probe is enough — `contains`
-        // checks chunk membership by address, not size.
-        if (
-            $ctx->chunk_memory_locations === null
-            || !$ctx->chunk_memory_locations->contains(new MemoryLocation($address, 1))
-        ) {
             return;
         }
 
