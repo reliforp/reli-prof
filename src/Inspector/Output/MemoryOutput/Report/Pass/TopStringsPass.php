@@ -67,6 +67,10 @@ final class TopStringsPass implements PassInterface
                 ];
             }
         } else {
+            // Same region filter as BinaryReportDataProvider::getTopStrings:
+            // a dangling stream_memory_data->data dereferenced as a
+            // zend_string lands in 'outside' with a multi-exabyte `size`
+            // and would otherwise dominate this ranking.
             $rows = $this->db->query("
                 SELECT
                     node_id,
@@ -75,6 +79,8 @@ final class TopStringsPass implements PassInterface
                 FROM context_node_locations
                 WHERE run_id = {$this->run_id}
                     AND location_type = 'ZendStringMemoryLocation'
+                    AND (region IN ('zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena')
+                         OR region IS NULL)
                 ORDER BY size DESC
                 LIMIT 10
             ")->fetchAll(\PDO::FETCH_ASSOC);

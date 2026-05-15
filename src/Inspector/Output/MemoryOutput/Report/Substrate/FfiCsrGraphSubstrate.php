@@ -1529,10 +1529,16 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // properties directly via $this-> is fine — no need for the
         // by-reference aliasing dance, which Psalm can't model.
 
+        // Same region filter as rmem's loadFromBinary and
+        // PdoMemoryOutput::insertLocationTypesSummaryFromDb. Excludes
+        // dangling/persistent 'outside'-region locations whose `size`
+        // can be garbage; keeps NULL region for backward compat.
         $stmt = $db->prepare(
             "SELECT node_id, sum(size) as s, min(class_name) as cls
              FROM context_node_locations
              WHERE run_id = ? AND node_id > ?
+               AND (region IN ('zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena')
+                    OR region IS NULL)
              GROUP BY node_id
              ORDER BY node_id
              LIMIT {$chunk}"
