@@ -15,6 +15,7 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer;
 
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\DiskBackedStringDict;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
+use Reli\Inspector\Output\MemoryOutput\RegionFilter;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\RefcountedMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
@@ -101,6 +102,21 @@ final class BinaryContextTreeSink implements ContextTreeSink
     private ?\FFI\CData $perNodeClasses = null;
     private int $perNodeCapacity = 0;
     private int $maxNodeId = -1;
+
+    /**
+     * Whether the per-node accumulators only see locations whose region
+     * counts toward size attribution
+     * ({@see \Reli\Inspector\Output\MemoryOutput\RegionFilter}). Stays
+     * true exactly when {@see $region_boundaries} was set before the
+     * first {@see emitNode()}: with no classifier we cannot decide
+     * which rows to drop, so we let everything through and report the
+     * accumulators as unfiltered. {@see BinaryMemoryOutput} reads this
+     * back to decide whether to set
+     * {@see \Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format::FLAG_NODE_SIZES_REGION_FILTERED}
+     * in the rmem header so the reader can skip its locations rescan.
+     */
+    private bool $perNodeRegionFiltered = false;
+    private bool $perNodeRegionFilteredKnown = false;
 
     // Canonical address grouping: address → min node_id seen so far.
     // Tracks whether multiple distinct node_ids share an address.
@@ -284,17 +300,40 @@ final class BinaryContextTreeSink implements ContextTreeSink
                 $this->flushLocations();
             }
 
-            // Accumulate per-node sizes and classes for on-disk sections.
+            // Accumulate per-node sizes and classes for on-disk sections,
+            // but only when the location's region counts toward size
+            // attribution (see RegionFilter). The reader treats the on-disk
+            // `node_sizes` slots as authoritative when the writer sets
+            // FLAG_NODE_SIZES_REGION_FILTERED in the rmem header — we only
+            // get to set that flag if every accumulator was fed
+            // through this gate. Canonical address grouping (below) still
+            // runs for every location: address identity is independent of
+            // size attribution.
+            //
+            // The capacity (and `maxNodeId`) must grow for every location,
+            // not just the in-region ones, so that BinaryMemoryOutput
+            // reserves enough slots in the on-disk node_sizes/node_classes
+            // sections to cover every node we ever wrote a row for. An
+            // outside-region row leaves the slot at zero (see the
+            // RegionFilter contract); the section width must still cover
+            // it so node-id-indexed lookups don't fall off the end.
+            //
             // perNodeSizes / perNodeClasses are typed \FFI\CArray<int> via
             // their property docblocks, so the array reads return int with
             // no per-iteration Cast::toInt() dispatch.
+            if (!$this->perNodeRegionFilteredKnown) {
+                $this->perNodeRegionFiltered = $this->region_boundaries !== null;
+                $this->perNodeRegionFilteredKnown = true;
+            }
             $this->ensurePerNodeCapacity($node_id);
-            $this->perNodeSizes[$node_id] = $this->perNodeSizes[$node_id] + $location->size;
-            if (
-                $class_id !== Format::NULL_STRING_ID
-                && $this->perNodeClasses[$node_id] === Format::NULL_STRING_ID
-            ) {
-                $this->perNodeClasses[$node_id] = $class_id;
+            if (!$this->perNodeRegionFiltered || RegionFilter::isRelevant($region)) {
+                $this->perNodeSizes[$node_id] = $this->perNodeSizes[$node_id] + $location->size;
+                if (
+                    $class_id !== Format::NULL_STRING_ID
+                    && $this->perNodeClasses[$node_id] === Format::NULL_STRING_ID
+                ) {
+                    $this->perNodeClasses[$node_id] = $class_id;
+                }
             }
 
             // Track address → min node_id for canonical grouping
@@ -524,6 +563,23 @@ final class BinaryContextTreeSink implements ContextTreeSink
     public function getMaxNodeId(): int
     {
         return $this->maxNodeId;
+    }
+
+    /**
+     * True iff every per-node accumulator value reflects only locations
+     * whose region counts toward size attribution. {@see BinaryMemoryOutput}
+     * reads this to decide whether to set
+     * {@see \Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format::FLAG_NODE_SIZES_REGION_FILTERED}
+     * in the rmem header.
+     *
+     * The accumulators only become "filtered" when {@see $region_boundaries}
+     * was set before the first {@see emitNode()}; with no classifier we
+     * cannot decide which rows to drop, so we let everything through and
+     * report unfiltered.
+     */
+    public function isPerNodeRegionFiltered(): bool
+    {
+        return $this->perNodeRegionFiltered;
     }
 
     /**

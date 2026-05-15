@@ -344,22 +344,52 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         }
         unset($nodeData, $nodeRows);
 
-        // ---- Phase 3: Load node classes + canonical address grouping ----
-        // The on-disk `node_sizes` section is intentionally NOT used here:
-        // it is a pre-summed shortcut written before the size-attribution
-        // region policy ({@see RegionFilter}) is applied, and pre-summed
-        // values cannot be region-filtered at read time. Sizes are
-        // therefore always computed below from the locations section with
-        // the shared filter, keeping every surface ($nodeSizesSum,
-        // getNodeSize, ChokePoint, Top Strings) consistent.
-        //
-        // The on-disk `node_classes` fast-path stays trusted because
-        // class_id is intern()'d only for ZendObjectMemoryLocation rows
-        // (BinaryContextTreeSink::emitNode), and ZendObject allocations
-        // never land in 'outside' — they live in zend_mm chunks. The
-        // pathological 'outside' case (a stale php_stream_memory_data->data
-        // dereferenced as a zend_string) carries class_id=NULL_STRING_ID
-        // and contributes nothing to per-node class attribution.
+        // ---- Phase 3a: Load on-disk node_sizes when the writer guarantees
+        // the size-attribution region policy was already applied. ----
+        // Older rmem files (or files written without a RegionBoundaries
+        // attached to the sink) leave the flag off; for those the
+        // pre-summed slots may include 'outside'-region bytes the
+        // report-time policy would drop, and the locations-scan path
+        // below recomputes the sums with the shared RegionFilter. New
+        // rmem files set the flag in BinaryMemoryOutput::output and
+        // we can fold the section straight into the FFI accumulator
+        // without rescanning locations — that scan is the single
+        // largest cost on the report-load path for big dumps.
+        $sizesLoaded = false;
+        if (
+            $reader->hasHeaderFlag(Format::FLAG_NODE_SIZES_REGION_FILTERED)
+            && $reader->hasSection('node_sizes')
+        ) {
+            $sizesData = $reader->getSectionData('node_sizes');
+            $slotsCount = $reader->getSectionElementCount('node_sizes');
+            $ffiNodeSizes = $substrate->ffiNodeSizes;
+            $substrate->nodeSizesSum = 0;
+            for ($i = 0; $i < min($slotsCount, $nc); $i++) {
+                if ($directMap !== null) {
+                    $slot = $i + $directOffset;
+                    $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : $directMap[$slot];
+                } else {
+                    $csrIdx = $phpMap[$i] ?? -1;
+                }
+                if ($csrIdx < 0) {
+                    continue;
+                }
+                $size = unpack('P', $sizesData, $i * 8)[1];
+                $ffiNodeSizes[$csrIdx] = $size;
+                $substrate->nodeSizesSum += $size;
+            }
+            $sizesLoaded = true;
+        }
+
+        // ---- Phase 3b: Load node classes + canonical address grouping ----
+        // The on-disk `node_classes` fast-path stays trusted independent
+        // of FLAG_NODE_SIZES_REGION_FILTERED because class_id is intern()'d
+        // only for ZendObjectMemoryLocation rows (BinaryContextTreeSink::emitNode),
+        // and ZendObject allocations never land in 'outside' — they live in
+        // zend_mm chunks. The pathological 'outside' case (a stale
+        // php_stream_memory_data->data dereferenced as a zend_string)
+        // carries class_id=NULL_STRING_ID and contributes nothing to
+        // per-node class attribution.
         if ($reader->hasSection('node_classes')) {
             $classesData = $reader->getSectionData('node_classes');
             $slotsCount = $reader->getSectionElementCount('node_classes');
@@ -422,18 +452,28 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $canonicalLoaded = true;
         }
 
-        // Scan locations for size accumulation (always) and, if
-        // canonical_map wasn't on-disk, for canonical address grouping.
+        // Scan locations for whatever the on-disk fast paths above did
+        // not cover. With FLAG_NODE_SIZES_REGION_FILTERED set in the
+        // header (and `node_sizes` + `canonical_map` sections both
+        // present) this whole block is skipped — the single biggest
+        // perf win on the report-load path for large dumps.
         /** @var array<int, list<int>> $addr_to_nodes address → [node_id, ...] for canonical */
         $addr_to_nodes = [];
-        if ($reader->hasSection(Format::SECTION_LOCATIONS)) {
+        $needSizeAccumulation = !$sizesLoaded;
+        $needCanonicalGrouping = !$canonicalLoaded;
+        if (
+            ($needSizeAccumulation || $needCanonicalGrouping)
+            && $reader->hasSection(Format::SECTION_LOCATIONS)
+        ) {
             $locCount = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
             $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
             $locData = $locRows === null ? $reader->getSectionData(Format::SECTION_LOCATIONS) : null;
             $ffiNodeSizes = $substrate->ffiNodeSizes;
             $nodeClassIds = $substrate->nodeClassIds;
 
-            $substrate->nodeSizesSum = 0;
+            if ($needSizeAccumulation) {
+                $substrate->nodeSizesSum = 0;
+            }
             for ($i = 0; $i < $locCount; $i++) {
                 if ($locRows !== null) {
                     $node_id = $locRows[$i]->node_id;
@@ -451,7 +491,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 }
 
                 // Apply the shared size-attribution region policy. See RegionFilter.
-                if (RegionFilter::isRelevant($dict->lookup($region_id))) {
+                if (
+                    $needSizeAccumulation
+                    && RegionFilter::isRelevant($dict->lookup($region_id))
+                ) {
                     if ($directMap !== null) {
                         $slot = $node_id + $directOffset;
                         $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : $directMap[$slot];
@@ -478,7 +521,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 // Canonical address grouping (was Phase 3.5). Runs for all
                 // locations — even outside-region ones contribute address
                 // identity, which is independent of size attribution.
-                if (!$canonicalLoaded && $address !== 0) {
+                if ($needCanonicalGrouping && $address !== 0) {
                     $addr_to_nodes[$address][] = $node_id;
                 }
             }

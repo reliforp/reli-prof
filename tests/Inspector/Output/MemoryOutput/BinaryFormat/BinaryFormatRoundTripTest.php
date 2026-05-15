@@ -817,4 +817,183 @@ class BinaryFormatRoundTripTest extends TestCase
         $this->assertSame(48, $sql_php_substrate->getNodeSize(1));
         $this->assertSame(0, $sql_php_substrate->getNodeSize(2));
     }
+
+    /**
+     * Pins the FLAG_NODE_SIZES_REGION_FILTERED contract end-to-end:
+     *
+     *   - When the sink runs with a RegionBoundaries attached, the
+     *     writer must set the flag in the rmem header and the on-disk
+     *     `node_sizes` slots must already exclude 'outside'-region
+     *     bytes — a flag-aware reader can then skip the locations
+     *     rescan that {@see RegionFilter} would otherwise force.
+     *   - When the sink runs without a RegionBoundaries (older writer
+     *     path / tests / explicit fallback), the flag must stay off
+     *     and the reader must fall back to the locations-scan path
+     *     so 'outside' rows are still filtered at read time.
+     *
+     * Both cases must agree on the same final size totals — the flag
+     * is purely a perf hint, never a correctness divergence.
+     */
+    public function testNodeSizesRegionFilteredFlagIsSetWhenSinkHasRegionBoundaries(): void
+    {
+        $bogus_size = PHP_INT_MAX - 100;
+
+        // --- Case 1: sink WITH RegionBoundaries → flag set, on-disk
+        //     node_sizes already filtered.
+        $chunk = new MemoryLocations();
+        $chunk->add(new ZendMmChunkMemoryLocation(0x1000, 0x10000));
+        $boundaries = new RegionBoundaries(
+            $chunk,
+            new MemoryLocations(),
+            new MemoryLocations(),
+            new MemoryLocations(),
+        );
+        $filteredSink = new BinaryContextTreeSink($boundaries, batch_size: 10);
+        $this->emitOutsideFixture($filteredSink, $bogus_size);
+        $this->assertTrue(
+            $filteredSink->isPerNodeRegionFiltered(),
+            'sink with RegionBoundaries should report perNode accumulators as filtered',
+        );
+
+        $filteredPath = $this->rmem_path;
+        $filteredOutput = new BinaryMemoryOutput($filteredPath);
+        $filteredOutput->finalizeStreaming(
+            $filteredSink,
+            [['zend_mm_heap_usage' => '1024', 'php_version' => '8.4.0']],
+        );
+
+        $filteredReader = Reader::open($filteredPath);
+        $this->assertTrue(
+            $filteredReader->hasHeaderFlag(Format::FLAG_NODE_SIZES_REGION_FILTERED),
+            'BinaryMemoryOutput must set FLAG_NODE_SIZES_REGION_FILTERED when sink filtered',
+        );
+        // The on-disk node_sizes slot for the bogus 'outside' node must
+        // be 0 — proving the writer-side filter actually elided the
+        // accumulation rather than the reader silently subtracting it
+        // out at load time.
+        $this->assertNotNull($filteredReader->getSectionData('node_sizes'));
+        $rawSizes = $filteredReader->getSectionData('node_sizes');
+        $this->assertSame(64, unpack('P', $rawSizes, 0)[1], 'slot 0 (good object) should be 64 on disk');
+        $this->assertSame(48, unpack('P', $rawSizes, 8)[1], 'slot 1 (good string) should be 48 on disk');
+        $this->assertSame(0, unpack('P', $rawSizes, 16)[1], 'slot 2 (bogus outside string) should be 0 on disk');
+
+        $filteredFfi = FfiCsrGraphSubstrate::loadFromBinary(
+            $filteredReader,
+            useCache: false,
+            rebuildCache: false,
+            skipScc: true,
+        );
+        $this->assertSame(112, $filteredFfi->getNodeSizesSum());
+        $this->assertSame(0, $filteredFfi->getNodeSize(2));
+
+        // --- Case 2: sink WITHOUT RegionBoundaries → flag stays off,
+        //     reader falls back to the locations-scan path. Real-world
+        //     legacy writers leave region NULL on every row (no
+        //     classifier ran), and RegionFilter treats NULL as a
+        //     pre-tagging fixture and lets it through; the surface
+        //     totals must match Case 1's filtered fixture.
+        $unfilteredSink = new BinaryContextTreeSink(batch_size: 10);
+        // Mirror Case 1's *good* rows only — without RegionBoundaries the
+        // sink cannot classify, so the "outside" row would be tagged
+        // region=NULL (RegionFilter would let it through as legacy) and
+        // poison the assertion. The bogus-row case is what writer-side
+        // filtering exists to handle; here we just pin that legacy
+        // (flag-off) fixtures still load with the right totals.
+        $unfilteredSink->emitNode(
+            node_id: 0,
+            parent_node_id: null,
+            link_name: 'root_obj',
+            type: 'ObjectContext',
+            locations: [new ZendObjectMemoryLocation(0x1100, 64, 1, 7, 'App\\GoodObject')],
+            attributes: [],
+        );
+        $unfilteredSink->emitNode(
+            node_id: 1,
+            parent_node_id: 0,
+            link_name: 'good_string',
+            type: 'StringContext',
+            locations: [new ZendStringMemoryLocation(0x2000, 48, 1, 6, 'hello')],
+            attributes: [],
+        );
+        $this->assertFalse(
+            $unfilteredSink->isPerNodeRegionFiltered(),
+            'sink without RegionBoundaries should report perNode accumulators as unfiltered',
+        );
+
+        $unfilteredPath = $filteredPath . '.unfiltered.rmem';
+        try {
+            $unfilteredOutput = new BinaryMemoryOutput($unfilteredPath);
+            $unfilteredOutput->finalizeStreaming(
+                $unfilteredSink,
+                [['zend_mm_heap_usage' => '1024', 'php_version' => '8.4.0']],
+            );
+
+            $unfilteredReader = Reader::open($unfilteredPath);
+            $this->assertFalse(
+                $unfilteredReader->hasHeaderFlag(Format::FLAG_NODE_SIZES_REGION_FILTERED),
+                'flag must stay off when sink had no RegionBoundaries',
+            );
+
+            $unfilteredFfi = FfiCsrGraphSubstrate::loadFromBinary(
+                $unfilteredReader,
+                useCache: false,
+                rebuildCache: false,
+                skipScc: true,
+            );
+            $this->assertSame(112, $unfilteredFfi->getNodeSizesSum());
+            $this->assertSame(64, $unfilteredFfi->getNodeSize(0));
+            $this->assertSame(48, $unfilteredFfi->getNodeSize(1));
+            $this->assertSame(
+                $filteredFfi->getNodeSizesSum(),
+                $unfilteredFfi->getNodeSizesSum(),
+                'flag is a perf hint only — both paths must agree on the final total',
+            );
+        } finally {
+            if (file_exists($unfilteredPath)) {
+                @unlink($unfilteredPath);
+            }
+        }
+    }
+
+    /**
+     * Shared fixture used by both the original
+     * testOutsideRegionStringIsExcludedFromAllSizeAttributionSurfaces
+     * and the flag-contract test above. Emits three nodes:
+     *   - node_id 0: in-heap object, size 64
+     *   - node_id 1: in-heap string, size 48
+     *   - node_id 2: 'outside' string with garbage `size`
+     */
+    private function emitOutsideFixture(BinaryContextTreeSink $sink, int $bogus_size): void
+    {
+        $sink->emitNode(
+            node_id: 0,
+            parent_node_id: null,
+            link_name: 'root_obj',
+            type: 'ObjectContext',
+            locations: [
+                new ZendObjectMemoryLocation(0x1100, 64, 1, 7, 'App\\GoodObject'),
+            ],
+            attributes: [],
+        );
+        $sink->emitNode(
+            node_id: 1,
+            parent_node_id: 0,
+            link_name: 'good_string',
+            type: 'StringContext',
+            locations: [
+                new ZendStringMemoryLocation(0x2000, 48, 1, 6, 'hello'),
+            ],
+            attributes: [],
+        );
+        $sink->emitNode(
+            node_id: 2,
+            parent_node_id: 0,
+            link_name: 'bogus_string',
+            type: 'StringContext',
+            locations: [
+                new ZendStringMemoryLocation(0xDEAD0000, $bogus_size, 1, 6, 'garbage'),
+            ],
+            attributes: [],
+        );
+    }
 }

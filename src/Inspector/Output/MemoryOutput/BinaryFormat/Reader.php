@@ -41,6 +41,9 @@ final class Reader
     /** @var array<string, array{offset: int, length: int, element_count: int}> */
     private array $toc = [];
 
+    /** Flags read from the rmem header — OR of {@see Format} `FLAG_*` constants. */
+    private int $headerFlags = 0;
+
     private StringDict $stringDict;
 
     // mmap-backed storage (preferred)
@@ -129,6 +132,7 @@ final class Reader
         if (($flags & Format::FLAG_LITTLE_ENDIAN) === 0) {
             throw new \RuntimeException('Big-endian rmem files are not supported');
         }
+        $this->headerFlags = $flags;
 
         $section_count = unpack('V', $headerBytes, 12)[1];
         $toc_offset = unpack('P', $headerBytes, 16)[1];
@@ -170,6 +174,15 @@ final class Reader
     public function getStringDict(): StringDict
     {
         return $this->stringDict;
+    }
+
+    /**
+     * True iff the given header flag bit is set.
+     * See {@see Format} for the defined `FLAG_*` constants.
+     */
+    public function hasHeaderFlag(int $flag): bool
+    {
+        return ($this->headerFlags & $flag) === $flag;
     }
 
     public function hasSection(string $name): bool

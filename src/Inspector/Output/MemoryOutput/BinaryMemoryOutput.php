@@ -142,6 +142,17 @@ final class BinaryMemoryOutput implements MemoryOutputInterface
                     \FFI::string($perNodeSizes, $nodeSlots * 8),
                     $nodeSlots,
                 );
+                // Advertise the on-disk node_sizes section as
+                // region-policy-clean so readers can skip the locations
+                // rescan that {@see RegionFilter} would otherwise force
+                // them to do. The sink only reports `true` when a
+                // RegionBoundaries was attached before the first
+                // emitNode(); without one the accumulators are unfiltered
+                // and the flag must stay off so older readers keep using
+                // the safe fallback.
+                if ($sink->isPerNodeRegionFiltered()) {
+                    $writer->addExtraHeaderFlags(Format::FLAG_NODE_SIZES_REGION_FILTERED);
+                }
             }
             $perNodeClasses = $sink->getPerNodeClasses();
             if ($perNodeClasses !== null) {
