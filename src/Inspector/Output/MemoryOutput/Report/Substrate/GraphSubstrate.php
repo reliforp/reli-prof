@@ -644,9 +644,18 @@ class GraphSubstrate
     /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion */
     protected function loadNodeSizes(\PDO $db, int $run_id): void
     {
+        // Same region filter rmem's loadFromBinary and
+        // PdoMemoryOutput::insertLocationTypesSummaryFromDb apply:
+        // 'outside' (and other non-relevant) regions are dangling/
+        // persistent allocations whose `size` is often garbage and must
+        // not feed per-node aggregation. Keeping NULL region preserves
+        // backward compatibility with rows captured before region tagging.
         $stmt = $db->query(
             "SELECT node_id, sum(size) as s, group_concat(DISTINCT class_name) as cls"
-            . " FROM context_node_locations WHERE run_id = {$run_id} GROUP BY node_id"
+            . " FROM context_node_locations WHERE run_id = {$run_id}"
+            . " AND (region IN ('zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena')"
+            . "      OR region IS NULL)"
+            . " GROUP BY node_id"
         );
 
         while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
