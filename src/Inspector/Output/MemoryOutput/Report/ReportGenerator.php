@@ -500,9 +500,6 @@ final class ReportGenerator
         $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
         $dict = $reader->getStringDict();
 
-        // Filter to relevant regions (same as insertLocationTypesSummaryFromDb)
-        $relevant_regions = ['zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena'];
-
         /** @var array<string, array{count: int, memory_usage: int}> $result */
         $result = [];
         $offset = 0;
@@ -516,7 +513,7 @@ final class ReportGenerator
 
             // Filter by region (null region also included)
             $region = $dict->lookup($region_id);
-            if ($region !== null && !in_array($region, $relevant_regions, true)) {
+            if ($region !== null && !in_array($region, BinaryReportDataProvider::RELEVANT_REGIONS, true)) {
                 continue;
             }
 
@@ -552,8 +549,6 @@ final class ReportGenerator
         $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
         $dict = $reader->getStringDict();
 
-        $relevant_regions = ['zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena'];
-
         /** @var array<string, array{count: int, memory_usage: int}> $result */
         $result = [];
         $offset = 0;
@@ -567,7 +562,7 @@ final class ReportGenerator
                 continue;
             }
             $region = $dict->lookup($region_id);
-            if ($region !== null && !in_array($region, $relevant_regions, true)) {
+            if ($region !== null && !in_array($region, BinaryReportDataProvider::RELEVANT_REGIONS, true)) {
                 continue;
             }
 

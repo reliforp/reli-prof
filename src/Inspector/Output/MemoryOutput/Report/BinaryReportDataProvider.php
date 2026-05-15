@@ -29,6 +29,29 @@ use Reli\Lib\FFI\FFIHelper;
 final class BinaryReportDataProvider
 {
     /**
+     * Regions whose locations participate in size aggregation.
+     *
+     * Matches the SQL filter used by
+     * {@see \Reli\Inspector\Output\MemoryOutput\PdoMemoryOutput::insertLocationTypesSummaryFromDb}
+     * and the inline filter in {@see self::computeLocationTypesSummary}.
+     * Locations with a non-null region outside this set are typically
+     * dangling/persistent allocations (e.g., a stale
+     * `php_stream_memory_data->data` dereferenced as a `zend_string`,
+     * walked by EmitResourceJob::collectMemoryStreamData) and must be
+     * excluded from per-node size sums; otherwise their
+     * garbage `size` inflates `node_sizes` past `PHP_INT_MAX` and the
+     * FFI CSR substrate raises "Cannot assign float to property" on
+     * `$nodeSizesSum`. A null region preserves backward compatibility
+     * with pre-region-tagging rmem files.
+     */
+    public const RELEVANT_REGIONS = [
+        'zend_mm_heap',
+        'zend_mm_huge',
+        'vm_stack',
+        'compiler_arena',
+    ];
+
+    /**
      * Find node IDs that have a specific location_type.
      *
      * Replaces: SELECT DISTINCT node_id FROM context_node_locations
@@ -105,19 +128,28 @@ final class BinaryReportDataProvider
         $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
         $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
 
-        // Collect all ZendStringMemoryLocation entries
+        // Collect all ZendStringMemoryLocation entries.
+        // Apply the same region filter as computeLocationTypesSummary so
+        // that bogus 'outside'-region strings (e.g., a stale
+        // php_stream_memory_data->data dereferenced as a zend_string with
+        // garbage `len`) don't surface as multi-exabyte rows.
         /** @var list<array{node_id: int, size: int, string_value_id: int}> $candidates */
         $candidates = [];
         if ($locRows !== null) {
             for ($i = 0; $i < $count; $i++) {
                 $type = $dict->lookup($locRows[$i]->location_type_id);
-                if ($type === 'ZendStringMemoryLocation') {
-                    $candidates[] = [
-                        'node_id' => $locRows[$i]->node_id,
-                        'size' => $locRows[$i]->size,
-                        'string_value_id' => $locRows[$i]->string_value_id,
-                    ];
+                if ($type !== 'ZendStringMemoryLocation') {
+                    continue;
                 }
+                $region = $dict->lookup($locRows[$i]->region_id);
+                if ($region !== null && !in_array($region, self::RELEVANT_REGIONS, true)) {
+                    continue;
+                }
+                $candidates[] = [
+                    'node_id' => $locRows[$i]->node_id,
+                    'size' => $locRows[$i]->size,
+                    'string_value_id' => $locRows[$i]->string_value_id,
+                ];
             }
         } else {
             $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
@@ -125,13 +157,19 @@ final class BinaryReportDataProvider
                 $off = $i * Format::LOCATION_ROW_SIZE;
                 $type_id = unpack('V', $data, $off + 4)[1];
                 $type = $dict->lookup($type_id);
-                if ($type === 'ZendStringMemoryLocation') {
-                    $candidates[] = [
-                        'node_id' => unpack('V', $data, $off)[1],
-                        'size' => unpack('P', $data, $off + 20)[1],
-                        'string_value_id' => unpack('V', $data, $off + 28)[1],
-                    ];
+                if ($type !== 'ZendStringMemoryLocation') {
+                    continue;
                 }
+                $region_id = unpack('V', $data, $off + 40)[1];
+                $region = $dict->lookup($region_id);
+                if ($region !== null && !in_array($region, self::RELEVANT_REGIONS, true)) {
+                    continue;
+                }
+                $candidates[] = [
+                    'node_id' => unpack('V', $data, $off)[1],
+                    'size' => unpack('P', $data, $off + 20)[1],
+                    'string_value_id' => unpack('V', $data, $off + 28)[1],
+                ];
             }
         }
 
