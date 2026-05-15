@@ -164,6 +164,56 @@ final class BinaryReportDataProvider
     }
 
     /**
+     * Compute location_types summary from the binary locations section.
+     *
+     * Mirrors {@see \Reli\Inspector\Output\MemoryOutput\Report\ReportGenerator::computeLocationTypesFromBinary}
+     * (which remains as a private helper on the report path). Exposed
+     * here so unit tests and other consumers can derive the same
+     * size-attribution-filtered total without going through ReportGenerator.
+     *
+     * @return array<string, array{count: int, memory_usage: int}>
+     * @psalm-suppress MixedAssignment
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    public static function computeLocationTypesSummary(BinaryReader $reader): array
+    {
+        if (!$reader->hasSection(Format::SECTION_LOCATIONS)) {
+            return [];
+        }
+        $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
+        $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+        $dict = $reader->getStringDict();
+
+        /** @var array<string, array{count: int, memory_usage: int}> $result */
+        $result = [];
+        $offset = 0;
+        for ($i = 0; $i < $count; $i++) {
+            $location_type_id = unpack('V', $data, $offset + 4)[1];
+            $size = unpack('P', $data, $offset + 20)[1];
+            $region_id = unpack('V', $data, $offset + 40)[1];
+            $offset += Format::LOCATION_ROW_SIZE;
+
+            // Apply the shared size-attribution region policy. See RegionFilter.
+            if (!RegionFilter::isRelevant($dict->lookup($region_id))) {
+                continue;
+            }
+
+            $type = $dict->lookup($location_type_id);
+            if ($type === null) {
+                continue;
+            }
+            if (!isset($result[$type])) {
+                $result[$type] = ['count' => 0, 'memory_usage' => 0];
+            }
+            $result[$type]['count']++;
+            $result[$type]['memory_usage'] += $size;
+        }
+
+        uasort($result, fn (array $a, array $b): int => $b['memory_usage'] <=> $a['memory_usage']);
+        return $result;
+    }
+
+    /**
      * Compute non-tree strong edge aggregation by link_name.
      *
      * Replaces the GROUP BY link_name query in NonTreeEdgePass::analyzeWithSubstrate.
