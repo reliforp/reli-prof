@@ -69,9 +69,14 @@ final class EmitClassTableJob implements CollectorJob
     {
         $defined_classes_context = new DefinedClassesContext();
 
-        // Emit the root node first
-        $root_node_id = $ctx->emitNode($defined_classes_context, null, 'class_table');
-        $parent = $root_node_id >= 0 ? $root_node_id : null;
+        // Reserve a node id for the class_table root before walking
+        // the buckets so children can be emitted with the right
+        // parent, but defer the actual emit to the end of the walk —
+        // that way getContexts() picks up the dropped/skipped
+        // counters we accumulate below as attributes the user can
+        // see from rmem:explore.
+        $reserved = $ctx->analyzer->assignNodeId($defined_classes_context);
+        $parent = $reserved >= 0 ? $reserved : null;
 
         // Walk the class table by iterating arData directly with a
         // plain for-loop (no generators). Generator-based iterators
@@ -80,10 +85,20 @@ final class EmitClassTableJob implements CollectorJob
         // A plain loop with per-bucket try-catch is resilient.
         $arData = $this->array->arData;
         if ($arData === null) {
+            $ctx->emitNode($defined_classes_context, null, 'class_table');
             return;
         }
         $numUsed = $this->array->nNumUsed;
+        $droppedSamples = [];
         for ($i = 0; $i < $numUsed; $i++) {
+            // Track the class name + ce address as early as we can so
+            // the silent catch below can include them in the diagnostic
+            // sample if a later step throws. The ce hex address lets
+            // the user cross-reference with /proc/<pid>/maps to see
+            // which VMA the unreadable class_entry was supposed to
+            // live in (opcache SHM /dev/zero, library .data, etc.).
+            $class_name_for_diag = "<bucket #{$i}>";
+            $ce_address_for_diag = null;
             try {
                 $bucket = $ctx->dereferencer->deref($arData->indexedAt($i));
                 if ($bucket->val->isUndef()) {
@@ -94,13 +109,16 @@ final class EmitClassTableJob implements CollectorJob
                 if ($pointer === null) {
                     continue;
                 }
+                $ce_address_for_diag = $pointer->address;
                 if ($ctx->memory_locations->has($pointer->address)) {
+                    $defined_classes_context->recordSkippedDedup();
                     continue;
                 }
 
                 if ($bucket->key !== null) {
                     $zend_string = $ctx->dereferencer->deref($bucket->key);
                     $class_name = $zend_string->toString($ctx->dereferencer);
+                    $class_name_for_diag = $class_name;
                 } else {
                     $class_name = '?';
                 }
@@ -123,10 +141,46 @@ final class EmitClassTableJob implements CollectorJob
                         $queue->push(new ResolveZvalJob($value, $pid, $link));
                     }
                 }
-            } catch (\Throwable) {
-                // Per-bucket error isolation: a single unreadable class
-                // must not abort the walk of remaining classes.
+            } catch (\Throwable $e) {
+                // Per-bucket error isolation: a single unreadable
+                // class must not abort the walk of remaining classes.
+                // We do count + sample silently-dropped buckets so
+                // the asymmetry it causes downstream
+                // (RmemModel::findClassDef returning null for the
+                // missing class, no `⇒ class` pseudo-edge from
+                // its instances in rmem:explore) is at least
+                // diagnosable.
+                $defined_classes_context->recordDroppedException();
+                if (count($droppedSamples) < 32) {
+                    $ce_addr_str = $ce_address_for_diag === null
+                        ? '<no-addr>'
+                        : sprintf('0x%x', $ce_address_for_diag);
+                    $droppedSamples[] = sprintf(
+                        '%s @ %s: %s: %s',
+                        $class_name_for_diag,
+                        $ce_addr_str,
+                        get_class($e),
+                        $e->getMessage(),
+                    );
+                }
             }
+        }
+
+        // Now emit the root with the populated diagnostic counters
+        // baked into its attributes. Pre-reserving a node_id and
+        // late-emitting puts the row out of node_id order in the on-disk
+        // nodes section; FfiCsrGraphSubstrate.loadFromBinary handles
+        // that by ksort'ing all_node_ids before assigning csr indices.
+        $ctx->emitNode($defined_classes_context, null, 'class_table');
+
+        if ($droppedSamples !== []) {
+            // Mirror the count as a stderr warning so users running
+            // analyze interactively see it alongside other progress
+            // output, not just buried in a node attribute.
+            fwrite(STDERR, sprintf(
+                "WARNING: EmitClassTableJob silently dropped class buckets — first samples:\n  %s\n",
+                implode("\n  ", $droppedSamples),
+            ));
         }
     }
 

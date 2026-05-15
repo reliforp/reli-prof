@@ -225,6 +225,16 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $nodeRows = $reader->castSection(Format::SECTION_NODES, 'NodeRow');
 
         // ---- Phase 1: Build node ID mapping from the nodes section ----
+        // BinaryMemoryOutput.buildCsrSections writes the per-node arrays
+        // (treeParents, tree CSR, etc.) using node_id as the csr index
+        // directly, with the -1 sentinel placed at csr_idx == nodeCount
+        // (the last slot). To stay aligned with that convention, we must
+        // assign csr indices in ASCENDING node_id order, with the
+        // sentinel appended last — even when the on-disk node rows were
+        // emitted out of order (e.g. EmitClassTableJob's
+        // assignNodeId-then-late-emit pattern reserves an early node_id
+        // but writes its row at the end of its execute(), so the rows
+        // section is no longer monotonically increasing).
         /** @var array<int, true> $all_node_ids */
         $all_node_ids = [];
         if ($nodeRows !== null) {
@@ -240,7 +250,10 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 $offset += Format::NODE_ROW_SIZE;
             }
         }
-        // Include -1 sentinel for the synthetic root parent.
+        ksort($all_node_ids);
+        // Sentinel last so its csr_idx == nodeCount, matching the
+        // 0xFFFFFFFF → $nodeCount mapping in BinaryMemoryOutput.
+        unset($all_node_ids[-1]);
         $all_node_ids[-1] = true;
 
         $substrate->nodeCount = count($all_node_ids);

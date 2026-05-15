@@ -24,7 +24,13 @@ namespace Reli\Inspector\Output\MemoryOutput\BinaryFormat;
 final class DerivedCacheFormat
 {
     public const MAGIC = "RMDC";
-    public const VERSION = 2;
+    // VERSION 3: invalidate caches built before the
+    // FfiCsrGraphSubstrate.loadFromBinary csr-vs-node-id fix. Caches
+    // produced against the broken loader stored bogus held_by /
+    // defined_at node_ids in srcloc_refs (because the tree-parent walk
+    // saw a shifted topology), so recomputing on first open after the
+    // fix is required to surface correct source locations.
+    public const VERSION = 3;
 
     public const HEADER_SIZE = 32;
 
