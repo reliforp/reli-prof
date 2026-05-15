@@ -78,7 +78,7 @@ final class MemoryDumpInspectCommand extends ReliCommand
             throw new \RuntimeException("invalid dump file: bad magic");
         }
         $format_version = $this->readUint32($fp);
-        if ($format_version !== 1 && $format_version !== 2) {
+        if ($format_version < 1 || $format_version > 3) {
             throw new \RuntimeException("unsupported dump format version: {$format_version}");
         }
         $php_version = $this->readString($fp);
@@ -89,6 +89,15 @@ final class MemoryDumpInspectCommand extends ReliCommand
         if ($format_version >= 2) {
             $raw = $this->readInt64($fp);
             $rss_bytes = $raw === -1 ? null : $raw;
+        }
+        /** @var array<string, int> $module_globals */
+        $module_globals = [];
+        if ($format_version >= 3) {
+            $entry_count = $this->readUint32($fp);
+            for ($i = 0; $i < $entry_count; $i++) {
+                $key = $this->readString($fp);
+                $module_globals[$key] = $this->readInt64($fp);
+            }
         }
         $memory_map_count = $this->readUint32($fp);
         $region_count = $this->readUint32($fp);
@@ -104,6 +113,18 @@ final class MemoryDumpInspectCommand extends ReliCommand
             "  RSS at dump:      "
             . ($rss_bytes === null ? '(unavailable)' : (string)$rss_bytes . ' bytes')
         );
+        if ($module_globals === []) {
+            $output->writeln('  Module Globals:   (none)');
+        } else {
+            $output->writeln('  Module Globals:');
+            foreach ($module_globals as $key => $address) {
+                $output->writeln(sprintf(
+                    '    %-16s 0x%s',
+                    $key . ':',
+                    dechex($address),
+                ));
+            }
+        }
         $output->writeln("  Memory Map Count: {$memory_map_count}");
         $output->writeln("  Region Count:     {$region_count}");
         $output->writeln('');

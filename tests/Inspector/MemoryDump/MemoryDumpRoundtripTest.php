@@ -131,7 +131,7 @@ class MemoryDumpRoundtripTest extends TestCase
 
         // version
         $ver = unpack('Vval', fread($fp, 4));
-        $this->assertSame(2, $ver['val']);
+        $this->assertSame(3, $ver['val']);
 
         // php_version
         $len = unpack('Vval', fread($fp, 4))['val'];
@@ -151,6 +151,10 @@ class MemoryDumpRoundtripTest extends TestCase
         // rss_bytes (v2): caller passed default null → -1 sentinel
         $rss = unpack('qval', fread($fp, 8))['val'];
         $this->assertSame(-1, $rss);
+
+        // module globals (v3): default empty
+        $mg_count = unpack('Vval', fread($fp, 4))['val'];
+        $this->assertSame(0, $mg_count);
 
         // counts
         $map_count = unpack('Vval', fread($fp, 4))['val'];
@@ -186,8 +190,8 @@ class MemoryDumpRoundtripTest extends TestCase
         $file_size = filesize($this->tmp_file);
         // File should be at least 2MB (chunk data) + header
         $this->assertGreaterThan(2 * 1024 * 1024, $file_size);
-        // But not much more than 2MB
-        $this->assertLessThan(2 * 1024 * 1024 + 1024, $file_size);
+        // But not much more than 2MB (header + small module_globals map)
+        $this->assertLessThan(2 * 1024 * 1024 + 2048, $file_size);
     }
 
     #[Test]

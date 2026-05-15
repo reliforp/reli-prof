@@ -96,6 +96,13 @@ final class SidecarDumpHandler
             $process_specifier,
             $target_php_settings,
         );
+        // Persisted into the v3 dump header so offline analysis can
+        // walk BG(user_shutdown_function_names). Resolution failures
+        // already collapse to null inside findBasicGlobals.
+        $bg_address = $this->php_globals_finder->findBasicGlobals(
+            $process_specifier,
+            $target_php_settings,
+        );
 
         // Collect lightweight heap stats and RSS before stopping
         $heap_stats = $this->heap_stats_reader->read(
@@ -163,6 +170,7 @@ final class SidecarDumpHandler
                 $output_path,
                 $this->include_binary,
                 on_read_complete: $resume,
+                bg_address: $bg_address,
             );
         } finally {
             $resume();

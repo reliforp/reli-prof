@@ -72,6 +72,7 @@ final class MemoryDumpNormalizer
                 $memory_areas,
                 $merged,
                 $header['rss_bytes'],
+                $header['module_globals'],
             );
             rename($temp_path, $output_path);
         } catch (\Throwable $e) {
@@ -155,6 +156,7 @@ final class MemoryDumpNormalizer
      * @param resource $fp
      * @return array{pid: int, php_version: string, eg_address: int,
      *     cg_address: int, rss_bytes: int|null,
+     *     module_globals: array<string, int>,
      *     memory_map_count: int, region_count: int}
      */
     private function readHeader($fp): array
@@ -164,7 +166,7 @@ final class MemoryDumpNormalizer
             throw new \RuntimeException('Invalid dump file: bad magic');
         }
         $version = $this->readUint32($fp);
-        if ($version !== 1 && $version !== 2) {
+        if ($version < 1 || $version > 3) {
             throw new \RuntimeException("Unsupported format version: {$version}");
         }
         $php_version = $this->readString($fp);
@@ -176,12 +178,22 @@ final class MemoryDumpNormalizer
             $raw = $this->readInt64($fp);
             $rss_bytes = $raw === -1 ? null : $raw;
         }
+        $module_globals = [];
+        if ($version >= 3) {
+            $entry_count = $this->readUint32($fp);
+            for ($i = 0; $i < $entry_count; $i++) {
+                $key = $this->readString($fp);
+                $address = $this->readInt64($fp);
+                $module_globals[$key] = $address;
+            }
+        }
         return [
             'php_version' => $php_version,
             'pid' => $pid,
             'eg_address' => $eg_address,
             'cg_address' => $cg_address,
             'rss_bytes' => $rss_bytes,
+            'module_globals' => $module_globals,
             'memory_map_count' => $this->readUint32($fp),
             'region_count' => $this->readUint32($fp),
         ];

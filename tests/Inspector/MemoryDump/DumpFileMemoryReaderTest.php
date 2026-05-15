@@ -67,12 +67,22 @@ class DumpFileMemoryReaderTest extends TestCase
         $magic = fread($fp, 8);
         $this->assertSame("RDUMP\0\0\0", $magic);
         // format version (4) + php_version (4 len + body) + pid (8) +
-        // eg (8) + cg (8) + rss_bytes (8, v2) + memory_map_count (4) +
-        // region_count (4)
+        // eg (8) + cg (8) + rss_bytes (8, v2) +
+        // module_globals_count (4, v3; entries follow if non-zero) +
+        // memory_map_count (4) + region_count (4)
         fread($fp, 4);
         $len = unpack('V', fread($fp, 4))[1];
         fread($fp, $len);
-        fread($fp, 8 + 8 + 8 + 8 + 4 + 4);
+        fread($fp, 8 + 8 + 8 + 8);
+        $mg_count = unpack('V', fread($fp, 4))[1];
+        for ($i = 0; $i < $mg_count; $i++) {
+            $kl = unpack('V', fread($fp, 4))[1];
+            if ($kl > 0) {
+                fread($fp, $kl);
+            }
+            fread($fp, 8);
+        }
+        fread($fp, 4 + 4);
         // Skip the memory map entries.
         foreach ($memory_areas as $area) {
             // begin + end + file_offset strings
@@ -167,8 +177,9 @@ class DumpFileMemoryReaderTest extends TestCase
         $len = unpack('V', fread($fp, 4))[1];
         fread($fp, $len);
         // pid (8) + eg (8) + cg (8) + rss_bytes (8, v2)
+        // + module_globals_count (4, v3; empty here)
         // + memory_map_count (4) + region_count (4)
-        fread($fp, 8 + 8 + 8 + 8 + 4 + 4);
+        fread($fp, 8 + 8 + 8 + 8 + 4 + 4 + 4);
 
         $region_index = [];
         foreach ($regions as $region) {

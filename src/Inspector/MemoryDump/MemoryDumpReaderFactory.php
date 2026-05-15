@@ -13,15 +13,20 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\MemoryDump;
 
+use DI\Container;
 use DI\ContainerBuilder;
+use Reli\Inspector\Settings\TargetPhpSettings\TargetPhpSettings;
 use Reli\Lib\File\PathResolver\MappedPathResolver;
 use Reli\Lib\File\PathResolver\ProcessPathResolver;
+use Reli\Lib\Log\Log;
+use Reli\Lib\PhpProcessReader\PhpGlobalsFinder;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocationsCollector;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryArea;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryAttribute;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMapCreatorInterface;
 use Reli\Lib\Process\MemoryReader\MemoryReaderInterface;
+use Reli\Lib\Process\ProcessSpecifier;
 use Reli\Inspector\MemoryDump\FastPath\FastPathReader;
 use Reli\Inspector\MemoryDump\FastPath\RegionByteProvider;
 
@@ -111,16 +116,64 @@ final class MemoryDumpReaderFactory
             }
         }
 
+        $bg_address = $this->resolveBgAddress(
+            $parsed['module_globals'],
+            $parsed['pid'],
+            $php_version,
+            $container,
+        );
+
         return new MemoryDumpReader(
             $container->get(MemoryLocationsCollector::class),
             $parsed['pid'],
             $php_version,
             $parsed['eg_address'],
             $parsed['cg_address'],
+            bg_address: $bg_address,
             rss_bytes: $parsed['rss_bytes'],
             fast_path: $fast_path,
             disable_bin_walk: $disable_bin_walk,
         );
+    }
+
+    /**
+     * Tier-1 hit wins (address came from the live process at dump time
+     * and is authoritative). Tier-1 miss falls through to PhpGlobalsFinder
+     * against the dump-backed reader; that rescues older dumps written
+     * before `basic_globals` was persisted, but only when the binary view
+     * is reachable (`--include-binary` at capture or `--dependency-root`
+     * at analyze). Finder failures silently degrade to null and
+     * EmitModulesJob short-circuits — same observable behaviour as the
+     * pre-v3 baseline.
+     *
+     * @param array<string, int> $module_globals
+     * @param value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
+     */
+    private function resolveBgAddress(
+        array $module_globals,
+        int $pid,
+        string $php_version,
+        Container $container,
+    ): ?int {
+        if (isset($module_globals['basic_globals'])) {
+            return $module_globals['basic_globals'];
+        }
+
+        try {
+            /** @var PhpGlobalsFinder $finder */
+            $finder = $container->get(PhpGlobalsFinder::class);
+            /** @var TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_settings */
+            $target_settings = new TargetPhpSettings(php_version: $php_version);
+            return $finder->findBasicGlobals(
+                new ProcessSpecifier($pid),
+                $target_settings,
+            );
+        } catch (\Throwable $e) {
+            Log::debug(
+                'tier-2 basic_globals resolve failed: ' . $e->getMessage(),
+            );
+            return null;
+        }
     }
 
     /**
@@ -134,6 +187,7 @@ final class MemoryDumpReaderFactory
      *     eg_address: int,
      *     cg_address: int,
      *     rss_bytes: int|null,
+     *     module_globals: array<string, int>,
      *     memory_areas: ProcessMemoryArea[],
      *     region_index: list<array{address: int, size: int, file_offset: int}>,
      * }
@@ -146,7 +200,7 @@ final class MemoryDumpReaderFactory
             throw new \RuntimeException("invalid dump file: bad magic");
         }
         $format_version = $this->readUint32($fp);
-        if ($format_version !== 1 && $format_version !== 2) {
+        if ($format_version < 1 || $format_version > 3) {
             throw new \RuntimeException("unsupported dump format version: {$format_version}");
         }
         $php_version = $this->readString($fp);
@@ -159,6 +213,17 @@ final class MemoryDumpReaderFactory
         if ($format_version >= 2) {
             $raw = $this->readInt64($fp);
             $rss_bytes = $raw === -1 ? null : $raw;
+        }
+        // v3 added a module-globals map after rss_bytes. v1/v2 dumps
+        // fall back to tier-2 resolution (or null) in createFromPath.
+        $module_globals = [];
+        if ($format_version >= 3) {
+            $entry_count = $this->readUint32($fp);
+            for ($i = 0; $i < $entry_count; $i++) {
+                $key = $this->readString($fp);
+                $address = $this->readInt64($fp);
+                $module_globals[$key] = $address;
+            }
         }
         $memory_map_count = $this->readUint32($fp);
         $region_count = $this->readUint32($fp);
@@ -218,6 +283,7 @@ final class MemoryDumpReaderFactory
             'eg_address' => $eg_address,
             'cg_address' => $cg_address,
             'rss_bytes' => $rss_bytes,
+            'module_globals' => $module_globals,
             'memory_areas' => $memory_areas,
             'region_index' => $region_index,
         ];

@@ -51,6 +51,13 @@ final class MemoryDumper
      *
      * @param TargetPhpSettings<'v70'|'v71'|'v72'|'v73'|'v74'|'v80'|'v81'|'v82'|'v83'|'v84'|'v85'> $target_php_settings
      * @param list<array{address: int, count: int}> $interned_string_arrays
+     * @param ?int $bg_address `php_basic_globals` address resolved at
+     *     dump time. Persisted in the v3 header so offline analysis can
+     *     walk `BG(user_shutdown_function_names)` and attribute objects
+     *     pinned by `register_shutdown_function` under
+     *     `modules->standard->shutdown_function[N]`. Passing null
+     *     reproduces the old behaviour where the shutdown-function
+     *     subtree is silently skipped offline.
      * @param \Closure|null $on_read_complete invoked once after every remote
      *     memory region has been read into local PHP strings, before the dump
      *     file is opened for writing. The sidecar uses this hook to
@@ -70,6 +77,7 @@ final class MemoryDumper
         bool $include_heap = false,
         array $interned_string_arrays = [],
         ?\Closure $on_read_complete = null,
+        ?int $bg_address = null,
     ): MemoryDumpResult {
         $php_version = $target_php_settings->php_version;
         $zend_type_reader = $this->zend_type_reader_creator->create(
@@ -630,6 +638,12 @@ final class MemoryDumper
         }
 
         $all_areas = $memory_map->findByNameRegex('.*');
+        // Pre-seed the v3 module-globals map with basic_globals when
+        // resolved. EmitModulesJob is the only consumer today; new
+        // walkers add their key here without another format bump.
+        $module_globals = $bg_address !== null
+            ? ['basic_globals' => $bg_address]
+            : [];
         $writer = new MemoryDumpWriter();
         $writer->write(
             $output_path,
@@ -640,6 +654,7 @@ final class MemoryDumper
             $all_areas,
             $regions_data,
             $rss_bytes,
+            $module_globals,
         );
 
         $total_size = 0;
