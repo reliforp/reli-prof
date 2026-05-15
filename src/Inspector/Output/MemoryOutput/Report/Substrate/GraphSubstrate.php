@@ -15,6 +15,7 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Substrate;
 
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
+use Reli\Inspector\Output\MemoryOutput\RegionFilter;
 
 class GraphSubstrate
 {
@@ -190,7 +191,8 @@ class GraphSubstrate
             }
         }
 
-        // Load locations → node_sizes + node_classes
+        // Load locations → node_sizes + node_classes. Apply the shared
+        // size-attribution region policy. See RegionFilter.
         if ($reader->hasSection(Format::SECTION_LOCATIONS)) {
             $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
             $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
@@ -205,6 +207,11 @@ class GraphSubstrate
                 assert(is_array($row));
                 /** @var array{node_id: int, location_type_id: int, class_id: int, address: int, size: int, string_value_id: int, refcount: int, type_info: int, region_id: int, bin_overhead: int} $row */
                 $offset += Format::LOCATION_ROW_SIZE;
+
+                if (!RegionFilter::isRelevant($dict->lookup($row['region_id']))) {
+                    continue;
+                }
+
                 $node_id = $row['node_id'];
                 $size = $row['size'];
                 $substrate->node_sizes[$node_id] = ($substrate->node_sizes[$node_id] ?? 0) + $size;
@@ -631,9 +638,13 @@ class GraphSubstrate
     /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument, MixedPropertyTypeCoercion */
     protected function loadNodeSizes(\PDO $db, int $run_id): void
     {
+        // Apply the shared size-attribution region policy. See RegionFilter.
+        $regionPredicate = RegionFilter::sqlPredicate('region');
         $stmt = $db->query(
             "SELECT node_id, sum(size) as s, group_concat(DISTINCT class_name) as cls"
-            . " FROM context_node_locations WHERE run_id = {$run_id} GROUP BY node_id"
+            . " FROM context_node_locations WHERE run_id = {$run_id}"
+            . " AND {$regionPredicate}"
+            . " GROUP BY node_id"
         );
 
         while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {

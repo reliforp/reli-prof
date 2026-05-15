@@ -440,14 +440,15 @@ final class PdoMemoryOutput implements MemoryOutputInterface
 
     private function insertLocationTypesSummaryFromDb(\PDO $db, int $run_id): void
     {
+        // Apply the shared size-attribution region policy. See RegionFilter.
         $qi = fn (string $id): string => $this->driver->quoteIdentifier($id);
+        $regionPredicate = RegionFilter::sqlPredicate('region');
         $stmt = $db->prepare("
             INSERT INTO location_types_summary (run_id, {$qi('type')}, {$qi('count')}, memory_usage)
             SELECT ?, location_type, COUNT(*), SUM(size)
             FROM context_node_locations
             WHERE run_id = ?
-              AND (region IN ('zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena')
-                   OR region IS NULL)
+              AND {$regionPredicate}
             GROUP BY location_type
             ORDER BY SUM(size) DESC
         ");
@@ -456,15 +457,16 @@ final class PdoMemoryOutput implements MemoryOutputInterface
 
     private function insertClassObjectsSummaryFromDb(\PDO $db, int $run_id): void
     {
+        // Apply the shared size-attribution region policy. See RegionFilter.
         $qi = fn (string $id): string => $this->driver->quoteIdentifier($id);
+        $regionPredicate = RegionFilter::sqlPredicate('region');
         $stmt = $db->prepare("
             INSERT INTO class_objects_summary (run_id, class_name, {$qi('count')}, memory_usage)
             SELECT ?, class_name, COUNT(*), SUM(size)
             FROM context_node_locations
             WHERE run_id = ?
               AND class_name IS NOT NULL
-              AND (region IN ('zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena')
-                   OR region IS NULL)
+              AND {$regionPredicate}
             GROUP BY class_name
             ORDER BY SUM(size) DESC
         ");

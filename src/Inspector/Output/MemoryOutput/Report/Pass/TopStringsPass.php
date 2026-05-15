@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace Reli\Inspector\Output\MemoryOutput\Report\Pass;
 
+use Reli\Inspector\Output\MemoryOutput\RegionFilter;
 use Reli\Inspector\Output\MemoryOutput\Report\Finding;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingConfidence;
 use Reli\Inspector\Output\MemoryOutput\Report\FindingSeverity;
@@ -70,6 +71,8 @@ final class TopStringsPass implements PassInterface
                 ];
             }
         } else {
+            // Apply the shared size-attribution region policy. See RegionFilter.
+            $regionPredicate = RegionFilter::sqlPredicate('region');
             $rows = $this->db->query("
                 SELECT
                     node_id,
@@ -78,6 +81,7 @@ final class TopStringsPass implements PassInterface
                 FROM context_node_locations
                 WHERE run_id = {$this->run_id}
                     AND location_type = 'ZendStringMemoryLocation'
+                    AND {$regionPredicate}
                 ORDER BY size DESC
                 LIMIT 10
             ")->fetchAll(\PDO::FETCH_ASSOC);

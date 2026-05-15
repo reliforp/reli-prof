@@ -38,6 +38,7 @@ use Reli\Inspector\Output\MemoryOutput\Report\Pass\TopStringsPass;
 use Reli\Inspector\Output\MemoryOutput\Report\Pass\TypeBreakdownPass;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
+use Reli\Inspector\Output\MemoryOutput\RegionFilter;
 use Reli\Inspector\Output\MemoryOutput\Report\BinaryReportDataProvider;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\LinkCacheMode;
@@ -500,9 +501,6 @@ final class ReportGenerator
         $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
         $dict = $reader->getStringDict();
 
-        // Filter to relevant regions (same as insertLocationTypesSummaryFromDb)
-        $relevant_regions = ['zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena'];
-
         /** @var array<string, array{count: int, memory_usage: int}> $result */
         $result = [];
         $offset = 0;
@@ -514,9 +512,8 @@ final class ReportGenerator
             $region_id = unpack('V', $data, $offset + 40)[1];
             $offset += Format::LOCATION_ROW_SIZE;
 
-            // Filter by region (null region also included)
-            $region = $dict->lookup($region_id);
-            if ($region !== null && !in_array($region, $relevant_regions, true)) {
+            // Apply the shared size-attribution region policy. See RegionFilter.
+            if (!RegionFilter::isRelevant($dict->lookup($region_id))) {
                 continue;
             }
 
@@ -552,8 +549,6 @@ final class ReportGenerator
         $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
         $dict = $reader->getStringDict();
 
-        $relevant_regions = ['zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena'];
-
         /** @var array<string, array{count: int, memory_usage: int}> $result */
         $result = [];
         $offset = 0;
@@ -566,8 +561,8 @@ final class ReportGenerator
             if ($class_id === Format::NULL_STRING_ID) {
                 continue;
             }
-            $region = $dict->lookup($region_id);
-            if ($region !== null && !in_array($region, $relevant_regions, true)) {
+            // Apply the shared size-attribution region policy. See RegionFilter.
+            if (!RegionFilter::isRelevant($dict->lookup($region_id))) {
                 continue;
             }
 
