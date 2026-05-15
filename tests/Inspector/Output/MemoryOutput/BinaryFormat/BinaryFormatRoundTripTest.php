@@ -15,6 +15,7 @@ namespace Reli\Inspector\Output\MemoryOutput\BinaryFormat;
 
 use PHPUnit\Framework\TestCase;
 use Reli\Inspector\Output\MemoryOutput\BinaryMemoryOutput;
+use Reli\Inspector\Output\MemoryOutput\Report\BinaryReportDataProvider;
 use Reli\Inspector\Output\MemoryOutput\Report\ReportGenerator;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\FfiCsrGraphSubstrate;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
@@ -598,5 +599,222 @@ class BinaryFormatRoundTripTest extends TestCase
         // Subtree size of root = its 64 bytes + 49 children × 100 bytes.
         $this->assertSame(64 + ($n - 1) * 100, $substrate->getSubtreeSize(1));
         $this->assertSame(100, $substrate->getSubtreeSize(2));
+    }
+
+    /**
+     * Regression for the "ChatGPT/サイズ大きすぎ" cluster of bugs:
+     *   - dangling `php_stream_memory_data->data` pointers, dereferenced by
+     *     EmitResourceJob::collectMemoryStreamData as a `zend_string`,
+     *     produce a `ZendStringMemoryLocation` whose `address` lands in
+     *     `'outside'` and whose `len + 24` is a multi-exabyte garbage value;
+     *   - on the FFI CSR path that overflows `int $nodeSizesSum` to float
+     *     and trips `Cannot assign float to property`;
+     *   - on the PHP-array path it silently propagates into ChokePoint /
+     *     Top Strings while Type Breakdown — which already filters by
+     *     region — stays clean.
+     *
+     * Every size-attribution surface must drop those rows. Build a minimal
+     * .rmem that contains exactly one such bogus 'outside' string alongside
+     * a normal in-heap object, then assert all surfaces converge.
+     */
+    public function testOutsideRegionStringIsExcludedFromAllSizeAttributionSurfaces(): void
+    {
+        $chunk_locations = new MemoryLocations();
+        // One zend_mm chunk covering 0x1000..0x10000.
+        $chunk_locations->add(new ZendMmChunkMemoryLocation(0x1000, 0x10000));
+        $huge_locations = new MemoryLocations();
+        $vm_stack_locations = new MemoryLocations();
+        $compiler_arena_locations = new MemoryLocations();
+
+        $region_boundaries = new RegionBoundaries(
+            $chunk_locations,
+            $huge_locations,
+            $vm_stack_locations,
+            $compiler_arena_locations,
+        );
+
+        $sink = new BinaryContextTreeSink($region_boundaries, batch_size: 10);
+
+        // Node 0: a normal in-heap object — region='zend_mm_heap'.
+        // Use 0-based node_ids to match what ContextAnalyzer actually emits;
+        // 1-based ids tickle an unrelated pre-existing FFI CSR slot-space
+        // off-by-one on 0.12.x that isn't what this test is here to pin.
+        $sink->emitNode(
+            node_id: 0,
+            parent_node_id: null,
+            link_name: 'root_obj',
+            type: 'ObjectContext',
+            locations: [
+                new ZendObjectMemoryLocation(
+                    address: 0x1100,
+                    size: 64,
+                    refcount: 1,
+                    type_info: 7,
+                    class_name: 'App\\GoodObject',
+                ),
+            ],
+            attributes: [],
+        );
+
+        // Node 1: a "good" string still in the heap — region='zend_mm_heap'.
+        $sink->emitNode(
+            node_id: 1,
+            parent_node_id: 0,
+            link_name: 'good_string',
+            type: 'StringContext',
+            locations: [
+                new ZendStringMemoryLocation(
+                    address: 0x2000,
+                    size: 48,
+                    refcount: 1,
+                    type_info: 6,
+                    value: 'hello',
+                ),
+            ],
+            attributes: [],
+        );
+
+        // Node 2: the pathological string — address outside any tracked
+        // region (RegionBoundaries returns 'outside') with a size large
+        // enough that summing it with the two good rows actually overflows
+        // PHP_INT_MAX. The pre-fix FFI CSR loader did `$nodeSizesSum += $size`
+        // on every row regardless of region, so this row would have promoted
+        // the running sum to float and the `int $nodeSizesSum` property
+        // would have rejected the assignment with "Cannot assign float to
+        // property" — the canonical reproduction of the original report.
+        $bogus_size = PHP_INT_MAX - 100;
+        $sink->emitNode(
+            node_id: 2,
+            parent_node_id: 0,
+            link_name: 'bogus_string',
+            type: 'StringContext',
+            locations: [
+                new ZendStringMemoryLocation(
+                    address: 0xDEAD0000,
+                    size: $bogus_size,
+                    refcount: 1,
+                    type_info: 6,
+                    value: 'garbage',
+                ),
+            ],
+            attributes: [],
+        );
+
+        $binary_output = new BinaryMemoryOutput($this->rmem_path);
+        $binary_output->finalizeStreaming(
+            $sink,
+            [['zend_mm_heap_usage' => '1024', 'php_version' => '8.4.0']],
+        );
+
+        $reader = Reader::open($this->rmem_path);
+
+        // 1. FFI CSR substrate must not raise "Cannot assign float to property".
+        $ffi_substrate = FfiCsrGraphSubstrate::loadFromBinary(
+            $reader,
+            useCache: false,
+            rebuildCache: false,
+            skipScc: true,
+        );
+        // 64 (object) + 48 (good string). The bogus string is dropped.
+        $this->assertSame(112, $ffi_substrate->getNodeSizesSum());
+        $this->assertSame(64, $ffi_substrate->getNodeSize(0));
+        $this->assertSame(48, $ffi_substrate->getNodeSize(1));
+        $this->assertSame(0, $ffi_substrate->getNodeSize(2));
+
+        // 2. PHP-array substrate must agree (no silent float, same totals).
+        $php_substrate = GraphSubstrate::loadFromBinary(
+            $reader,
+            useCache: false,
+            rebuildCache: false,
+            skipScc: true,
+        );
+        $this->assertSame(112, $php_substrate->getNodeSizesSum());
+        $this->assertSame(64, $php_substrate->getNodeSize(0));
+        $this->assertSame(48, $php_substrate->getNodeSize(1));
+        $this->assertSame(0, $php_substrate->getNodeSize(2));
+
+        // 3. Top Strings must not surface the bogus row.
+        $top_strings = BinaryReportDataProvider::getTopStrings($reader, 10);
+        $node_ids = array_map(static fn (array $r): int => $r['node_id'], $top_strings);
+        $this->assertNotContains(2, $node_ids, 'bogus outside-region string leaked into Top Strings');
+        foreach ($top_strings as $row) {
+            $this->assertLessThan($bogus_size, $row['size'], 'oversized bogus row leaked into Top Strings');
+        }
+
+        // 4. Type Breakdown (computeLocationTypesSummary) and the
+        //    substrate's grand total must agree on the same filtered view.
+        $location_types = BinaryReportDataProvider::computeLocationTypesSummary($reader);
+        $type_breakdown_total = 0;
+        foreach ($location_types as $entry) {
+            $type_breakdown_total += $entry['memory_usage'];
+        }
+        $this->assertSame(
+            $ffi_substrate->getNodeSizesSum(),
+            $type_breakdown_total,
+            'Type Breakdown total disagrees with FFI substrate getNodeSizesSum()',
+        );
+        $this->assertSame(
+            $php_substrate->getNodeSizesSum(),
+            $type_breakdown_total,
+            'Type Breakdown total disagrees with PHP substrate getNodeSizesSum()',
+        );
+
+        // 5. SQL path must drop the same row. Reproduce the same fixture
+        //    in an in-memory SQLite DB and load it through the SQL
+        //    substrates — both the size sum and the per-node sizes must
+        //    match the binary path. Without RegionFilter::sqlPredicate()
+        //    in the chunked SQL loader, the substrates would disagree
+        //    with the binary path and re-introduce the SQL ↔ rmem
+        //    divergence that broke testBinaryAnalyzeReportMatchesSqlite-
+        //    ReportForKeyFindings on every target PHP version.
+        $sql = new \PDO('sqlite::memory:');
+        $sql->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+        $sql->exec('
+            CREATE TABLE context_nodes (
+                run_id INTEGER NOT NULL, node_id INTEGER NOT NULL,
+                type TEXT NOT NULL, canonical_node_id INTEGER,
+                PRIMARY KEY (run_id, node_id)
+            )
+        ');
+        $sql->exec('
+            CREATE TABLE context_edges (
+                id INTEGER PRIMARY KEY,
+                run_id INTEGER NOT NULL, parent_node_id INTEGER,
+                child_node_id INTEGER NOT NULL, link_name TEXT NOT NULL,
+                is_tree INTEGER NOT NULL, strength TEXT NOT NULL DEFAULT \'strong\'
+            )
+        ');
+        $sql->exec('
+            CREATE TABLE context_node_locations (
+                id INTEGER PRIMARY KEY,
+                run_id INTEGER NOT NULL, node_id INTEGER NOT NULL,
+                address BIGINT, size BIGINT,
+                location_type TEXT NOT NULL, class_name TEXT,
+                string_value TEXT, refcount BIGINT, type_info BIGINT,
+                region TEXT
+            )
+        ');
+        $sql->exec("INSERT INTO context_nodes (run_id, node_id, type) VALUES
+            (1, 0, 'ObjectContext'),
+            (1, 1, 'StringContext'),
+            (1, 2, 'StringContext')");
+        $sql->exec("INSERT INTO context_edges (run_id, parent_node_id, child_node_id, link_name, is_tree) VALUES
+            (1, NULL, 0, 'root_obj', 1),
+            (1, 0, 1, 'good_string', 1),
+            (1, 0, 2, 'bogus_string', 1)");
+        $sql->prepare(
+            "INSERT INTO context_node_locations
+                (run_id, node_id, address, size, location_type, class_name, region)
+            VALUES
+                (1, 0, 4352,  64, 'ZendObjectMemoryLocation', 'App\\\\GoodObject', 'zend_mm_heap'),
+                (1, 1, 8192,  48, 'ZendStringMemoryLocation', NULL, 'zend_mm_heap'),
+                (1, 2, 3735879680, ?, 'ZendStringMemoryLocation', NULL, 'outside')"
+        )->execute([$bogus_size]);
+
+        $sql_php_substrate = GraphSubstrate::loadFromDb($sql, 1);
+        $this->assertSame(112, $sql_php_substrate->getNodeSizesSum());
+        $this->assertSame(64, $sql_php_substrate->getNodeSize(0));
+        $this->assertSame(48, $sql_php_substrate->getNodeSize(1));
+        $this->assertSame(0, $sql_php_substrate->getNodeSize(2));
     }
 }

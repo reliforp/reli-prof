@@ -18,6 +18,7 @@ use PhpCast\Cast;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\StringDict;
+use Reli\Inspector\Output\MemoryOutput\RegionFilter;
 use Reli\Lib\FFI\FFIHelper;
 
 /**
@@ -105,19 +106,23 @@ final class BinaryReportDataProvider
         $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
         $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
 
-        // Collect all ZendStringMemoryLocation entries
+        // Apply the shared size-attribution region policy. See RegionFilter.
         /** @var list<array{node_id: int, size: int, string_value_id: int}> $candidates */
         $candidates = [];
         if ($locRows !== null) {
             for ($i = 0; $i < $count; $i++) {
                 $type = $dict->lookup($locRows[$i]->location_type_id);
-                if ($type === 'ZendStringMemoryLocation') {
-                    $candidates[] = [
-                        'node_id' => $locRows[$i]->node_id,
-                        'size' => $locRows[$i]->size,
-                        'string_value_id' => $locRows[$i]->string_value_id,
-                    ];
+                if ($type !== 'ZendStringMemoryLocation') {
+                    continue;
                 }
+                if (!RegionFilter::isRelevant($dict->lookup($locRows[$i]->region_id))) {
+                    continue;
+                }
+                $candidates[] = [
+                    'node_id' => $locRows[$i]->node_id,
+                    'size' => $locRows[$i]->size,
+                    'string_value_id' => $locRows[$i]->string_value_id,
+                ];
             }
         } else {
             $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
@@ -125,13 +130,18 @@ final class BinaryReportDataProvider
                 $off = $i * Format::LOCATION_ROW_SIZE;
                 $type_id = unpack('V', $data, $off + 4)[1];
                 $type = $dict->lookup($type_id);
-                if ($type === 'ZendStringMemoryLocation') {
-                    $candidates[] = [
-                        'node_id' => unpack('V', $data, $off)[1],
-                        'size' => unpack('P', $data, $off + 20)[1],
-                        'string_value_id' => unpack('V', $data, $off + 28)[1],
-                    ];
+                if ($type !== 'ZendStringMemoryLocation') {
+                    continue;
                 }
+                $region_id = unpack('V', $data, $off + 40)[1];
+                if (!RegionFilter::isRelevant($dict->lookup($region_id))) {
+                    continue;
+                }
+                $candidates[] = [
+                    'node_id' => unpack('V', $data, $off)[1],
+                    'size' => unpack('P', $data, $off + 20)[1],
+                    'string_value_id' => unpack('V', $data, $off + 28)[1],
+                ];
             }
         }
 
@@ -568,8 +578,6 @@ final class BinaryReportDataProvider
         $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
         $dict = $reader->getStringDict();
 
-        $relevant_regions = ['zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena'];
-
         /** @var array<string, array{count: int, memory_usage: int}> $result */
         $result = [];
         $offset = 0;
@@ -579,8 +587,8 @@ final class BinaryReportDataProvider
             $region_id = unpack('V', $data, $offset + 40)[1];
             $offset += Format::LOCATION_ROW_SIZE;
 
-            $region = $dict->lookup($region_id);
-            if ($region !== null && !in_array($region, $relevant_regions, true)) {
+            // Apply the shared size-attribution region policy. See RegionFilter.
+            if (!RegionFilter::isRelevant($dict->lookup($region_id))) {
                 continue;
             }
 
@@ -618,8 +626,6 @@ final class BinaryReportDataProvider
         $count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
         $dict = $reader->getStringDict();
 
-        $relevant_regions = ['zend_mm_heap', 'zend_mm_huge', 'vm_stack', 'compiler_arena'];
-
         /** @var array<string, array{count: int, memory_usage: int}> $result */
         $result = [];
         $offset = 0;
@@ -632,8 +638,8 @@ final class BinaryReportDataProvider
             if ($class_id === Format::NULL_STRING_ID) {
                 continue;
             }
-            $region = $dict->lookup($region_id);
-            if ($region !== null && !in_array($region, $relevant_regions, true)) {
+            // Apply the shared size-attribution region policy. See RegionFilter.
+            if (!RegionFilter::isRelevant($dict->lookup($region_id))) {
                 continue;
             }
 
