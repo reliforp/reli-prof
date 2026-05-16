@@ -355,6 +355,15 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // we can fold the section straight into the FFI accumulator
         // without rescanning locations — that scan is the single
         // largest cost on the report-load path for big dumps.
+        //
+        // The section is indexed by `node_id`, not by CSR index, so the
+        // loop walks csrIdx → node_id via `indexToNodeFfi` and reads
+        // `sizesData[node_id]`. Iterating slot indices directly (the
+        // previous shape `for $i < min($slotsCount, $nc)`) only worked
+        // for `0..nc-1`-shaped dense node_ids; any sparse or non-zero-
+        // based emitter (e.g. ContextAnalyzer's `1..nc` fixtures used in
+        // tests) silently dropped the highest slot and read 0 from the
+        // unused leading slot.
         $sizesLoaded = false;
         if (
             $reader->hasHeaderFlag(Format::FLAG_NODE_SIZES_REGION_FILTERED)
@@ -363,18 +372,14 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $sizesData = $reader->getSectionData('node_sizes');
             $slotsCount = $reader->getSectionElementCount('node_sizes');
             $ffiNodeSizes = $substrate->ffiNodeSizes;
+            $indexToNode = $substrate->indexToNodeFfi;
             $substrate->nodeSizesSum = 0;
-            for ($i = 0; $i < min($slotsCount, $nc); $i++) {
-                if ($directMap !== null) {
-                    $slot = $i + $directOffset;
-                    $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : $directMap[$slot];
-                } else {
-                    $csrIdx = $phpMap[$i] ?? -1;
-                }
-                if ($csrIdx < 0) {
+            for ($csrIdx = 0; $csrIdx < $nc; $csrIdx++) {
+                $node_id = $indexToNode[$csrIdx];
+                if ($node_id < 0 || $node_id >= $slotsCount) {
                     continue;
                 }
-                $size = unpack('P', $sizesData, $i * 8)[1];
+                $size = unpack('P', $sizesData, $node_id * 8)[1];
                 $ffiNodeSizes[$csrIdx] = $size;
                 $substrate->nodeSizesSum += $size;
             }
@@ -390,25 +395,23 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // php_stream_memory_data->data dereferenced as a zend_string)
         // carries class_id=NULL_STRING_ID and contributes nothing to
         // per-node class attribution.
+        //
+        // Same csrIdx → node_id indirection as Phase 3a — the section is
+        // keyed by node_id, not by CSR index.
         if ($reader->hasSection('node_classes')) {
             $classesData = $reader->getSectionData('node_classes');
             $slotsCount = $reader->getSectionElementCount('node_classes');
 
             $nodeClassIds = $substrate->nodeClassIds;
+            $indexToNode = $substrate->indexToNodeFfi;
 
-            for ($i = 0; $i < min($slotsCount, $nc); $i++) {
-                // node_id == i (dense), map to CSR index
-                if ($directMap !== null) {
-                    $slot = $i + $directOffset;
-                    $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : $directMap[$slot];
-                } else {
-                    $csrIdx = $phpMap[$i] ?? -1;
-                }
-                if ($csrIdx < 0) {
+            for ($csrIdx = 0; $csrIdx < $nc; $csrIdx++) {
+                $node_id = $indexToNode[$csrIdx];
+                if ($node_id < 0 || $node_id >= $slotsCount) {
                     continue;
                 }
 
-                $cls_u = unpack('V', $classesData, $i * 4);
+                $cls_u = unpack('V', $classesData, $node_id * 4);
                 $cls_id = $cls_u[1];
                 if ($cls_id !== Format::NULL_STRING_ID) {
                     $className = $dict->lookup($cls_id);
