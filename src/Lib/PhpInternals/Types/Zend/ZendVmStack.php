@@ -137,13 +137,14 @@ final class ZendVmStack implements CDataDereferencable
 
     public function materializeAsPointerArray(
         Dereferencer $dereferencer,
-        int $end_address,
+        int $base_address,
+        int $top_address,
     ): PointerArray {
-        assert($this->top !== null);
+        $size = max(0, $top_address - $base_address);
         $pointer = new Pointer(
             PointerArray::class,
-            $this->top->address,
-            $end_address - $this->top->address,
+            $base_address,
+            $size,
         );
         return $dereferencer->deref($pointer);
     }

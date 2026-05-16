@@ -1179,6 +1179,190 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         }
     }
 
+    #[DataProviderExternal(TargetPhpVmProvider::class, 'allSupported')]
+    public function testMemoryLimitViolationAcrossExtendedVmStack(string $php_version, string $docker_image_name)
+    {
+        // Regression test: when the VM stack has been extended (a new arena was
+        // allocated on top of an older one mid-execution), the older arena's
+        // _zend_vm_stack::top field is bumped from its initial value (= arena
+        // base) to the high-water mark at extension time. The historical scan
+        // logic assumed struct->top stayed at the base and computed the scan
+        // range as [struct->top, eg->vm_stack_top], which produced a negative
+        // size in this scenario and aborted the call-frame recovery. This test
+        // forces an extension by recursing deeply with light-weight frames
+        // before allocating until memory_limit fires, then verifies that the
+        // recovered chain still contains the recursive function frames.
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        // 6000-deep recursion is enough to spill out of the initial 256 KB
+        // vm_stack arena (each frame is ~112 B) and trigger at least one
+        // zend_vm_stack_extend before the heap OOM at the bottom of the stack.
+        $target_script =
+            <<<'CODE'
+            <?php
+            ini_set('memory_limit', '4M');
+            register_shutdown_function(function () {
+                $error = error_get_last();
+                if (is_null($error)) {
+                    return;
+                }
+                if (strpos($error['message'], 'Allowed memory size of') !== 0) {
+                    return;
+                }
+                fputs(STDOUT, json_encode($error) . "\n");
+                fgets(STDIN);
+            });
+            function deep($n) {
+                if ($n > 0) {
+                    deep($n - 1);
+                    return;
+                }
+                $arr = [];
+                while (true) {
+                    $arr[] = str_repeat('x', 1024);
+                }
+            }
+            deep(6000);
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes
+        );
+        $error_message = '';
+        $error_json = '';
+        while (($line = fgets($pipes[1])) !== false) {
+            if ($error_message === '' && str_starts_with($line, 'Fatal error: Allowed memory size of')) {
+                $error_message = $line;
+            } elseif ($error_message !== '' && str_starts_with($line, '{')) {
+                $error_json = $line;
+                break;
+            }
+        }
+        $this->assertStringStartsWith(
+            'Fatal error: Allowed memory size of',
+            $error_message
+        );
+
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
+                new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
+            ),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
+        );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
+            $binary_fingerprint_creator,
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version)
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version)
+        );
+
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
+        );
+        $error = json_decode($error_json, true);
+        $sink = new ArrayContextTreeSink();
+        $collected_memories = $memory_locations_collector->collectAll(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+            $executor_globals_address,
+            $compiler_globals_address,
+            new MemoryLimitErrorDetails(
+                $error['file'],
+                $error['line'],
+                -1, // unlimited challenge depth — chain is intentionally deep
+            ),
+            null,
+            $sink,
+        );
+        $this->assertGreaterThan(0, $collected_memories->memory_get_usage_size);
+        $contexts = $sink->getResult();
+        $call_frames = $contexts['memory_limit_call_frames']
+            ?? $contexts['call_frames']
+            ?? [];
+        $deep_frames = [];
+        foreach ($call_frames as $k => $v) {
+            if (is_array($v) && ($v['function_name'] ?? '') === 'deep') {
+                $deep_frames[] = $v;
+            }
+        }
+        // 6000 calls + the deepest frame inside while(true) is far more than
+        // anything the unextended-arena case could produce, so finding e.g.
+        // >=100 deep() frames confirms the chain walk survived the extension.
+        $this->assertGreaterThanOrEqual(
+            100,
+            count($deep_frames),
+            'Should recover many deep() frames across the extended vm_stack chain'
+        );
+    }
+
     public static function provideFromV71()
     {
         yield from TargetPhpVmProvider::from(ZendTypeReader::V71);

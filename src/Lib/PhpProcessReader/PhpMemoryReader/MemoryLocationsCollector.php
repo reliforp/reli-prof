@@ -23,6 +23,7 @@ use Reli\Lib\PhpInternals\Types\Zend\ZendCompilerGlobals;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecuteData;
 use Reli\Lib\PhpInternals\Types\Zend\ZendExecutorGlobals;
 use Reli\Lib\PhpInternals\Types\Zend\ZendMmChunk;
+use Reli\Lib\PhpInternals\Types\Zend\ZendVmStack;
 use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\BinWalkResult;
@@ -663,20 +664,35 @@ final class MemoryLocationsCollector
             return;
         }
 
+        $vm_stack_struct_size = $ctx->zend_type_reader->sizeOf(ZendVmStack::getCTypeName());
         $first_stack = true;
         foreach ($last_vm_stack->iterateStackChain($ctx->dereferencer) as $vm_stack) {
-            if ($first_stack) {
-                $first_stack = false;
-                $stack_end_address = $eg->vm_stack_top->address;
-            } else {
-                if (is_null($vm_stack->end)) {
+            // _zend_vm_stack::top is initialised to the arena base when the arena is
+            // created and is later bumped UP to the high-water mark when a new arena
+            // is allocated on top of this one (zend_vm_stack_extend saves the live
+            // EG(vm_stack_top) into the outgoing arena's struct->top). After the
+            // memory_limit fatal, EG(vm_stack_top) gets unwound back to the shutdown
+            // handler's frame, which can sit LOWER than struct->top in the same
+            // arena. Either of struct->top or EG(vm_stack_top) can be the higher one,
+            // so take the max and always scan from the arena's base.
+            $struct_top = $vm_stack->top?->address;
+            if (is_null($struct_top)) {
+                if (!$first_stack) {
                     break;
                 }
-                $stack_end_address = $vm_stack->end->address;
+                $struct_top = 0;
+            }
+            $arena_base = $vm_stack->pointer->address + $vm_stack_struct_size;
+            if ($first_stack) {
+                $first_stack = false;
+                $hwm = max($struct_top, $eg->vm_stack_top->address);
+            } else {
+                $hwm = $struct_top;
             }
             $materialized_vm_stack = $vm_stack->materializeAsPointerArray(
                 $ctx->dereferencer,
-                $stack_end_address
+                $arena_base,
+                $hwm,
             );
             foreach ($materialized_vm_stack->getReverseIteratorAsInt() as $key => $value) {
                 if ($value !== $op_array_address) {
@@ -695,10 +711,20 @@ final class MemoryLocationsCollector
                         $ctx->dereferencer,
                         $max_challenge_depth,
                     );
-                    if ($root_vm_stack->top->address !== $root_execute_data_candidate->getPointer()->address) {
+                    // A true chain root has prev_execute_data == NULL. getRootFrame()
+                    // may also return early when max_depth is reached, in which case
+                    // the returned frame still has a non-null prev — that's a false
+                    // candidate. Originally this was checked indirectly by comparing
+                    // the candidate root's address against root_vm_stack->top, but
+                    // _zend_vm_stack::top gets bumped to the high-water-mark when a
+                    // new arena is allocated above this one, so that comparison only
+                    // works for the unextended single-arena case.
+                    $reached_true_root = is_null($root_execute_data_candidate->prev_execute_data);
+                    $legacy_top_match = $root_vm_stack->top->address === $root_execute_data_candidate->getPointer()->address;
+                    if (!$reached_true_root && !$legacy_top_match) {
                         continue;
                     }
-                    Log::debug('root candidate frame found', ['frame_address' => $root_vm_stack->top->address]);
+                    Log::debug('root candidate frame found', ['frame_address' => $root_execute_data_candidate->getPointer()->address]);
 
                     // Emit call_frames_context as root node
                     $call_frames_context = new CallFramesContext();
