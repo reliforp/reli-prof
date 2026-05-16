@@ -142,6 +142,24 @@ final class MemoryDumper
                 'zend_compiler_globals',
             ),
         ];
+        // BG struct: persisting bg_address in the v3 header is only
+        // half the story; offline analysis also needs the struct's
+        // bytes to deref php_basic_globals and walk
+        // user_shutdown_function_names. On NTS that lives in the PHP
+        // binary's .data/.bss (covered by $php_rw_areas below), but on
+        // ZTS findBasicGlobals returns a TSRM-resolved per-thread
+        // address inside heap-backed TSRM storage, which minimum dumps
+        // (include_heap=false) would otherwise skip. Capturing the
+        // explicit interval here keeps EmitModulesJob's deref working
+        // on every SAPI/build combination, mirroring the EG/CG pattern.
+        if ($bg_address !== null) {
+            $intervals[] = [
+                'address' => $bg_address,
+                'size' => $zend_type_reader->sizeOf(
+                    'php_basic_globals',
+                ),
+            ];
+        }
 
         // PHP BSS segment: the anonymous writable VMA that contains EG.
         // This covers EG, CG, zend_one_char_string[256], and other PHP
