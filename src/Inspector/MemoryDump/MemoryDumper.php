@@ -152,6 +152,15 @@ final class MemoryDumper
         // (include_heap=false) would otherwise skip. Capturing the
         // explicit interval here keeps EmitModulesJob's deref working
         // on every SAPI/build combination, mirroring the EG/CG pattern.
+        //
+        // Note for future module-globals walkers (curl/mysqlnd/...):
+        // adding a key to the v3 module_globals map only fixes
+        // *address resolution* offline. The corresponding struct bytes
+        // must also be reachable via the dump's captured intervals —
+        // either incidentally (e.g. in $php_rw_areas or [heap]) or by
+        // adding an explicit interval here, in the same shape as
+        // EG/CG/BG. Skip this and the analyzer will hold a non-null
+        // address that derefs to garbage.
         if ($bg_address !== null) {
             $intervals[] = [
                 'address' => $bg_address,

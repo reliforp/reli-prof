@@ -96,6 +96,7 @@ class MemoryDumperTest extends BaseTestCase
 
         $eg = $globals_finder->findExecutorGlobals($process, $settings);
         $cg = $globals_finder->findCompilerGlobals($process, $settings);
+        $bg = $globals_finder->findBasicGlobals($process, $settings);
 
         $dumper = new MemoryDumper(
             $memory_reader,
@@ -119,6 +120,7 @@ class MemoryDumperTest extends BaseTestCase
             $eg,
             $cg,
             $output_path,
+            bg_address: $bg,
         );
 
         $this->assertFileExists($result->output_path);
@@ -129,8 +131,90 @@ class MemoryDumperTest extends BaseTestCase
             'Dump should contain at least 512K of data',
         );
 
+        // Regression: when bg_address is resolved, both the v3 header
+        // *and* the bytes themselves must land in the dump so
+        // EmitModulesJob can deref php_basic_globals offline. The
+        // failure mode this guards against is silent: the analyzer
+        // would see a non-null address, deref garbage, and skip the
+        // shutdown-function walk for reasons unrelated to v3 parsing.
+        if ($bg !== null) {
+            $factory = new MemoryDumpReaderFactory(new \DI\ContainerBuilder());
+            $parsed = self::reflectParse($factory, $output_path);
+            $this->assertArrayHasKey(
+                'basic_globals',
+                $parsed['module_globals'],
+                'v3 header must carry bg_address when resolved',
+            );
+            $this->assertSame($bg, $parsed['module_globals']['basic_globals']);
+
+            $bg_size = (new ZendTypeReaderCreator())
+                ->create($php_version)
+                ->sizeOf('php_basic_globals');
+            $covered = false;
+            foreach ($parsed['region_index'] as $region) {
+                $end = $region['address'] + $region['size'];
+                if (
+                    $bg >= $region['address']
+                    && ($bg + $bg_size) <= $end
+                ) {
+                    $covered = true;
+                    break;
+                }
+            }
+            $this->assertTrue(
+                $covered,
+                'php_basic_globals interval must land in a captured region',
+            );
+        }
+
         // Clean up
         unlink($output_path);
+    }
+
+    /**
+     * MemoryDumpReaderFactory::parse() is private; reach it via
+     * reflection so the regression assertion above can inspect the
+     * dump's region index without re-implementing the parser.
+     *
+     * @return array{
+     *     pid: int,
+     *     php_version: string,
+     *     eg_address: int,
+     *     cg_address: int,
+     *     rss_bytes: int|null,
+     *     module_globals: array<string, int>,
+     *     memory_areas: list<\Reli\Lib\Process\MemoryMap\ProcessMemoryArea>,
+     *     region_index: list<array{address: int, size: int, file_offset: int}>,
+     * }
+     */
+    private static function reflectParse(
+        MemoryDumpReaderFactory $factory,
+        string $path,
+    ): array {
+        $fp = fopen($path, 'rb');
+        if ($fp === false) {
+            throw new \RuntimeException("failed to open: {$path}");
+        }
+        try {
+            $rc = new \ReflectionClass(MemoryDumpReaderFactory::class);
+            $method = $rc->getMethod('parse');
+            $method->setAccessible(true);
+            /** @var array{
+             *     pid: int,
+             *     php_version: string,
+             *     eg_address: int,
+             *     cg_address: int,
+             *     rss_bytes: int|null,
+             *     module_globals: array<string, int>,
+             *     memory_areas: list<\Reli\Lib\Process\MemoryMap\ProcessMemoryArea>,
+             *     region_index: list<array{address: int, size: int, file_offset: int}>,
+             * } $parsed
+             */
+            $parsed = $method->invoke($factory, $fp);
+            return $parsed;
+        } finally {
+            fclose($fp);
+        }
     }
 
     private function createGlobalsFinder(
