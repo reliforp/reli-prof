@@ -374,16 +374,21 @@ final class EmitResourceJob implements CollectorJob
      * Truly wild pointers (e.g. addresses outside any mapped page)
      * surface as a `MemoryReaderException` from `deref` and are caught
      * by the outer `tryCollectStreamData` try/catch, which lets the
-     * resource walk continue without the stream child. We don't
-     * pre-screen by chunk membership: persistent stream buffers and
-     * legitimate-but-not-zend-mm allocations on some PHP versions can
-     * still have a sane `len`, and rejecting them silently masked a
-     * real `php://memory` link in `MemoryLocationsCollectorTest::testStreamResourceTracking`
-     * on the PHP 8.0 target. The size-attribution side of the bug is
-     * already handled at write time by
-     * {@see \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink::emitNode()}
-     * (which gates per-node accumulators on `RegionFilter::isRelevant`)
-     * and at read time by {@see \Reli\Inspector\Output\MemoryOutput\RegionFilter}.
+     * resource walk continue without the stream child. We deliberately
+     * do NOT pre-screen by chunk membership: persistent stream buffers
+     * and legitimate-but-not-zend-mm allocations on some PHP versions
+     * can still have a sane `len`, and rejecting them silently masked
+     * a real `php://memory` link in
+     * `MemoryLocationsCollectorTest::testStreamResourceTracking` on the
+     * PHP 8.0 target.
+     *
+     * Note that this guard is a heuristic, not a hard guarantee. A
+     * raw-byte buffer or recycled slot that happens to land on a
+     * `len` value below {@see self::MAX_PLAUSIBLE_STREAM_STRING_LEN}
+     * will still slip through and produce a `region='outside'` row
+     * downstream. The defensive read-side filter introduced in #795
+     * ({@see \Reli\Inspector\Output\MemoryOutput\RegionFilter}) is
+     * still relied on as a safety net for that case.
      *
      * The cached path mirrors the previous inline block: if the
      * address has already been visited, just reattach the existing

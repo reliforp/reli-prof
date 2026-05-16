@@ -2884,8 +2884,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         $this->assertTrue($found_memory, 'Should find a php://memory stream (label=MEMORY)');
         $this->assertTrue($found_temp, 'Should find a php://temp stream (label=TEMP)');
         $this->assertTrue($found_stdio, 'Should find a STDIO stream');
-        // PHP 8.0 changed `php_stream_memory_data` later: from 7.0..8.0
-        // the struct is `{ char *data; size_t fpos; size_t fsize; size_t
+        // PHP 8.1 changed `php_stream_memory_data`: from 7.0..8.0 the
+        // struct is `{ char *data; size_t fpos; size_t fsize; size_t
         // smax; int mode; }` (raw byte buffer) and from 8.1 onwards it
         // is `{ zend_string *data; size_t fpos; int mode; }`. Reli's
         // PhpStreamMemoryData / v80.h declarations only model the 8.1+
@@ -2897,6 +2897,13 @@ class MemoryLocationsCollectorTest extends BaseTestCase
         // the `stream_memory_data` link is genuinely absent on 8.0 — the
         // assertion only fires on the versions where the layout matches
         // reli's view.
+        //
+        // TODO: model the v70..v80 raw-buffer layout and emit a
+        // dedicated `PhpStreamMemoryRawBufferMemoryLocation` so the
+        // stream-memory body is tracked on those PHP versions too.
+        // Tracking the v70..v80 layout fix as a follow-up rather than
+        // adding it to this PR keeps the collector guard small and
+        // focused on the original report.
         if ($php_version !== ZendTypeReader::V80) {
             $this->assertTrue(
                 $found_memory_data_link,
