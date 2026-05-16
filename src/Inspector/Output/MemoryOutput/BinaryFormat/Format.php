@@ -36,6 +36,18 @@ final class Format
     // Flag bits in the header flags field
     public const FLAG_LITTLE_ENDIAN = 0x01;
 
+    /**
+     * The on-disk `node_sizes` section was written with the
+     * size-attribution region policy already applied
+     * ({@see \Reli\Inspector\Output\MemoryOutput\RegionFilter}). Readers
+     * that see this flag may load `node_sizes` straight into the
+     * substrate without rescanning the locations section to refilter
+     * by region; readers that don't see it must fall back to the
+     * locations-scan path because the pre-summed slots may include
+     * 'outside'-region bytes that the report-time policy would drop.
+     */
+    public const FLAG_NODE_SIZES_REGION_FILTERED = 0x02;
+
     // Section names (max 16 bytes, null-padded)
     public const SECTION_STRING_DICT = 'string_dict';
     public const SECTION_NODES = 'nodes';

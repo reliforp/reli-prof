@@ -817,4 +817,469 @@ class BinaryFormatRoundTripTest extends TestCase
         $this->assertSame(48, $sql_php_substrate->getNodeSize(1));
         $this->assertSame(0, $sql_php_substrate->getNodeSize(2));
     }
+
+    /**
+     * Pins the FLAG_NODE_SIZES_REGION_FILTERED contract end-to-end:
+     *
+     *   - When the sink runs with a RegionBoundaries attached, the
+     *     writer must set the flag in the rmem header and the on-disk
+     *     `node_sizes` slots must already exclude 'outside'-region
+     *     bytes — a flag-aware reader can then skip the locations
+     *     rescan that {@see RegionFilter} would otherwise force.
+     *   - When the sink runs without a RegionBoundaries (older writer
+     *     path / tests / explicit fallback), the flag must stay off
+     *     and the reader must fall back to the locations-scan path
+     *     so 'outside' rows are still filtered at read time.
+     *
+     * Both cases must agree on the same final size totals — the flag
+     * is purely a perf hint, never a correctness divergence.
+     */
+    public function testNodeSizesRegionFilteredFlagIsSetWhenSinkHasRegionBoundaries(): void
+    {
+        $bogus_size = PHP_INT_MAX - 100;
+
+        // --- Case 1: sink WITH RegionBoundaries → flag set, on-disk
+        //     node_sizes already filtered.
+        $chunk = new MemoryLocations();
+        $chunk->add(new ZendMmChunkMemoryLocation(0x1000, 0x10000));
+        $boundaries = new RegionBoundaries(
+            $chunk,
+            new MemoryLocations(),
+            new MemoryLocations(),
+            new MemoryLocations(),
+        );
+        $filteredSink = new BinaryContextTreeSink($boundaries, batch_size: 10);
+        $this->emitOutsideFixture($filteredSink, $bogus_size);
+        $this->assertTrue(
+            $filteredSink->isPerNodeRegionFiltered(),
+            'sink with RegionBoundaries should report perNode accumulators as filtered',
+        );
+
+        $filteredPath = $this->rmem_path;
+        $filteredOutput = new BinaryMemoryOutput($filteredPath);
+        $filteredOutput->finalizeStreaming(
+            $filteredSink,
+            [['zend_mm_heap_usage' => '1024', 'php_version' => '8.4.0']],
+        );
+
+        $filteredReader = Reader::open($filteredPath);
+        $this->assertTrue(
+            $filteredReader->hasHeaderFlag(Format::FLAG_NODE_SIZES_REGION_FILTERED),
+            'BinaryMemoryOutput must set FLAG_NODE_SIZES_REGION_FILTERED when sink filtered',
+        );
+        // The on-disk node_sizes slot for the bogus 'outside' node must
+        // be 0 — proving the writer-side filter actually elided the
+        // accumulation rather than the reader silently subtracting it
+        // out at load time.
+        $this->assertNotNull($filteredReader->getSectionData('node_sizes'));
+        $rawSizes = $filteredReader->getSectionData('node_sizes');
+        $this->assertSame(64, unpack('P', $rawSizes, 0)[1], 'slot 0 (good object) should be 64 on disk');
+        $this->assertSame(48, unpack('P', $rawSizes, 8)[1], 'slot 1 (good string) should be 48 on disk');
+        $this->assertSame(0, unpack('P', $rawSizes, 16)[1], 'slot 2 (bogus outside string) should be 0 on disk');
+
+        $filteredFfi = FfiCsrGraphSubstrate::loadFromBinary(
+            $filteredReader,
+            useCache: false,
+            rebuildCache: false,
+            skipScc: true,
+        );
+        $this->assertSame(112, $filteredFfi->getNodeSizesSum());
+        $this->assertSame(0, $filteredFfi->getNodeSize(2));
+
+        // --- Case 2: sink WITHOUT RegionBoundaries → flag stays off,
+        //     reader falls back to the locations-scan path. Real-world
+        //     legacy writers leave region NULL on every row (no
+        //     classifier ran), and RegionFilter treats NULL as a
+        //     pre-tagging fixture and lets it through; the surface
+        //     totals must match Case 1's filtered fixture.
+        $unfilteredSink = new BinaryContextTreeSink(batch_size: 10);
+        // Mirror Case 1's *good* rows only — without RegionBoundaries the
+        // sink cannot classify, so the "outside" row would be tagged
+        // region=NULL (RegionFilter would let it through as legacy) and
+        // poison the assertion. The bogus-row case is what writer-side
+        // filtering exists to handle; here we just pin that legacy
+        // (flag-off) fixtures still load with the right totals.
+        $unfilteredSink->emitNode(
+            node_id: 0,
+            parent_node_id: null,
+            link_name: 'root_obj',
+            type: 'ObjectContext',
+            locations: [new ZendObjectMemoryLocation(0x1100, 64, 1, 7, 'App\\GoodObject')],
+            attributes: [],
+        );
+        $unfilteredSink->emitNode(
+            node_id: 1,
+            parent_node_id: 0,
+            link_name: 'good_string',
+            type: 'StringContext',
+            locations: [new ZendStringMemoryLocation(0x2000, 48, 1, 6, 'hello')],
+            attributes: [],
+        );
+        $this->assertFalse(
+            $unfilteredSink->isPerNodeRegionFiltered(),
+            'sink without RegionBoundaries should report perNode accumulators as unfiltered',
+        );
+
+        $unfilteredPath = $filteredPath . '.unfiltered.rmem';
+        try {
+            $unfilteredOutput = new BinaryMemoryOutput($unfilteredPath);
+            $unfilteredOutput->finalizeStreaming(
+                $unfilteredSink,
+                [['zend_mm_heap_usage' => '1024', 'php_version' => '8.4.0']],
+            );
+
+            $unfilteredReader = Reader::open($unfilteredPath);
+            $this->assertFalse(
+                $unfilteredReader->hasHeaderFlag(Format::FLAG_NODE_SIZES_REGION_FILTERED),
+                'flag must stay off when sink had no RegionBoundaries',
+            );
+
+            $unfilteredFfi = FfiCsrGraphSubstrate::loadFromBinary(
+                $unfilteredReader,
+                useCache: false,
+                rebuildCache: false,
+                skipScc: true,
+            );
+            $this->assertSame(112, $unfilteredFfi->getNodeSizesSum());
+            $this->assertSame(64, $unfilteredFfi->getNodeSize(0));
+            $this->assertSame(48, $unfilteredFfi->getNodeSize(1));
+            $this->assertSame(
+                $filteredFfi->getNodeSizesSum(),
+                $unfilteredFfi->getNodeSizesSum(),
+                'flag is a perf hint only — both paths must agree on the final total',
+            );
+        } finally {
+            if (file_exists($unfilteredPath)) {
+                @unlink($unfilteredPath);
+            }
+        }
+    }
+
+    /**
+     * Shared fixture used by both the original
+     * testOutsideRegionStringIsExcludedFromAllSizeAttributionSurfaces
+     * and the flag-contract test above. Emits three nodes:
+     *   - node_id 0: in-heap object, size 64
+     *   - node_id 1: in-heap string, size 48
+     *   - node_id 2: 'outside' string with garbage `size`
+     */
+    private function emitOutsideFixture(BinaryContextTreeSink $sink, int $bogus_size): void
+    {
+        $sink->emitNode(
+            node_id: 0,
+            parent_node_id: null,
+            link_name: 'root_obj',
+            type: 'ObjectContext',
+            locations: [
+                new ZendObjectMemoryLocation(0x1100, 64, 1, 7, 'App\\GoodObject'),
+            ],
+            attributes: [],
+        );
+        $sink->emitNode(
+            node_id: 1,
+            parent_node_id: 0,
+            link_name: 'good_string',
+            type: 'StringContext',
+            locations: [
+                new ZendStringMemoryLocation(0x2000, 48, 1, 6, 'hello'),
+            ],
+            attributes: [],
+        );
+        $sink->emitNode(
+            node_id: 2,
+            parent_node_id: 0,
+            link_name: 'bogus_string',
+            type: 'StringContext',
+            locations: [
+                new ZendStringMemoryLocation(0xDEAD0000, $bogus_size, 1, 6, 'garbage'),
+            ],
+            attributes: [],
+        );
+    }
+
+    /**
+     * Pins the on-disk `node_sizes` / `node_classes` fast-path against
+     * a fixture whose node_ids are non-zero-based and sparse. The
+     * earlier shape of the fast-path loop walked slot indices `0..nc-1`
+     * directly and read `sizesData[i * 8]`, which only happened to
+     * agree with the section's `node_id`-keyed layout when the emitter
+     * happened to use dense 0-based ids. Any sparse or 1-based emitter
+     * (ContextAnalyzer's test fixtures, third-party producers, future
+     * substrate-unification changes) silently lost the highest slot and
+     * read a zero from the unused leading slot — manifesting as a
+     * mysterious O(nodeCount)-byte shift in `getNodeSize()`.
+     *
+     * Build a sparse-id fixture with the flag set so the fast-path
+     * actually runs, then assert each node's size lands on the right
+     * CSR slot.
+     */
+    public function testNodeSizesFastPathHandlesSparseNonZeroNodeIds(): void
+    {
+        $chunk = new MemoryLocations();
+        $chunk->add(new ZendMmChunkMemoryLocation(0x1000, 0x10000));
+        $boundaries = new RegionBoundaries(
+            $chunk,
+            new MemoryLocations(),
+            new MemoryLocations(),
+            new MemoryLocations(),
+        );
+        $sink = new BinaryContextTreeSink($boundaries, batch_size: 10);
+
+        // node_ids 5, 7, 11 — non-zero-based, sparse. Slots 0..4, 6, 8..10
+        // on disk should be left at zero by the writer.
+        $sink->emitNode(
+            node_id: 5,
+            parent_node_id: null,
+            link_name: 'root',
+            type: 'ObjectContext',
+            locations: [new ZendObjectMemoryLocation(0x1100, 100, 1, 7, 'App\\A')],
+            attributes: [],
+        );
+        $sink->emitNode(
+            node_id: 7,
+            parent_node_id: 5,
+            link_name: 'mid',
+            type: 'ObjectContext',
+            locations: [new ZendObjectMemoryLocation(0x1200, 200, 1, 7, 'App\\B')],
+            attributes: [],
+        );
+        $sink->emitNode(
+            node_id: 11,
+            parent_node_id: 7,
+            link_name: 'leaf',
+            type: 'StringContext',
+            locations: [new ZendStringMemoryLocation(0x1300, 300, 1, 6, 'leafstr')],
+            attributes: [],
+        );
+
+        $output = new BinaryMemoryOutput($this->rmem_path);
+        $output->finalizeStreaming($sink, [['zend_mm_heap_usage' => '600', 'php_version' => '8.4.0']]);
+
+        $reader = Reader::open($this->rmem_path);
+        $this->assertTrue(
+            $reader->hasHeaderFlag(Format::FLAG_NODE_SIZES_REGION_FILTERED),
+            'sink with RegionBoundaries must flip the fast-path flag',
+        );
+        // The on-disk node_sizes section must have the right shape:
+        // slots 0..4 zero, slot 5 = 100, slot 6 zero, slot 7 = 200,
+        // slots 8..10 zero, slot 11 = 300. Spot-check that the writer
+        // really left a slot per node_id (not per CSR index) so the
+        // reader's csrIdx → node_id indirection has something to read.
+        $rawSizes = $reader->getSectionData('node_sizes');
+        $this->assertSame(12, $reader->getSectionElementCount('node_sizes'));
+        $this->assertSame(100, unpack('P', $rawSizes, 5 * 8)[1]);
+        $this->assertSame(200, unpack('P', $rawSizes, 7 * 8)[1]);
+        $this->assertSame(300, unpack('P', $rawSizes, 11 * 8)[1]);
+
+        $substrate = FfiCsrGraphSubstrate::loadFromBinary(
+            $reader,
+            useCache: false,
+            rebuildCache: false,
+            skipScc: true,
+        );
+        // Each node_id must end up with its own size, not the leading
+        // dense-slot value the broken loop used to pick up.
+        $this->assertSame(600, $substrate->getNodeSizesSum());
+        $this->assertSame(100, $substrate->getNodeSize(5));
+        $this->assertSame(200, $substrate->getNodeSize(7));
+        $this->assertSame(300, $substrate->getNodeSize(11));
+    }
+
+    /**
+     * Pins the flag-off fallback against a fixture that actually
+     * contains `region='outside'` rows AND an unfiltered `node_sizes`
+     * slot — the shape of every `.rmem` produced after #795 (region
+     * tags emitted) but before #799 (writer-side filter + flag).
+     *
+     * The previous revision of this test wrote the fixture with a
+     * RegionBoundaries-attached sink, so the writer-side filter
+     * already zeroed `node_sizes[outside_node_id]` before we ever
+     * touched the file — clearing the header flag alone wasn't enough
+     * to reach the "flag off + on-disk node_sizes contains the bogus
+     * sum" shape we actually want to defend against. If a future
+     * reader decides to trust on-disk `node_sizes` even when the flag
+     * is off, the previous fixture would let that through silently.
+     *
+     * Reconstruct the real mid-stack shape: write the fixture with
+     * the filter on, then hand-patch the file to (a) clear the flag
+     * AND (b) overwrite `node_sizes[outside_node]` with the bogus
+     * size. The locations section still carries the `region='outside'`
+     * row from the original write, so the reader's locations-scan
+     * fallback (gated by `RegionFilter`) has to drop it to land on
+     * `getNodeSizesSum() == 112`.
+     */
+    public function testLegacyRmemWithoutFlagButWithOutsideRowsStillFiltersAtRead(): void
+    {
+        $chunk = new MemoryLocations();
+        $chunk->add(new ZendMmChunkMemoryLocation(0x1000, 0x10000));
+        $boundaries = new RegionBoundaries(
+            $chunk,
+            new MemoryLocations(),
+            new MemoryLocations(),
+            new MemoryLocations(),
+        );
+        $sink = new BinaryContextTreeSink($boundaries, batch_size: 10);
+        $bogus_size = PHP_INT_MAX - 100;
+        $this->emitOutsideFixture($sink, $bogus_size);
+
+        $tempPath = $this->rmem_path . '.legacy.rmem';
+        try {
+            $output = new BinaryMemoryOutput($tempPath);
+            $output->finalizeStreaming(
+                $sink,
+                [['zend_mm_heap_usage' => '512', 'php_version' => '8.4.0']],
+            );
+
+            // Pull the `node_sizes` section's file offset before we
+            // start hand-patching — Reader closes the mapped file on
+            // destruct, so the read side must finish first.
+            $probe = Reader::open($tempPath);
+            self::assertTrue($probe->hasSection('node_sizes'));
+            $nodeSizesOffset = $probe->getSectionOffset('node_sizes');
+            self::assertSame(3, $probe->getSectionElementCount('node_sizes'));
+            unset($probe);
+
+            $fh = fopen($tempPath, 'r+b');
+            self::assertNotFalse($fh);
+
+            // (1) Clear FLAG_NODE_SIZES_REGION_FILTERED in the header.
+            //     The flags field is uint32 LE at byte offset 8.
+            fseek($fh, 8);
+            $flagsBytes = fread($fh, 4);
+            self::assertSame(4, strlen($flagsBytes));
+            $flags = unpack('V', $flagsBytes)[1];
+            $flags &= ~Format::FLAG_NODE_SIZES_REGION_FILTERED;
+            fseek($fh, 8);
+            fwrite($fh, pack('V', $flags));
+
+            // (2) Overwrite `node_sizes[2]` with the bogus size so the
+            //     fixture really contains the pre-#799 raw sum. Slot 2
+            //     is the outside node (`emitOutsideFixture` emits
+            //     node_ids 0, 1, 2); each int64 slot is 8 bytes.
+            fseek($fh, $nodeSizesOffset + 2 * 8);
+            fwrite($fh, pack('P', $bogus_size));
+            fclose($fh);
+
+            $reader = Reader::open($tempPath);
+            $this->assertFalse(
+                $reader->hasHeaderFlag(Format::FLAG_NODE_SIZES_REGION_FILTERED),
+                'sanity: legacy fixture must report flag off',
+            );
+            $this->assertSame(
+                $bogus_size,
+                unpack('P', $reader->getSectionData('node_sizes'), 2 * 8)[1],
+                'sanity: legacy fixture must keep the bogus size in node_sizes[2]',
+            );
+
+            // The reader must hit the locations-scan fallback, see the
+            // `region='outside'` row, and drop it via RegionFilter.
+            // If anyone ever shortcuts that fallback when the flag is
+            // off (e.g. trusts on-disk node_sizes anyway), this would
+            // immediately blow up to a multi-exabyte sum or trip the
+            // FFI CSR `Cannot assign float to property` again.
+            $substrate = FfiCsrGraphSubstrate::loadFromBinary(
+                $reader,
+                useCache: false,
+                rebuildCache: false,
+                skipScc: true,
+            );
+            $this->assertSame(112, $substrate->getNodeSizesSum());
+            $this->assertSame(64, $substrate->getNodeSize(0));
+            $this->assertSame(48, $substrate->getNodeSize(1));
+            $this->assertSame(0, $substrate->getNodeSize(2));
+        } finally {
+            if (file_exists($tempPath)) {
+                @unlink($tempPath);
+            }
+        }
+    }
+
+    /**
+     * Same dense-id bug, now for `canonical_map`. The writer keys the
+     * section by `node_id` (`BinaryContextTreeSink::buildCanonicalMap()`
+     * does `$map[$node_id] = $canon`), so the reader's fast-path must
+     * use the same csrIdx → node_id indirection the `node_sizes` /
+     * `node_classes` fast-paths now do.
+     *
+     * Build a fixture with non-zero-based node_ids that share an
+     * address (so a `canonical_map` section is actually emitted), then
+     * assert each non-canonical id resolves to the right canon via
+     * `findCanonical()`. The pre-fix loop walked slot indices `0..nc-1`
+     * directly, so it would have looked up slots 0/1/2 (all -1, the
+     * fill value) and missed the real canonical mapping at slots 10
+     * and 11 entirely.
+     */
+    public function testCanonicalMapFastPathHandlesSparseNonZeroNodeIds(): void
+    {
+        $chunk = new MemoryLocations();
+        $chunk->add(new ZendMmChunkMemoryLocation(0x1000, 0x10000));
+        $boundaries = new RegionBoundaries(
+            $chunk,
+            new MemoryLocations(),
+            new MemoryLocations(),
+            new MemoryLocations(),
+        );
+        $sink = new BinaryContextTreeSink($boundaries, batch_size: 10);
+
+        // node_ids 9, 10, 11 — non-zero-based, dense within the range.
+        // 10 and 11 share an address (0x1200), so the canonical map
+        // must collapse them onto min(10, 11) = 10.
+        $sink->emitNode(
+            node_id: 9,
+            parent_node_id: null,
+            link_name: 'root',
+            type: 'ObjectContext',
+            locations: [new ZendObjectMemoryLocation(0x1100, 100, 1, 7, 'App\\Root')],
+            attributes: [],
+        );
+        $sink->emitNode(
+            node_id: 10,
+            parent_node_id: 9,
+            link_name: 'alias_a',
+            type: 'ObjectContext',
+            locations: [new ZendObjectMemoryLocation(0x1200, 50, 1, 7, 'App\\Shared')],
+            attributes: [],
+        );
+        $sink->emitNode(
+            node_id: 11,
+            parent_node_id: 9,
+            link_name: 'alias_b',
+            type: 'ObjectContext',
+            locations: [new ZendObjectMemoryLocation(0x1200, 50, 1, 7, 'App\\Shared')],
+            attributes: [],
+        );
+
+        $output = new BinaryMemoryOutput($this->rmem_path);
+        $output->finalizeStreaming($sink, [['zend_mm_heap_usage' => '200', 'php_version' => '8.4.0']]);
+
+        $reader = Reader::open($this->rmem_path);
+        $this->assertTrue(
+            $reader->hasSection('canonical_map'),
+            'shared-address fixture must produce a canonical_map section',
+        );
+        $canonData = $reader->getSectionData('canonical_map');
+        // Width is maxNodeId + 1 = 12 slots. Spot-check that the
+        // section is keyed by node_id: slots 10 and 11 both map to 10
+        // (the writer marks every node at a shared address, including
+        // the canonical itself, with the chosen min node_id). Slots
+        // 9 and the empty leading slots stay at -1.
+        $this->assertSame(12, $reader->getSectionElementCount('canonical_map'));
+        $this->assertSame(10, unpack('l', $canonData, 11 * 4)[1]);
+        $this->assertSame(10, unpack('l', $canonData, 10 * 4)[1]);
+        $this->assertSame(-1, unpack('l', $canonData, 9 * 4)[1]);
+        $this->assertSame(-1, unpack('l', $canonData, 0 * 4)[1]);
+
+        $substrate = FfiCsrGraphSubstrate::loadFromBinary(
+            $reader,
+            useCache: false,
+            rebuildCache: false,
+            skipScc: true,
+        );
+        // Canonical resolution must agree with the on-disk shape:
+        // 9 stays self-canonical, 10 stays self-canonical (it IS the
+        // min at the shared address), 11 collapses onto 10.
+        $this->assertSame(9, $substrate->getCanonical(9));
+        $this->assertSame(10, $substrate->getCanonical(10));
+        $this->assertSame(10, $substrate->getCanonical(11));
+    }
 }

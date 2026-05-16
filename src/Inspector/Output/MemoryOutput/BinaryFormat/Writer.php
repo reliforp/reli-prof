@@ -32,6 +32,12 @@ final class Writer
     /** Current write position (starts after header placeholder) */
     private int $pos;
 
+    /**
+     * Bits OR'd into the header `flags` field on top of the always-on
+     * {@see Format::FLAG_LITTLE_ENDIAN}. Set before {@see finish()}.
+     */
+    private int $extraHeaderFlags = 0;
+
     public function __construct(string $path)
     {
         $fh = fopen($path, 'wb');
@@ -43,6 +49,16 @@ final class Writer
         // Reserve space for the header (will be rewritten in finish())
         fwrite($this->fh, str_repeat("\0", Format::HEADER_SIZE));
         $this->pos = Format::HEADER_SIZE;
+    }
+
+    /**
+     * OR additional flag bits into the header. {@see Format::FLAG_LITTLE_ENDIAN}
+     * is always set; pass any other {@see Format} `FLAG_*` constants here
+     * before calling {@see finish()}.
+     */
+    public function addExtraHeaderFlags(int $flags): void
+    {
+        $this->extraHeaderFlags |= $flags;
     }
 
     /**
@@ -158,7 +174,7 @@ final class Writer
         fseek($this->getFileHandle(), 0);
         $header = Format::MAGIC;                                  // 4 bytes
         $header .= pack('V', Format::VERSION);                    // 4 bytes: version (uint32 LE)
-        $header .= pack('V', Format::FLAG_LITTLE_ENDIAN);         // 4 bytes: flags (uint32 LE)
+        $header .= pack('V', Format::FLAG_LITTLE_ENDIAN | $this->extraHeaderFlags); // 4 bytes: flags (uint32 LE)
         $header .= pack('V', count($this->toc));                  // 4 bytes: section_count (uint32 LE)
         $header .= pack('P', $toc_offset);                        // 8 bytes: toc_offset (uint64 LE)
         // Pad to 64 bytes
