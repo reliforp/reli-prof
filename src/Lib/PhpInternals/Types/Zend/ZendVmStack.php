@@ -135,15 +135,24 @@ final class ZendVmStack implements CDataDereferencable
         return $stack;
     }
 
-    public function materializeAsPointerArray(
+    /**
+     * Materialize the arbitrary byte range
+     * `[$base_address, $top_address)` of this arena's storage as a
+     * `PointerArray`. The caller is responsible for picking a range
+     * that actually lies inside the arena — this method does no
+     * cross-checking against `$this->top` / `$this->end` and only
+     * clamps negative sizes to zero.
+     */
+    public function materializeRangeAsPointerArray(
         Dereferencer $dereferencer,
-        int $end_address,
+        int $base_address,
+        int $top_address,
     ): PointerArray {
-        assert($this->top !== null);
+        $size = max(0, $top_address - $base_address);
         $pointer = new Pointer(
             PointerArray::class,
-            $this->top->address,
-            $end_address - $this->top->address,
+            $base_address,
+            $size,
         );
         return $dereferencer->deref($pointer);
     }
