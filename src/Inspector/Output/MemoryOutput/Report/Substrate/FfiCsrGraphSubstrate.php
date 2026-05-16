@@ -430,16 +430,27 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // `$sizesLoaded &&` guard was a code-locality choice (group on-disk
         // fast-paths together), not a correctness dependency; canonical_map
         // is self-contained and orthogonal to sizes, so decouple it.
+        //
+        // Same csrIdx → node_id indirection as the node_sizes / node_classes
+        // fast-paths above — the section is keyed by node_id (writer:
+        // `BinaryContextTreeSink::buildCanonicalMap()` does
+        // `$map[$node_id] = $canon`), so walking slot indices directly
+        // would mis-read sparse / non-zero-based emitters.
         $canonicalLoaded = false;
         if ($reader->hasSection('canonical_map')) {
             $canonData = $reader->getSectionData('canonical_map');
             $canonSlots = $reader->getSectionElementCount('canonical_map');
-            for ($i = 0; $i < min($canonSlots, $nc); $i++) {
+            $indexToNode = $substrate->indexToNodeFfi;
+            for ($csrIdx = 0; $csrIdx < $nc; $csrIdx++) {
+                $node_id = $indexToNode[$csrIdx];
+                if ($node_id < 0 || $node_id >= $canonSlots) {
+                    continue;
+                }
                 /** @var array{1: int} */
-                $c = unpack('l', $canonData, $i * 4); // signed int32
+                $c = unpack('l', $canonData, $node_id * 4); // signed int32
                 $canon_id = $c[1];
-                if ($canon_id >= 0 && $canon_id !== $i) {
-                    $substrate->canonical[$i] = $canon_id;
+                if ($canon_id >= 0 && $canon_id !== $node_id) {
+                    $substrate->canonical[$node_id] = $canon_id;
                     $substrate->canonical[$canon_id] = $canon_id;
                 }
             }

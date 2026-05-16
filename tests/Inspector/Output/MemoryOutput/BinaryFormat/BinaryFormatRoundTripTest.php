@@ -1087,16 +1087,26 @@ class BinaryFormatRoundTripTest extends TestCase
 
     /**
      * Pins the flag-off fallback against a fixture that actually
-     * contains `region='outside'` rows — the shape of every `.rmem`
-     * produced after #795 (region tags emitted) but before #799
-     * (writer-side filter + flag). The previous version of this case
-     * only emitted `region='zend_mm_heap'` rows, so it never exercised
-     * the locations-scan path's responsibility to drop `'outside'`
-     * rows in the absence of a flag. Reconstruct that exact mid-stack
-     * shape by writing the fixture with a RegionBoundaries (so region
-     * tags exist on every row, including the outside one) and then
-     * hand-clearing the FLAG_NODE_SIZES_REGION_FILTERED bit in the
-     * resulting `.rmem`.
+     * contains `region='outside'` rows AND an unfiltered `node_sizes`
+     * slot — the shape of every `.rmem` produced after #795 (region
+     * tags emitted) but before #799 (writer-side filter + flag).
+     *
+     * The previous revision of this test wrote the fixture with a
+     * RegionBoundaries-attached sink, so the writer-side filter
+     * already zeroed `node_sizes[outside_node_id]` before we ever
+     * touched the file — clearing the header flag alone wasn't enough
+     * to reach the "flag off + on-disk node_sizes contains the bogus
+     * sum" shape we actually want to defend against. If a future
+     * reader decides to trust on-disk `node_sizes` even when the flag
+     * is off, the previous fixture would let that through silently.
+     *
+     * Reconstruct the real mid-stack shape: write the fixture with
+     * the filter on, then hand-patch the file to (a) clear the flag
+     * AND (b) overwrite `node_sizes[outside_node]` with the bogus
+     * size. The locations section still carries the `region='outside'`
+     * row from the original write, so the reader's locations-scan
+     * fallback (gated by `RegionFilter`) has to drop it to land on
+     * `getNodeSizesSum() == 112`.
      */
     public function testLegacyRmemWithoutFlagButWithOutsideRowsStillFiltersAtRead(): void
     {
@@ -1112,23 +1122,6 @@ class BinaryFormatRoundTripTest extends TestCase
         $bogus_size = PHP_INT_MAX - 100;
         $this->emitOutsideFixture($sink, $bogus_size);
 
-        // The writer-side filter elides the bogus row from
-        // `perNodeSizes`, so we need to undo that for this test —
-        // otherwise we'd be exercising the post-#799 shape, not the
-        // mid-stack one. Re-emit the same nodes with no
-        // RegionBoundaries so the bogus row's slot lands on disk as
-        // its raw garbage size, then surgically clear the flag.
-        $sinkUnfiltered = new BinaryContextTreeSink(batch_size: 10);
-        $this->emitOutsideFixture($sinkUnfiltered, $bogus_size);
-
-        // Force the locations section to still carry per-row `region`
-        // strings — emitOutsideFixture's unfiltered sink leaves region
-        // NULL on every row, which is the wrong shape for this
-        // regression case. Attach the boundaries AFTER the first emit
-        // so the perNodeRegionFiltered flag stays false (it locks on
-        // the first emit) but subsequent emits get classified rows.
-        // Easier: build the filtered fixture, then post-edit the
-        // header byte to clear the flag.
         $tempPath = $this->rmem_path . '.legacy.rmem';
         try {
             $output = new BinaryMemoryOutput($tempPath);
@@ -1137,10 +1130,20 @@ class BinaryFormatRoundTripTest extends TestCase
                 [['zend_mm_heap_usage' => '512', 'php_version' => '8.4.0']],
             );
 
-            // Surgically clear FLAG_NODE_SIZES_REGION_FILTERED in the
-            // header. The flags field is uint32 LE at byte offset 8.
+            // Pull the `node_sizes` section's file offset before we
+            // start hand-patching — Reader closes the mapped file on
+            // destruct, so the read side must finish first.
+            $probe = Reader::open($tempPath);
+            self::assertTrue($probe->hasSection('node_sizes'));
+            $nodeSizesOffset = $probe->getSectionOffset('node_sizes');
+            self::assertSame(3, $probe->getSectionElementCount('node_sizes'));
+            unset($probe);
+
             $fh = fopen($tempPath, 'r+b');
             self::assertNotFalse($fh);
+
+            // (1) Clear FLAG_NODE_SIZES_REGION_FILTERED in the header.
+            //     The flags field is uint32 LE at byte offset 8.
             fseek($fh, 8);
             $flagsBytes = fread($fh, 4);
             self::assertSame(4, strlen($flagsBytes));
@@ -1148,12 +1151,24 @@ class BinaryFormatRoundTripTest extends TestCase
             $flags &= ~Format::FLAG_NODE_SIZES_REGION_FILTERED;
             fseek($fh, 8);
             fwrite($fh, pack('V', $flags));
+
+            // (2) Overwrite `node_sizes[2]` with the bogus size so the
+            //     fixture really contains the pre-#799 raw sum. Slot 2
+            //     is the outside node (`emitOutsideFixture` emits
+            //     node_ids 0, 1, 2); each int64 slot is 8 bytes.
+            fseek($fh, $nodeSizesOffset + 2 * 8);
+            fwrite($fh, pack('P', $bogus_size));
             fclose($fh);
 
             $reader = Reader::open($tempPath);
             $this->assertFalse(
                 $reader->hasHeaderFlag(Format::FLAG_NODE_SIZES_REGION_FILTERED),
                 'sanity: legacy fixture must report flag off',
+            );
+            $this->assertSame(
+                $bogus_size,
+                unpack('P', $reader->getSectionData('node_sizes'), 2 * 8)[1],
+                'sanity: legacy fixture must keep the bogus size in node_sizes[2]',
             );
 
             // The reader must hit the locations-scan fallback, see the
@@ -1177,5 +1192,94 @@ class BinaryFormatRoundTripTest extends TestCase
                 @unlink($tempPath);
             }
         }
+    }
+
+    /**
+     * Same dense-id bug, now for `canonical_map`. The writer keys the
+     * section by `node_id` (`BinaryContextTreeSink::buildCanonicalMap()`
+     * does `$map[$node_id] = $canon`), so the reader's fast-path must
+     * use the same csrIdx → node_id indirection the `node_sizes` /
+     * `node_classes` fast-paths now do.
+     *
+     * Build a fixture with non-zero-based node_ids that share an
+     * address (so a `canonical_map` section is actually emitted), then
+     * assert each non-canonical id resolves to the right canon via
+     * `findCanonical()`. The pre-fix loop walked slot indices `0..nc-1`
+     * directly, so it would have looked up slots 0/1/2 (all -1, the
+     * fill value) and missed the real canonical mapping at slots 10
+     * and 11 entirely.
+     */
+    public function testCanonicalMapFastPathHandlesSparseNonZeroNodeIds(): void
+    {
+        $chunk = new MemoryLocations();
+        $chunk->add(new ZendMmChunkMemoryLocation(0x1000, 0x10000));
+        $boundaries = new RegionBoundaries(
+            $chunk,
+            new MemoryLocations(),
+            new MemoryLocations(),
+            new MemoryLocations(),
+        );
+        $sink = new BinaryContextTreeSink($boundaries, batch_size: 10);
+
+        // node_ids 9, 10, 11 — non-zero-based, dense within the range.
+        // 10 and 11 share an address (0x1200), so the canonical map
+        // must collapse them onto min(10, 11) = 10.
+        $sink->emitNode(
+            node_id: 9,
+            parent_node_id: null,
+            link_name: 'root',
+            type: 'ObjectContext',
+            locations: [new ZendObjectMemoryLocation(0x1100, 100, 1, 7, 'App\\Root')],
+            attributes: [],
+        );
+        $sink->emitNode(
+            node_id: 10,
+            parent_node_id: 9,
+            link_name: 'alias_a',
+            type: 'ObjectContext',
+            locations: [new ZendObjectMemoryLocation(0x1200, 50, 1, 7, 'App\\Shared')],
+            attributes: [],
+        );
+        $sink->emitNode(
+            node_id: 11,
+            parent_node_id: 9,
+            link_name: 'alias_b',
+            type: 'ObjectContext',
+            locations: [new ZendObjectMemoryLocation(0x1200, 50, 1, 7, 'App\\Shared')],
+            attributes: [],
+        );
+
+        $output = new BinaryMemoryOutput($this->rmem_path);
+        $output->finalizeStreaming($sink, [['zend_mm_heap_usage' => '200', 'php_version' => '8.4.0']]);
+
+        $reader = Reader::open($this->rmem_path);
+        $this->assertTrue(
+            $reader->hasSection('canonical_map'),
+            'shared-address fixture must produce a canonical_map section',
+        );
+        $canonData = $reader->getSectionData('canonical_map');
+        // Width is maxNodeId + 1 = 12 slots. Spot-check that the
+        // section is keyed by node_id: slots 10 and 11 both map to 10
+        // (the writer marks every node at a shared address, including
+        // the canonical itself, with the chosen min node_id). Slots
+        // 9 and the empty leading slots stay at -1.
+        $this->assertSame(12, $reader->getSectionElementCount('canonical_map'));
+        $this->assertSame(10, unpack('l', $canonData, 11 * 4)[1]);
+        $this->assertSame(10, unpack('l', $canonData, 10 * 4)[1]);
+        $this->assertSame(-1, unpack('l', $canonData, 9 * 4)[1]);
+        $this->assertSame(-1, unpack('l', $canonData, 0 * 4)[1]);
+
+        $substrate = FfiCsrGraphSubstrate::loadFromBinary(
+            $reader,
+            useCache: false,
+            rebuildCache: false,
+            skipScc: true,
+        );
+        // Canonical resolution must agree with the on-disk shape:
+        // 9 stays self-canonical, 10 stays self-canonical (it IS the
+        // min at the shared address), 11 collapses onto 10.
+        $this->assertSame(9, $substrate->getCanonical(9));
+        $this->assertSame(10, $substrate->getCanonical(10));
+        $this->assertSame(10, $substrate->getCanonical(11));
     }
 }
