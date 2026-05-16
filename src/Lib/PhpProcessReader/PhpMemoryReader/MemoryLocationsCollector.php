@@ -689,7 +689,15 @@ final class MemoryLocationsCollector
             } else {
                 $hwm = $struct_top;
             }
-            $materialized_vm_stack = $vm_stack->materializeAsPointerArray(
+            // Belt-and-braces: clamp to the arena's allocation
+            // boundary so a corrupted dump (or a state we haven't
+            // anticipated) can't ask us to materialize a multi-GB
+            // pointer array.
+            $arena_end = $vm_stack->end?->address;
+            if ($arena_end !== null) {
+                $hwm = min($hwm, $arena_end);
+            }
+            $materialized_vm_stack = $vm_stack->materializeRangeAsPointerArray(
                 $ctx->dereferencer,
                 $arena_base,
                 $hwm,
