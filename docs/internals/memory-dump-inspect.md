@@ -31,12 +31,14 @@ Three sections, in order: `Header`, `Memory Map`, `Regions`.
 ```
 === Header ===
   Magic:            RDUMP
-  Format Version:   2
+  Format Version:   3
   PHP Version:      v85
   PID:              23388
   EG Address:       0x55e3a43ba620
   CG Address:       0x55e3a43bade0
   RSS at dump:      31182848 bytes
+  Module Globals:
+    basic_globals:   0x55e3a43bb5a0
   Memory Map Count: 471
   Region Count:     126
 
@@ -60,11 +62,12 @@ The fixed-layout prefix of every `.rdump` file:
 | Field | Type | Meaning |
 |---|---|---|
 | `Magic` | `RDUMP\0\0\0` | Container marker; readers reject anything else. |
-| `Format Version` | uint32 | `1` for early dumps, `2` adds `RSS at dump`. The inspect command reads either; older formats print `(unavailable)` for newer fields. |
+| `Format Version` | uint32 | `1` for early dumps, `2` adds `RSS at dump`, `3` adds the `Module Globals` map. The inspect command reads any version; older formats print `(unavailable)` / `(none)` for newer fields. |
 | `PHP Version` | string | Resolved target version (`v74`, `v85`, …). Used by `inspector:memory:analyze` to pick struct layouts. |
 | `PID` | int64 | Target PID at capture time. Cosmetic only — the analyzer doesn't re-attach. |
 | `EG Address` / `CG Address` | int64 | Resolved Executor Globals / Compiler Globals addresses inside the target. The analyzer treats these as the entry points into the captured heap. |
 | `RSS at dump` | int64 | Resident bytes from `/proc/<pid>/statm` at capture time, or `(unavailable)` on format v1. |
+| `Module Globals` | map | v3 only: per-module globals addresses resolved at capture time. Currently seeded with `basic_globals` so `EmitModulesJob` can walk `BG(user_shutdown_function_names)` offline; the map is extensible so new walkers (curl/mysqlnd/...) land without another format bump. Prints `(none)` when the dumper couldn't resolve any symbol (e.g. a stripped binary). |
 | `Memory Map Count` | uint32 | Number of `/proc/<pid>/maps` entries serialised in the next section. |
 | `Region Count` | uint32 | Number of saved memory regions in the third section. |
 

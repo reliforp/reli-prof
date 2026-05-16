@@ -18,13 +18,18 @@ use Reli\Lib\Process\MemoryMap\ProcessMemoryArea;
 final class MemoryDumpWriter
 {
     private const MAGIC = "RDUMP\0\0\0";
-    private const FORMAT_VERSION = 2;
+    private const FORMAT_VERSION = 3;
 
     /**
      * @param array<array{address: int, size: int, data: string}> $regions
      * @param ProcessMemoryArea[] $memory_areas
      * @param int|null $rss_bytes RSS in bytes captured at dump time, or
      *     null when /proc/<pid>/statm was unreadable.
+     * @param array<string, int> $module_globals Per-module globals
+     *     addresses resolved at dump time. Pre-seeded with
+     *     `basic_globals` so `EmitModulesJob` can walk the
+     *     shutdown-function table offline. New module-globals walkers
+     *     add their key without a further format bump.
      */
     public function write(
         string $output_path,
@@ -35,6 +40,7 @@ final class MemoryDumpWriter
         array $memory_areas,
         array $regions,
         ?int $rss_bytes = null,
+        array $module_globals = [],
     ): void {
         // Delegate to the streaming path so there is a single code path.
         $this->writeStreaming(
@@ -51,6 +57,7 @@ final class MemoryDumpWriter
                 }
             })(),
             $rss_bytes,
+            $module_globals,
         );
     }
 
@@ -69,6 +76,7 @@ final class MemoryDumpWriter
      * @param iterable<array{address: int, size: int, data: string}> $regions
      * @param int|null $rss_bytes RSS in bytes captured at dump time, or
      *     null when /proc/<pid>/statm was unreadable.
+     * @param array<string, int> $module_globals see write()
      * @return array{region_count: int, total_bytes: int}
      */
     public function writeStreaming(
@@ -81,6 +89,7 @@ final class MemoryDumpWriter
         int $estimated_region_count,
         iterable $regions,
         ?int $rss_bytes = null,
+        array $module_globals = [],
     ): array {
         $fp = fopen($output_path, 'wb');
         if ($fp === false) {
@@ -96,6 +105,7 @@ final class MemoryDumpWriter
                 count($memory_areas),
                 $estimated_region_count,
                 $rss_bytes,
+                $module_globals,
             );
             $this->writeMemoryMap($fp, $memory_areas);
 
@@ -131,6 +141,7 @@ final class MemoryDumpWriter
 
     /**
      * @param resource $fp
+     * @param array<string, int> $module_globals
      * @return int file offset of the region_count field, for later fix-up.
      */
     private function writeHeader(
@@ -142,6 +153,7 @@ final class MemoryDumpWriter
         int $memory_map_count,
         int $region_count,
         ?int $rss_bytes,
+        array $module_globals,
     ): int {
         $buf = self::MAGIC;
         $buf .= pack('V', self::FORMAT_VERSION);
@@ -151,6 +163,17 @@ final class MemoryDumpWriter
         $buf .= pack('P', $cg_address);
         // v2: rss_bytes (int64, signed). -1 = unavailable.
         $buf .= pack('q', $rss_bytes ?? -1);
+        // v3: module-globals map. Extensible string→address table so
+        // new walkers (basic_globals first, future curl/mysqlnd/...
+        // resource registries next) land without another format bump.
+        // EmitModulesJob short-circuits on a null bg_address, so an
+        // empty map degrades gracefully to "shutdown-function walk
+        // skipped" — same observable behaviour as v1/v2 dumps.
+        $buf .= pack('V', count($module_globals));
+        foreach ($module_globals as $key => $address) {
+            $buf .= self::packString($key);
+            $buf .= pack('P', $address);
+        }
         $buf .= pack('V', $memory_map_count);
         $region_count_offset = strlen($buf);
         $buf .= pack('V', $region_count);

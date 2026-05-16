@@ -107,6 +107,21 @@ final class MemoryDumpCommand extends ReliCommand
             $process_specifier,
             $target_php_settings_decided,
         );
+        // basic_globals is the engine's BG(...) struct. Persisting its
+        // address (and the BG bytes via MemoryDumper's Phase 1
+        // interval) lets offline analysis walk the shutdown-function
+        // table; without it, objects pinned by
+        // register_shutdown_function show up as unaccounted heap.
+        // Resolution can legitimately fail (stripped binary,
+        // FrankenPHP-style static-link host that preempts the symbol,
+        // a cold ZTS worker with a zero tsrm_ls_cache). findBasicGlobals
+        // catches every \Throwable from findGlobals and degrades to
+        // null, and EmitModulesJob short-circuits on null — same
+        // observable behaviour as the pre-v3 baseline.
+        $bg_address = $this->php_globals_finder->findBasicGlobals(
+            $process_specifier,
+            $target_php_settings_decided,
+        );
 
         // Resolve global interned-string pointer arrays for exclude-heap
         // mode. These are plain BSS symbols (not TSRM globals), so
@@ -154,6 +169,7 @@ final class MemoryDumpCommand extends ReliCommand
             $dump_settings->include_binary,
             !$dump_settings->exclude_heap,
             $interned_string_arrays,
+            bg_address: $bg_address,
         );
 
         $output->writeln(sprintf(

@@ -96,7 +96,7 @@ class MemoryDumpWriterTest extends TestCase
 
         // Format version
         $result = unpack('Vval', fread($fp, 4));
-        $this->assertSame(2, $result['val']);
+        $this->assertSame(3, $result['val']);
 
         // PHP version
         $len = unpack('Vval', fread($fp, 4))['val'];
@@ -118,6 +118,10 @@ class MemoryDumpWriterTest extends TestCase
         // RSS bytes (v2)
         $rss_bytes = unpack('Pval', fread($fp, 8))['val'];
         $this->assertSame(107798528, $rss_bytes);
+
+        // Module globals (v3): empty map when caller passed default
+        $module_globals_count = unpack('Vval', fread($fp, 4))['val'];
+        $this->assertSame(0, $module_globals_count);
 
         // Memory map count
         $memory_map_count = unpack('Vval', fread($fp, 4))['val'];

@@ -478,7 +478,15 @@ class PhpGlobalsFinder
                 $target_php_settings,
                 'basic_globals'
             );
-        } catch (\RuntimeException) {
+        } catch (\Throwable) {
+            // findGlobals can raise MemoryReaderException,
+            // ProcessSymbolReaderException, TlsFinderException, and
+            // ElfParserException in addition to RuntimeException; this
+            // helper is the "soft" entry point and every caller
+            // (MemoryCommand / MemoryDumpCommand / CoreDumpReader /
+            // SidecarDumpHandler) treats the result as an optional
+            // address. Losing the shutdown-function walk on a stripped
+            // binary is strictly better than aborting the whole dump.
             return null;
         }
     }
