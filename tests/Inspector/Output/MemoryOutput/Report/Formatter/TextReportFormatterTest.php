@@ -47,6 +47,103 @@ class TextReportFormatterTest extends BaseTestCase
         $this->assertStringContainsString('Heap: 42.00 MB (99.5% analyzed)', $output);
     }
 
+    /**
+     * Golden-ish: with both a `memory_limit` and a
+     * `capture_shutdown` call-stack Finding present (as
+     * `CallStackPass` emits when the `--memory-limit-error-*`
+     * traceback succeeded on a sidecar dump), the Overview should
+     * render the OOM-time stack first under
+     * "Call Stack at memory_limit:" and the shutdown-handler chain
+     * second under "Captured inside shutdown handler:".
+     */
+    public function testFormatShowsMemoryLimitAndCaptureShutdownStacksInOrder(): void
+    {
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'call_stack',
+                severity: FindingSeverity::Info,
+                confidence: FindingConfidence::High,
+                summary: 'Call stack: App\\Bottom::oom:99 -> <main>:3',
+                facts: [
+                    'frames' => ['App\\Bottom::oom:99', '<main>:3'],
+                    'depth' => 2,
+                    'stack_kind' => 'memory_limit',
+                    'header' => 'Call Stack at memory_limit:',
+                ],
+                hypothesis: "#0 App\\Bottom::oom:99\n#1 <main>:3",
+            ),
+            new Finding(
+                kind: 'call_stack',
+                severity: FindingSeverity::Info,
+                confidence: FindingConfidence::High,
+                summary: 'Call stack: Reli\\Sidecar\\Client\\MemoryLimitHandler::{closure}:114',
+                facts: [
+                    'frames' => ['Reli\\Sidecar\\Client\\MemoryLimitHandler::{closure}:114'],
+                    'depth' => 1,
+                    'stack_kind' => 'capture_shutdown',
+                    'header' => 'Captured inside shutdown handler:',
+                ],
+                hypothesis: '#0 Reli\\Sidecar\\Client\\MemoryLimitHandler::{closure}:114',
+            ),
+        ]);
+        $formatter = new TextReportFormatter();
+        $output = $formatter->format($result);
+
+        $this->assertStringContainsString('=== Overview ===', $output);
+        $this->assertStringContainsString('Call Stack at memory_limit:', $output);
+        $this->assertStringContainsString('    #0 App\\Bottom::oom:99', $output);
+        $this->assertStringContainsString('    #1 <main>:3', $output);
+        $this->assertStringContainsString('Captured inside shutdown handler:', $output);
+        $this->assertStringContainsString(
+            '    #0 Reli\\Sidecar\\Client\\MemoryLimitHandler::{closure}:114',
+            $output,
+        );
+
+        // Order: memory_limit block must precede the shutdown-handler
+        // sub-block so the formatter renders the recovered pre-fatal
+        // stack first.
+        $oom_pos = strpos($output, 'Call Stack at memory_limit:');
+        $capture_pos = strpos($output, 'Captured inside shutdown handler:');
+        $this->assertNotFalse($oom_pos);
+        $this->assertNotFalse($capture_pos);
+        $this->assertLessThan(
+            $capture_pos,
+            $oom_pos,
+            'memory_limit stack must render before the shutdown-handler sub-block',
+        );
+    }
+
+    /**
+     * Plain capture (no memory_limit traceback) still renders the
+     * historical "Call Stack at capture:" header — i.e. the default
+     * code path when no `facts['header']` is set or when the pass
+     * emits a `capture` stack_kind.
+     */
+    public function testFormatShowsCallStackAtCaptureForPlainCapture(): void
+    {
+        $result = new ReportResult([], [
+            new Finding(
+                kind: 'call_stack',
+                severity: FindingSeverity::Info,
+                confidence: FindingConfidence::High,
+                summary: 'Call stack: main:1',
+                facts: [
+                    'frames' => ['main:1'],
+                    'depth' => 1,
+                    'stack_kind' => 'capture',
+                    'header' => 'Call Stack at capture:',
+                ],
+                hypothesis: '#0 main:1',
+            ),
+        ]);
+        $formatter = new TextReportFormatter();
+        $output = $formatter->format($result);
+
+        $this->assertStringContainsString('Call Stack at capture:', $output);
+        $this->assertStringNotContainsString('Call Stack at memory_limit:', $output);
+        $this->assertStringNotContainsString('Captured inside shutdown handler:', $output);
+    }
+
     public function testFormatShowsActionableFindings(): void
     {
         $result = new ReportResult([], [

@@ -32,9 +32,34 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\NodeLabeler;
  * the at-capture stack is just the shutdown handler that woke reli,
  * so we surface the recovered stack as the primary one and tuck the
  * at-capture one underneath.
+ *
+ * The root link names `call_frames` and `memory_limit_call_frames`
+ * are the API contract between the collector and this pass. They
+ * are emitted on the collector side by
+ * `Collector\Job\EmitCallFramesJob` (`call_frames`) and
+ * `MemoryLocationsCollector::collectRealCallStackOnMemoryLimitViolation`
+ * (`memory_limit_call_frames`). Renaming either side requires
+ * renaming both.
  */
 final class CallStackPass implements PassInterface
 {
+    /**
+     * `facts['stack_kind']` discriminator carried on every
+     * `call_stack` Finding this pass emits. Lets JSON / TUI
+     * consumers branch on the semantic kind without grepping the
+     * presentation `header` text.
+     */
+    public const STACK_KIND_MEMORY_LIMIT = 'memory_limit';
+    public const STACK_KIND_CAPTURE = 'capture';
+    public const STACK_KIND_CAPTURE_SHUTDOWN = 'capture_shutdown';
+
+    private const ROOT_NAME_MEMORY_LIMIT = 'memory_limit_call_frames';
+    private const ROOT_NAME_CAPTURE = 'call_frames';
+
+    private const HEADER_MEMORY_LIMIT = 'Call Stack at memory_limit:';
+    private const HEADER_CAPTURE_SHUTDOWN = 'Captured inside shutdown handler:';
+    private const HEADER_CAPTURE = 'Call Stack at capture:';
+
     /**
      * @param array<int, string>|null $frame_labels Pre-loaded frame labels (binary path)
      * @param array<int, string>|null $canonical_names Pre-loaded class/
@@ -62,9 +87,9 @@ final class CallStackPass implements PassInterface
                 continue;
             }
             $name = $this->substrate->getTreeLinkName($root_id);
-            if ($name === 'memory_limit_call_frames') {
+            if ($name === self::ROOT_NAME_MEMORY_LIMIT) {
                 $oom_root = $root_id;
-            } elseif ($name === 'call_frames') {
+            } elseif ($name === self::ROOT_NAME_CAPTURE) {
                 $capture_root = $root_id;
             }
         }
@@ -81,7 +106,8 @@ final class CallStackPass implements PassInterface
             $finding = $this->buildFinding(
                 $oom_root,
                 $labeler,
-                'Call Stack at memory_limit:',
+                self::HEADER_MEMORY_LIMIT,
+                self::STACK_KIND_MEMORY_LIMIT,
             );
             if ($finding !== null) {
                 $findings[] = $finding;
@@ -91,14 +117,19 @@ final class CallStackPass implements PassInterface
             // When the OOM-time stack is available, the at-capture
             // stack is just the shutdown handler that signalled the
             // sidecar. Keep it for diagnostic completeness but mark
-            // the header so the formatter can render it as a sub-block.
-            $header = $oom_root !== null
-                ? 'Captured inside shutdown handler:'
-                : 'Call Stack at capture:';
+            // it so the formatter can render it as a sub-block.
+            if ($oom_root !== null) {
+                $header = self::HEADER_CAPTURE_SHUTDOWN;
+                $stack_kind = self::STACK_KIND_CAPTURE_SHUTDOWN;
+            } else {
+                $header = self::HEADER_CAPTURE;
+                $stack_kind = self::STACK_KIND_CAPTURE;
+            }
             $finding = $this->buildFinding(
                 $capture_root,
                 $labeler,
                 $header,
+                $stack_kind,
             );
             if ($finding !== null) {
                 $findings[] = $finding;
@@ -112,6 +143,7 @@ final class CallStackPass implements PassInterface
         int $root_id,
         NodeLabeler $labeler,
         string $header,
+        string $stack_kind,
     ): ?Finding {
         $framesByNo = [];
         foreach ($this->substrate->getChildren($root_id) as $child_id) {
@@ -150,6 +182,7 @@ final class CallStackPass implements PassInterface
             facts: [
                 'frames' => $frames,
                 'depth' => count($frames),
+                'stack_kind' => $stack_kind,
                 'header' => $header,
             ],
             hypothesis: implode("\n", $lines),

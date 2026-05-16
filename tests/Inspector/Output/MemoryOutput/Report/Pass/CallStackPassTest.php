@@ -69,6 +69,10 @@ class CallStackPassTest extends BaseTestCase
             $finding->facts['frames'],
         );
         $this->assertSame('Call Stack at capture:', $finding->facts['header']);
+        $this->assertSame(
+            CallStackPass::STACK_KIND_CAPTURE,
+            $finding->facts['stack_kind'],
+        );
         $this->assertStringContainsString('main:1', $finding->summary);
     }
 
@@ -112,10 +116,18 @@ class CallStackPassTest extends BaseTestCase
         $this->assertCount(2, $findings, 'both call-stack findings should be emitted');
         $this->assertSame('Call Stack at memory_limit:', $findings[0]->facts['header']);
         $this->assertSame(
+            CallStackPass::STACK_KIND_MEMORY_LIMIT,
+            $findings[0]->facts['stack_kind'],
+        );
+        $this->assertSame(
             ['App\\Bottom::oom:99', 'App\\Middle::call:17', '<main>:3'],
             $findings[0]->facts['frames'],
         );
         $this->assertSame('Captured inside shutdown handler:', $findings[1]->facts['header']);
+        $this->assertSame(
+            CallStackPass::STACK_KIND_CAPTURE_SHUTDOWN,
+            $findings[1]->facts['stack_kind'],
+        );
         $this->assertSame(
             ['Reli\\Sidecar\\Client\\MemoryLimitHandler::{closure}:114'],
             $findings[1]->facts['frames'],
@@ -145,6 +157,10 @@ class CallStackPassTest extends BaseTestCase
 
         $this->assertCount(1, $findings);
         $this->assertSame('Call Stack at memory_limit:', $findings[0]->facts['header']);
+        $this->assertSame(
+            CallStackPass::STACK_KIND_MEMORY_LIMIT,
+            $findings[0]->facts['stack_kind'],
+        );
     }
 
     /**
