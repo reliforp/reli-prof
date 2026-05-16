@@ -375,20 +375,23 @@ final class EmitResourceJob implements CollectorJob
      * surface as a `MemoryReaderException` from `deref` and are caught
      * by the outer `tryCollectStreamData` try/catch, which lets the
      * resource walk continue without the stream child. We deliberately
-     * do NOT pre-screen by chunk membership: persistent stream buffers
-     * and legitimate-but-not-zend-mm allocations on some PHP versions
-     * can still have a sane `len`, and rejecting them silently masked
-     * a real `php://memory` link in
-     * `MemoryLocationsCollectorTest::testStreamResourceTracking` on the
-     * PHP 8.0 target.
+     * do NOT pre-screen by chunk membership: huge-allocated or
+     * persistent stream buffers can legitimately sit outside
+     * `chunk_memory_locations`, and a chunk-membership precheck would
+     * drop them along with the genuinely wild ones. The outer try/catch
+     * is the safer floor here.
      *
      * Note that this guard is a heuristic, not a hard guarantee. A
      * raw-byte buffer or recycled slot that happens to land on a
      * `len` value below {@see self::MAX_PLAUSIBLE_STREAM_STRING_LEN}
      * will still slip through and produce a `region='outside'` row
-     * downstream. The defensive read-side filter introduced in #795
-     * ({@see \Reli\Inspector\Output\MemoryOutput\RegionFilter}) is
-     * still relied on as a safety net for that case.
+     * downstream — including, in practice, the PHP 7.0..8.0 case where
+     * reli's `php_stream_memory_data` declaration mismatches the
+     * upstream raw-buffer layout (see the v80 skip in
+     * `MemoryLocationsCollectorTest::testStreamResourceTracking` for the
+     * full trail). The read-side filter introduced in #795
+     * ({@see \Reli\Inspector\Output\MemoryOutput\RegionFilter}) is the
+     * safety net for that case.
      *
      * The cached path mirrors the previous inline block: if the
      * address has already been visited, just reattach the existing
