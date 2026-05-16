@@ -48,6 +48,21 @@ use Reli\Lib\Process\Pointer\Pointer;
  */
 final class EmitResourceJob implements CollectorJob
 {
+    /**
+     * Upper bound on `zend_string.len` for strings reached via stream
+     * abstract data (php_stream_memory_data->data,
+     * php_stdio_data->temp_name). Anything past this is treated as a
+     * dangling pointer landing on garbage rather than a real string —
+     * see {@see self::tryEmitStreamString()}.
+     *
+     * The bound is generous on purpose: real allocations sit well under
+     * 1 GiB even for large in-memory buffers, while every pathological
+     * shape reli has actually seen (multi-exabyte `len` from a stale
+     * php_stream_memory_data->data) lands many orders of magnitude
+     * above it.
+     */
+    private const MAX_PLAUSIBLE_STREAM_STRING_LEN = 1 << 30;
+
     /** @param Pointer<ZendResource> $pointer */
     public function __construct(
         private Pointer $pointer,
@@ -233,40 +248,12 @@ final class EmitResourceJob implements CollectorJob
         $resource_context->addLocation($abstract_location);
         $extra_addresses[] = $abstract_address;
 
-        $data_address = $mem_data->data;
-        if ($data_address === 0) {
-            return;
-        }
-
-        $string_pointer = new Pointer(
-            ZendString::class,
-            $data_address,
-            $ctx->zend_type_reader->sizeOf('zend_string'),
+        $this->tryEmitStreamString(
+            $mem_data->data,
+            'stream_memory_data',
+            $ctx,
+            $resource_context,
         );
-
-        // Collect the string inline (same as EmitStringJob but adds to resource context)
-        if (!$ctx->memory_locations->has($data_address)) {
-            $str = $ctx->dereferencer->deref($string_pointer);
-            $memory_location = ZendStringMemoryLocation::fromZendString($str, $ctx->dereferencer);
-            $ctx->memory_locations->add($memory_location);
-            $slot_tail = ZendStringSlotTailMemoryLocation::tryFromStringInChunks(
-                $memory_location,
-                $ctx->chunk_memory_locations,
-            );
-            if ($slot_tail !== null) {
-                $ctx->memory_locations->add($slot_tail);
-            }
-            $string_context = $ctx->context_pools->string_context_pool->getContextForLocation(
-                $memory_location,
-                $slot_tail,
-            );
-            $resource_context->add('stream_memory_data', $string_context);
-        } else {
-            $cached = $ctx->context_pools->string_context_pool->getContextByAddress($data_address);
-            if ($cached !== null) {
-                $resource_context->add('stream_memory_data', $cached);
-            }
-        }
     }
 
     /** @param list<int> $extra_addresses */
@@ -364,39 +351,99 @@ final class EmitResourceJob implements CollectorJob
 
         $resource_context->stream_fd = $stdio_data->fd;
 
-        $temp_name_address = $stdio_data->temp_name;
-        if ($temp_name_address === 0) {
+        $this->tryEmitStreamString(
+            $stdio_data->temp_name,
+            'stream_temp_name',
+            $ctx,
+            $resource_context,
+        );
+    }
+
+    /**
+     * Treat `$address` as a `zend_string *` reachable through a stream's
+     * abstract data and emit a {@see ZendStringMemoryLocation} for it
+     * under `$context_key`. Bails out silently when:
+     *   - the pointer is null;
+     *   - the dereferenced `len` exceeds
+     *     {@see self::MAX_PLAUSIBLE_STREAM_STRING_LEN}
+     *     (the sentinel for "the slot was recycled and now holds
+     *     garbage"; see commit history for the stale
+     *     `php_stream_memory_data->data` failure mode that this guard
+     *     exists for).
+     *
+     * Truly wild pointers (e.g. addresses outside any mapped page)
+     * surface as a `MemoryReaderException` from `deref` and are caught
+     * by the outer `tryCollectStreamData` try/catch, which lets the
+     * resource walk continue without the stream child. We deliberately
+     * do NOT pre-screen by chunk membership: huge-allocated or
+     * persistent stream buffers can legitimately sit outside
+     * `chunk_memory_locations`, and a chunk-membership precheck would
+     * drop them along with the genuinely wild ones. The outer try/catch
+     * is the safer floor here.
+     *
+     * Note that this guard is a heuristic, not a hard guarantee. A
+     * raw-byte buffer or recycled slot that happens to land on a
+     * `len` value below {@see self::MAX_PLAUSIBLE_STREAM_STRING_LEN}
+     * will still slip through and produce a `region='outside'` row
+     * downstream — including, in practice, the PHP 7.0..8.0 case where
+     * reli's `php_stream_memory_data` declaration mismatches the
+     * upstream raw-buffer layout (see the v80 skip in
+     * `MemoryLocationsCollectorTest::testStreamResourceTracking` for the
+     * full trail). The read-side filter introduced in #795
+     * ({@see \Reli\Inspector\Output\MemoryOutput\RegionFilter}) is the
+     * safety net for that case.
+     *
+     * The cached path mirrors the previous inline block: if the
+     * address has already been visited, just reattach the existing
+     * string context to the resource.
+     *
+     * @param non-empty-string $context_key
+     */
+    private function tryEmitStreamString(
+        int $address,
+        string $context_key,
+        CollectorContext $ctx,
+        ResourceContext $resource_context,
+    ): void {
+        if ($address === 0) {
             return;
         }
 
-        $string_pointer = new Pointer(
-            ZendString::class,
-            $temp_name_address,
-            $ctx->zend_type_reader->sizeOf('zend_string'),
-        );
-
-        if (!$ctx->memory_locations->has($temp_name_address)) {
-            $str = $ctx->dereferencer->deref($string_pointer);
-            $memory_location = ZendStringMemoryLocation::fromZendString($str, $ctx->dereferencer);
-            $ctx->memory_locations->add($memory_location);
-            $slot_tail = ZendStringSlotTailMemoryLocation::tryFromStringInChunks(
-                $memory_location,
-                $ctx->chunk_memory_locations,
-            );
-            if ($slot_tail !== null) {
-                $ctx->memory_locations->add($slot_tail);
-            }
-            $string_context = $ctx->context_pools->string_context_pool->getContextForLocation(
-                $memory_location,
-                $slot_tail,
-            );
-            $resource_context->add('stream_temp_name', $string_context);
-        } else {
-            $cached = $ctx->context_pools->string_context_pool->getContextByAddress($temp_name_address);
+        if ($ctx->memory_locations->has($address)) {
+            $cached = $ctx->context_pools->string_context_pool->getContextByAddress($address);
             if ($cached !== null) {
-                $resource_context->add('stream_temp_name', $cached);
+                $resource_context->add($context_key, $cached);
             }
+            return;
         }
+
+        $str = $ctx->dereferencer->deref(new Pointer(
+            ZendString::class,
+            $address,
+            $ctx->zend_type_reader->sizeOf('zend_string'),
+        ));
+
+        // Slot recycled into garbage: `len` reads as a multi-exabyte
+        // value. Skip rather than emit a bogus row that downstream
+        // size aggregation has to filter out.
+        if ($str->len < 0 || $str->len > self::MAX_PLAUSIBLE_STREAM_STRING_LEN) {
+            return;
+        }
+
+        $memory_location = ZendStringMemoryLocation::fromZendString($str, $ctx->dereferencer);
+        $ctx->memory_locations->add($memory_location);
+        $slot_tail = ZendStringSlotTailMemoryLocation::tryFromStringInChunks(
+            $memory_location,
+            $ctx->chunk_memory_locations,
+        );
+        if ($slot_tail !== null) {
+            $ctx->memory_locations->add($slot_tail);
+        }
+        $string_context = $ctx->context_pools->string_context_pool->getContextForLocation(
+            $memory_location,
+            $slot_tail,
+        );
+        $resource_context->add($context_key, $string_context);
     }
 
     /** @param list<int> $extra_addresses */
