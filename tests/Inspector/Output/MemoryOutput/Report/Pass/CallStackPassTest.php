@@ -34,21 +34,25 @@ class CallStackPassTest extends BaseTestCase
     }
 
     /**
-     * Three call frames under a CallFramesContext: the substrate path
-     * should resolve each "frame_no" link to its function/lineno label
-     * via NodeLabeler and emit one call_stack finding with all three
-     * frames in order.
+     * Three call frames under a `call_frames` root: the substrate
+     * path should resolve each "frame_no" link to its function/lineno
+     * label via NodeLabeler and emit one call_stack finding with all
+     * three frames in order, carrying the default "Call Stack at
+     * capture:" header for the formatter.
      */
     public function testReportsCallStackFromSubstrate(): void
     {
         $db = $this->createDirectDb();
-        $this->seedCallStack(
+        $this->seedCallFramesRoot(
             $db,
-            [
+            root_node_id: 1,
+            link_name: 'call_frames',
+            frames: [
                 ['fn' => 'main', 'line' => '1'],
                 ['fn' => 'App\\Foo::bar', 'line' => '42'],
                 ['fn' => 'App\\Foo::baz', 'line' => '99'],
             ],
+            first_frame_id: 100,
         );
 
         $substrate = GraphSubstrate::loadFromDb($db, 1);
@@ -64,17 +68,107 @@ class CallStackPassTest extends BaseTestCase
             ['main:1', 'App\\Foo::bar:42', 'App\\Foo::baz:99'],
             $finding->facts['frames'],
         );
+        $this->assertSame('Call Stack at capture:', $finding->facts['header']);
+        $this->assertSame(
+            CallStackPass::STACK_KIND_CAPTURE,
+            $finding->facts['stack_kind'],
+        );
         $this->assertStringContainsString('main:1', $finding->summary);
     }
 
     /**
-     * No CallFramesContext at all → empty result. Mirrors the early
-     * exit in analyzeWithSubstrate.
+     * When the memory_limit traceback succeeded, the graph has both
+     * a `memory_limit_call_frames` root (the recovered pre-fatal
+     * stack) and a `call_frames` root (the shutdown handler that
+     * woke the sidecar). The pass should emit both findings — OOM
+     * first as the primary "Call Stack at memory_limit:" block,
+     * then the at-capture one labelled as "Captured inside shutdown
+     * handler:" so the formatter renders it as a sub-block.
+     */
+    public function testSurfacesMemoryLimitStackAheadOfShutdownHandlerStack(): void
+    {
+        $db = $this->createDirectDb();
+        $this->seedCallFramesRoot(
+            $db,
+            root_node_id: 1,
+            link_name: 'memory_limit_call_frames',
+            frames: [
+                ['fn' => 'App\\Bottom::oom', 'line' => '99'],
+                ['fn' => 'App\\Middle::call', 'line' => '17'],
+                ['fn' => '<main>', 'line' => '3'],
+            ],
+            first_frame_id: 100,
+        );
+        $this->seedCallFramesRoot(
+            $db,
+            root_node_id: 2,
+            link_name: 'call_frames',
+            frames: [
+                ['fn' => 'Reli\\Sidecar\\Client\\MemoryLimitHandler::{closure}', 'line' => '114'],
+            ],
+            first_frame_id: 200,
+        );
+
+        $substrate = GraphSubstrate::loadFromDb($db, 1);
+        $pass = new CallStackPass($db, 1, $substrate);
+        $findings = $pass->analyze();
+
+        $this->assertCount(2, $findings, 'both call-stack findings should be emitted');
+        $this->assertSame('Call Stack at memory_limit:', $findings[0]->facts['header']);
+        $this->assertSame(
+            CallStackPass::STACK_KIND_MEMORY_LIMIT,
+            $findings[0]->facts['stack_kind'],
+        );
+        $this->assertSame(
+            ['App\\Bottom::oom:99', 'App\\Middle::call:17', '<main>:3'],
+            $findings[0]->facts['frames'],
+        );
+        $this->assertSame('Captured inside shutdown handler:', $findings[1]->facts['header']);
+        $this->assertSame(
+            CallStackPass::STACK_KIND_CAPTURE_SHUTDOWN,
+            $findings[1]->facts['stack_kind'],
+        );
+        $this->assertSame(
+            ['Reli\\Sidecar\\Client\\MemoryLimitHandler::{closure}:114'],
+            $findings[1]->facts['frames'],
+        );
+    }
+
+    /**
+     * When only `memory_limit_call_frames` is present (unusual but
+     * possible if the at-capture stack was never emitted), the pass
+     * should still surface it as the primary "Call Stack at
+     * memory_limit:" finding rather than falling back to nothing.
+     */
+    public function testSurfacesMemoryLimitStackWhenNoCaptureStack(): void
+    {
+        $db = $this->createDirectDb();
+        $this->seedCallFramesRoot(
+            $db,
+            root_node_id: 1,
+            link_name: 'memory_limit_call_frames',
+            frames: [['fn' => '<main>', 'line' => '1']],
+            first_frame_id: 100,
+        );
+
+        $substrate = GraphSubstrate::loadFromDb($db, 1);
+        $pass = new CallStackPass($db, 1, $substrate);
+        $findings = $pass->analyze();
+
+        $this->assertCount(1, $findings);
+        $this->assertSame('Call Stack at memory_limit:', $findings[0]->facts['header']);
+        $this->assertSame(
+            CallStackPass::STACK_KIND_MEMORY_LIMIT,
+            $findings[0]->facts['stack_kind'],
+        );
+    }
+
+    /**
+     * No CallFramesContext at all → empty result.
      */
     public function testReturnsEmptyWhenNoCallFramesContext(): void
     {
         $db = $this->createDirectDb();
-        // Single object node, no call frames anywhere.
         $db->exec("INSERT INTO context_nodes (run_id, node_id, type) VALUES
             (1, 1, 'RootContext'),
             (1, 2, 'ObjectContext')
@@ -96,34 +190,36 @@ class CallStackPassTest extends BaseTestCase
     }
 
     /**
-     * Insert a CallFramesContext with one CallFrameContext child per
-     * frame. Each child carries `function_name` (and optionally
-     * `lineno`) attributes — the same shape NodeLabeler / the SQL
-     * pass query expect.
+     * Insert a CallFramesContext root with one CallFrameContext
+     * child per frame. Each child carries `function_name` (and
+     * optionally `lineno`) attributes — the same shape NodeLabeler
+     * expects.
      *
      * @param list<array{fn:string, line?:string}> $frames
      */
-    private function seedCallStack(\PDO $db, array $frames): void
-    {
+    private function seedCallFramesRoot(
+        \PDO $db,
+        int $root_node_id,
+        string $link_name,
+        array $frames,
+        int $first_frame_id,
+    ): void {
         $db->exec("INSERT INTO context_nodes (run_id, node_id, type) VALUES
-            (1, 1, 'RootContext'),
-            (1, 2, 'CallFramesContext')
+            (1, {$root_node_id}, 'CallFramesContext')
         ");
         // CallFramesContext needs a location row so the substrate's
-        // node_sizes index includes it (the substrate path iterates
-        // node_sizes when scanning for the CallFramesContext node).
+        // node_sizes index includes it.
         $db->exec("INSERT INTO context_node_locations
             (run_id, node_id, address, size, location_type, class_name) VALUES
-            (1, 2, 1000, 0, 'ZendVmStackMemoryLocation', NULL)
+            (1, {$root_node_id}, {$root_node_id}000, 0, 'ZendVmStackMemoryLocation', NULL)
         ");
         $db->exec("INSERT INTO context_edges
             (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
-            (1, NULL, 1, 'call_frames_root', 1, 'strong'),
-            (1, 1, 2, 'call_frames', 1, 'strong')
+            (1, NULL, {$root_node_id}, '{$link_name}', 1, 'strong')
         ");
 
-        $next_id = 100;
-        $next_addr = 0x10000;
+        $next_id = $first_frame_id;
+        $next_addr = $first_frame_id * 0x100;
         foreach ($frames as $i => $frame) {
             $node_id = $next_id++;
             $addr = $next_addr++;
@@ -136,7 +232,7 @@ class CallStackPassTest extends BaseTestCase
             ");
             $db->exec("INSERT INTO context_edges
                 (run_id, parent_node_id, child_node_id, link_name, is_tree, strength) VALUES
-                (1, 2, {$node_id}, '{$i}', 1, 'strong')
+                (1, {$root_node_id}, {$node_id}, '{$i}', 1, 'strong')
             ");
 
             $fn = $frame['fn'];
