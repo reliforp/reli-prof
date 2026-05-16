@@ -20,7 +20,18 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\NodeLabeler;
 
 /**
- * Shows the call stack at the time of snapshot capture.
+ * Surfaces the call stack(s) in Overview.
+ *
+ * Most snapshots have a single `call_frames` root — the program's
+ * stack at the moment reli read EG(current_execute_data). When the
+ * snapshot was captured via the sidecar on `memory_limit` and the
+ * `--memory-limit-error-*` traceback hack succeeded, a second
+ * `memory_limit_call_frames` root is also present, carrying the real
+ * pre-fatal stack (recovered by linearly scanning the VM stack for
+ * the op_array referenced by the user's file:line). In that case
+ * the at-capture stack is just the shutdown handler that woke reli,
+ * so we surface the recovered stack as the primary one and tuck the
+ * at-capture one underneath.
  */
 final class CallStackPass implements PassInterface
 {
@@ -44,15 +55,18 @@ final class CallStackPass implements PassInterface
     #[\Override]
     public function analyze(): array
     {
-        $callFramesNodeId = null;
-        foreach ($this->substrate->iterateNodeSizes() as $node_id => $_) {
-            if ($this->substrate->getNodeType($node_id) === 'CallFramesContext') {
-                $callFramesNodeId = $node_id;
-                break;
+        $oom_root = null;
+        $capture_root = null;
+        foreach ($this->substrate->getRoots() as $root_id) {
+            if ($this->substrate->getNodeType($root_id) !== 'CallFramesContext') {
+                continue;
             }
-        }
-        if ($callFramesNodeId === null) {
-            return [];
+            $name = $this->substrate->getTreeLinkName($root_id);
+            if ($name === 'memory_limit_call_frames') {
+                $oom_root = $root_id;
+            } elseif ($name === 'call_frames') {
+                $capture_root = $root_id;
+            }
         }
 
         $labeler = new NodeLabeler(
@@ -61,8 +75,46 @@ final class CallStackPass implements PassInterface
             $this->frame_labels,
             $this->canonical_names,
         );
+
+        $findings = [];
+        if ($oom_root !== null) {
+            $finding = $this->buildFinding(
+                $oom_root,
+                $labeler,
+                'Call Stack at memory_limit:',
+            );
+            if ($finding !== null) {
+                $findings[] = $finding;
+            }
+        }
+        if ($capture_root !== null) {
+            // When the OOM-time stack is available, the at-capture
+            // stack is just the shutdown handler that signalled the
+            // sidecar. Keep it for diagnostic completeness but mark
+            // the header so the formatter can render it as a sub-block.
+            $header = $oom_root !== null
+                ? 'Captured inside shutdown handler:'
+                : 'Call Stack at capture:';
+            $finding = $this->buildFinding(
+                $capture_root,
+                $labeler,
+                $header,
+            );
+            if ($finding !== null) {
+                $findings[] = $finding;
+            }
+        }
+
+        return $findings;
+    }
+
+    private function buildFinding(
+        int $root_id,
+        NodeLabeler $labeler,
+        string $header,
+    ): ?Finding {
         $framesByNo = [];
-        foreach ($this->substrate->getChildren($callFramesNodeId) as $child_id) {
+        foreach ($this->substrate->getChildren($root_id) as $child_id) {
             $link_name = $this->substrate->getTreeLinkName($child_id) ?? '?';
             // Call Stack is the one rendering site that benefits from
             // the line-number suffix ("paused at line N of fn"); every
@@ -80,35 +132,27 @@ final class CallStackPass implements PassInterface
             $framesByNo[(int)$link_name] = $label;
         }
         if ($framesByNo === []) {
-            return [];
+            return null;
         }
         ksort($framesByNo);
-        return $this->buildFindings(array_values($framesByNo));
-    }
+        $frames = array_values($framesByNo);
 
-    /**
-     * @param  list<string> $frames frame labels in call order
-     * @return list<Finding>
-     */
-    private function buildFindings(array $frames): array
-    {
         $lines = [];
         foreach ($frames as $i => $frame) {
             $lines[] = "#{$i} {$frame}";
         }
 
-        return [
-            new Finding(
-                kind: 'call_stack',
-                severity: FindingSeverity::Info,
-                confidence: FindingConfidence::High,
-                summary: 'Call stack: ' . implode(' -> ', $frames),
-                facts: [
-                    'frames' => $frames,
-                    'depth' => count($frames),
-                ],
-                hypothesis: implode("\n", $lines),
-            ),
-        ];
+        return new Finding(
+            kind: 'call_stack',
+            severity: FindingSeverity::Info,
+            confidence: FindingConfidence::High,
+            summary: 'Call stack: ' . implode(' -> ', $frames),
+            facts: [
+                'frames' => $frames,
+                'depth' => count($frames),
+                'header' => $header,
+            ],
+            hypothesis: implode("\n", $lines),
+        );
     }
 }

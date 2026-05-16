@@ -117,7 +117,9 @@ final class TextReportFormatter implements ReportFormatterInterface
             foreach ($overview as $finding) {
                 if ($finding->kind === 'call_stack' && $finding->hypothesis !== '') {
                     $lines[] = '';
-                    $lines[] = '  Call Stack at capture:';
+                    /** @var string $header */
+                    $header = $finding->facts['header'] ?? 'Call Stack at capture:';
+                    $lines[] = '  ' . $header;
                     foreach (explode("\n", $finding->hypothesis) as $frame) {
                         $lines[] = '    ' . $frame;
                     }
