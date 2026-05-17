@@ -14,9 +14,12 @@ declare(strict_types=1);
 namespace Reli\Inspector\Output\MemoryOutput\Report\Substrate;
 
 use Reli\BaseTestCase;
+use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader;
+use Reli\Inspector\Output\MemoryOutput\BinaryMemoryOutput;
 use Reli\Inspector\Output\MemoryOutput\MemoryAnalysisResult;
 use Reli\Inspector\Output\MemoryOutput\PdoDriver\SqliteDriver;
 use Reli\Inspector\Output\MemoryOutput\PdoMemoryOutput;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
@@ -25,6 +28,7 @@ use Reli\Lib\Process\MemoryLocation;
 class FfiCsrGraphSubstrateTest extends BaseTestCase
 {
     private string $db_path;
+    private string $rmem_path;
 
     protected function setUp(): void
     {
@@ -33,11 +37,13 @@ class FfiCsrGraphSubstrateTest extends BaseTestCase
             $this->markTestSkipped('FFI extension not available');
         }
         $this->db_path = tempnam(sys_get_temp_dir(), 'reli_ffi_csr_test_') . '.db';
+        $this->rmem_path = tempnam(sys_get_temp_dir(), 'reli_ffi_csr_test_') . '.rmem';
     }
 
     protected function tearDown(): void
     {
         @unlink($this->db_path);
+        @unlink($this->rmem_path);
         parent::tearDown();
     }
 
@@ -109,6 +115,65 @@ class FfiCsrGraphSubstrateTest extends BaseTestCase
                 "node {$node_id} has size 0 — scaffolding leaked into iterateNodeSizes()",
             );
         }
+    }
+
+    public function testIterateNodeSizesSkipsZeroSizeScaffoldingOnRmemPath(): void
+    {
+        // Companion to the loadFromDb test above: the bug originally
+        // surfaced on `.rmem` reports (the FFI substrate is the default
+        // for binary input), so cover that path end-to-end too — build
+        // a fixture via BinaryContextTreeSink + BinaryMemoryOutput, then
+        // load through `FfiCsrGraphSubstrate::loadFromBinary` and confirm
+        // the same zero-size-scaffolding filter applies.
+        $sink = new BinaryContextTreeSink(batch_size: 8);
+        // Synthetic-root-shape scaffolding: a parent context whose own
+        // `locations` array is empty (no context_node_locations row would
+        // exist on the .db side; the FFI binary loader allocates a CSR
+        // slot for it regardless because subsequent edges target it).
+        $sink->emitNode(
+            node_id: 1,
+            parent_node_id: null,
+            link_name: 'root',
+            type: 'RootContext',
+            locations: [],
+            attributes: [],
+        );
+        $sink->emitNode(
+            node_id: 2,
+            parent_node_id: 1,
+            link_name: 'scaffold',
+            type: 'ScaffoldContext',
+            locations: [],
+            attributes: [],
+        );
+        // Real allocation under the scaffolding — this is the only node
+        // that should appear in `iterateNodeSizes()`.
+        $sink->emitNode(
+            node_id: 3,
+            parent_node_id: 2,
+            link_name: 'leaf',
+            type: 'ObjectContext',
+            locations: [new ZendObjectMemoryLocation(0x2000, 128, 1, 7, 'App\\Leaf')],
+            attributes: [],
+        );
+        $binary_output = new BinaryMemoryOutput($this->rmem_path);
+        $binary_output->finalizeStreaming($sink, [
+            ['zend_mm_heap_usage' => '128'],
+        ]);
+
+        $reader = Reader::open($this->rmem_path);
+        $substrate = FfiCsrGraphSubstrate::loadFromBinary($reader);
+
+        $sizes = iterator_to_array($substrate->iterateNodeSizes());
+        foreach ($sizes as $node_id => $size) {
+            $this->assertGreaterThan(
+                0,
+                $size,
+                "node {$node_id} has size 0 — scaffolding leaked into iterateNodeSizes() on .rmem path",
+            );
+        }
+        // The only positive-size node is the leaf allocation.
+        $this->assertSame([3 => 128], $sizes);
     }
 
     public function testSubtreeSizesComputed(): void
