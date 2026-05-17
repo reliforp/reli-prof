@@ -81,7 +81,7 @@ class NodeLabelerTest extends BaseTestCase
             is_tree: 0,
         );
 
-        $labeler = new NodeLabeler($db, 1);
+        $labeler = new NodeLabeler(GraphSubstrate::loadFromDb($db, 1));
 
         $this->assertSame(
             'Internal\\Class',
@@ -125,7 +125,7 @@ class NodeLabelerTest extends BaseTestCase
             is_tree: 1,
         );
 
-        $labeler = new NodeLabeler($db, 1);
+        $labeler = new NodeLabeler(GraphSubstrate::loadFromDb($db, 1));
 
         $this->assertSame(
             'doSomething',
@@ -141,7 +141,7 @@ class NodeLabelerTest extends BaseTestCase
     {
         $db = $this->createDirectDb();
 
-        $labeler = new NodeLabeler($db, 1);
+        $labeler = new NodeLabeler(GraphSubstrate::loadFromDb($db, 1));
         $this->assertSame(
             'unmapped_link',
             $labeler->resolvePathLabel('unmapped_link', 9999),
@@ -163,7 +163,7 @@ class NodeLabelerTest extends BaseTestCase
         $this->insertAttribute($db, $frame_node_id, 'function_name', 'collectAll');
         $this->insertAttribute($db, $frame_node_id, 'lineno', '297');
 
-        $labeler = new NodeLabeler($db, 1);
+        $labeler = new NodeLabeler(GraphSubstrate::loadFromDb($db, 1));
 
         $this->assertSame(
             'collectAll()',
@@ -184,7 +184,7 @@ class NodeLabelerTest extends BaseTestCase
         $this->insertAttribute($db, $frame_node_id, 'function_name', 'collectAll');
         $this->insertAttribute($db, $frame_node_id, 'lineno', '297');
 
-        $labeler = new NodeLabeler($db, 1);
+        $labeler = new NodeLabeler(GraphSubstrate::loadFromDb($db, 1));
 
         $this->assertSame(
             'collectAll:297',
@@ -203,7 +203,7 @@ class NodeLabelerTest extends BaseTestCase
         $this->insertContextNode($db, $frame_node_id, 'CallFrameContext');
         $this->insertAttribute($db, $frame_node_id, 'function_name', '{closure}');
 
-        $labeler = new NodeLabeler($db, 1);
+        $labeler = new NodeLabeler(GraphSubstrate::loadFromDb($db, 1));
 
         $this->assertSame(
             '{closure}()',
@@ -215,21 +215,21 @@ class NodeLabelerTest extends BaseTestCase
         );
     }
 
-    public function testBinaryPathFrameLabelIsSplitCorrectly(): void
+    public function testFrameLabelSplittingHandlesStaticMethodAndMissingLineno(): void
     {
-        // The binary report path passes pre-baked
-        // "function_name:lineno" strings via $preloaded_frame_labels.
-        // The labeler must split them back into the two display forms
-        // even when the function name itself contains "::" (a static
-        // method's `Class::method` shape).
-        $preloaded_frame_labels = [
+        // The labeler stores `"function_name[:lineno]"` strings on the
+        // substrate and splits them at render time. Cover the corner
+        // cases that the splitter handles: numeric tail vs no numeric
+        // tail, `Class::method` shape with and without lineno suffix.
+        $substrate = new GraphSubstrate();
+        $substrate->frame_labels = [
             10 => 'plain_function:42',
             11 => 'App\\Service\\Worker::run:123',
             12 => 'no_lineno_function',
             13 => 'App\\Util\\X::lookup', // no numeric suffix — keep whole
         ];
 
-        $labeler = new NodeLabeler(null, 0, $preloaded_frame_labels);
+        $labeler = new NodeLabeler($substrate);
 
         // Default path form
         $this->assertSame('plain_function()', $labeler->resolvePathLabel('?', 10));

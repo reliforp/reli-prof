@@ -15,7 +15,6 @@ namespace Reli\Rmem\Explore;
 
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Format;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader as BinaryReader;
-use Reli\Inspector\Output\MemoryOutput\Report\BinaryReportDataProvider;
 use Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate;
 use Reli\Lib\String\PathMap;
 
@@ -105,8 +104,11 @@ final class RmemModel
         BinaryReader $reader,
         ?PathMap $pathMap = null,
     ): self {
-        $frameLabels = BinaryReportDataProvider::loadFrameLabels($reader);
-        return new self($substrate, $frameLabels, $reader, $pathMap ?? PathMap::empty());
+        // Frame labels used to come from a dedicated
+        // `BinaryReportDataProvider::loadFrameLabels()` walk over the
+        // attributes section; that helper moved onto `GraphSubstrate`
+        // itself so report + explore share a single source.
+        return new self($substrate, $substrate->frame_labels, $reader, $pathMap ?? PathMap::empty());
     }
 
     /**

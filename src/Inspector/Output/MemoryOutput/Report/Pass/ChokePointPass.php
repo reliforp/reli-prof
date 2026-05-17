@@ -28,23 +28,11 @@ final class ChokePointPass implements PassInterface
      *     primary location_type is `ObjectsStoreMemoryLocation` — used
      *     to deprioritise (not exclude) trivially-large chokepoints.
      *     Produced by {@see GraphSubstrate::getNodesByLocationType()}.
-     * @param array<int, string>|null $frame_labels Pre-loaded frame labels
-     *     for {@see NodeLabeler}. Null on the `.db` path; the labeler then
-     *     resolves them via the injected `$db` / `$run_id` per its own
-     *     contract (separate from this pass's bucket-aggregation
-     *     migration).
-     * @param array<int, string>|null $canonical_names Pre-loaded class /
-     *     method / function canonical names for {@see NodeLabeler}; same
-     *     binary-vs-db contract as `$frame_labels`.
      */
     public function __construct(
         private GraphSubstrate $substrate,
-        private \PDO $db,
-        private int $run_id,
         private int $heap_usage,
         private array $objects_store_nodes,
-        private ?array $frame_labels = null,
-        private ?array $canonical_names = null,
     ) {
     }
 
@@ -112,17 +100,10 @@ final class ChokePointPass implements PassInterface
         }
         $chokepoints = $filtered;
 
-        // The parent walk + node type / class / location_type lookups
-        // all come from the substrate's in-memory indexes; the only
-        // remaining `\PDO` use is the {@see NodeLabeler}'s frame-label /
-        // canonical-name fallback on the `.db` path (out of scope for
-        // the Stage B bucket-aggregation migration).
-        $labeler = new NodeLabeler(
-            $this->db,
-            $this->run_id,
-            $this->frame_labels,
-            $this->canonical_names,
-        );
+        // Every per-node lookup the pass needs — class, location_type,
+        // frame label, canonical name — now reads from the substrate's
+        // in-memory indexes. No SQL fallback left.
+        $labeler = new NodeLabeler($this->substrate);
 
         $findings = [];
         foreach (array_slice($chokepoints, 0, 10) as [$node, $shallow, $subtree, $ratio]) {

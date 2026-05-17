@@ -52,7 +52,7 @@ class TopArraysPassTest extends BaseTestCase
         $this->seedArray($db, header_size: 12000, element_count: 5);
 
         $substrate = GraphSubstrate::loadFromDb($db, 1);
-        $pass = new TopArraysPass($db, 1, $substrate);
+        $pass = new TopArraysPass($substrate);
         $findings = $pass->analyze();
 
         $this->assertCount(1, $findings);
@@ -77,7 +77,7 @@ class TopArraysPassTest extends BaseTestCase
         $this->seedArray($db, header_size: 8000, element_count: 3);
 
         $substrate = GraphSubstrate::loadFromDb($db, 1);
-        $pass = new TopArraysPass($db, 1, $substrate);
+        $pass = new TopArraysPass($substrate);
 
         $this->assertSame([], $pass->analyze());
     }
@@ -91,7 +91,7 @@ class TopArraysPassTest extends BaseTestCase
         $this->seedArray($db, header_size: 2 * 1024 * 1024, element_count: 100);
 
         $substrate = GraphSubstrate::loadFromDb($db, 1);
-        $pass = new TopArraysPass($db, 1, $substrate);
+        $pass = new TopArraysPass($substrate);
         $findings = $pass->analyze();
 
         $this->assertCount(1, $findings);

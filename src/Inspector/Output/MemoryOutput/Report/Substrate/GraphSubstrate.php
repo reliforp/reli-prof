@@ -129,6 +129,35 @@ class GraphSubstrate
      */
     public array $node_types = [];
 
+    /**
+     * Frame labels for `CallFrameContext` nodes, stored in
+     * `"function_name:lineno"` form (or `"function_name"` when no
+     * lineno is recorded). Used by {@see NodeLabeler} to render the
+     * Call Stack section's per-frame line and the path-form variant
+     * `"function_name()"` for `bottleneck_path` / `Spine` / Top Arrays
+     * paths. Populated for both `.db` and `.rmem` paths during
+     * substrate load so the labeler doesn't need its own SQL
+     * fallback.
+     *
+     * @var array<int, string>
+     */
+    public array $frame_labels = [];
+
+    /**
+     * Canonical class / method / function names for definition
+     * contexts. The collector emits a `name` child string node for
+     * each `ClassDefinitionContext` / `UserFunctionDefinitionContext` /
+     * `InternalFunctionDefinitionContext`; this map carries the
+     * case-preserved canonical identifier the source declared, so
+     * reports don't display the case-folded HashTable bucket key
+     * (`"twig\extension\coreextension"`) where the canonical form
+     * (`"Twig\Extension\CoreExtension"`) is available. Populated for
+     * both `.db` and `.rmem` paths during substrate load.
+     *
+     * @var array<int, string>
+     */
+    public array $canonical_names = [];
+
     /** @var array<int, int> node_id => scc_id */
     public array $node_to_scc = [];
 
@@ -169,6 +198,8 @@ class GraphSubstrate
         $substrate->loadNodeTypes($db, $run_id);
         $substrate->loadEdges($db, $run_id);
         $substrate->loadAddressMapping($db, $run_id);
+        $substrate->loadFrameLabels($db, $run_id);
+        $substrate->loadCanonicalNames($db, $run_id);
         $substrate->buildSccAdjacency();
         $substrate->computeSubtreeSizes();
         $substrate->computeScc();
@@ -408,10 +439,210 @@ class GraphSubstrate
             }
         }
 
+        self::populateFrameLabelsFromBinary($substrate, $reader);
+        self::populateCanonicalNamesFromBinary($substrate, $reader);
+
         $substrate->buildSccAdjacency();
         $substrate->computeSubtreeSizes();
         $substrate->computeScc();
         return $substrate;
+    }
+
+    /**
+     * Decode the `attributes` section into `function_name[:lineno]`
+     * frame labels keyed by node_id. Mirrors the binary-side helper
+     * the labeler used to call into in BinaryReportDataProvider.
+     *
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     * @psalm-suppress PossiblyInvalidArrayAccess
+     */
+    protected static function populateFrameLabelsFromBinary(
+        self $substrate,
+        BinaryReader $reader,
+    ): void {
+        if (!$reader->hasSection(Format::SECTION_ATTRIBUTES)) {
+            return;
+        }
+        $dict = $reader->getStringDict();
+        $data = $reader->getSectionData(Format::SECTION_ATTRIBUTES);
+        $count = $reader->getSectionElementCount(Format::SECTION_ATTRIBUTES);
+
+        /** @var array<int, array{function_name?: string, lineno?: string}> $by_node */
+        $by_node = [];
+        $offset = 0;
+        for ($i = 0; $i < $count; $i++) {
+            $row = unpack('Vnode_id/Vkey_id/Vvalue_id', $data, $offset);
+            $offset += 12;
+
+            $key = $dict->lookup((int)$row['key_id']);
+            if ($key !== 'function_name' && $key !== 'lineno') {
+                continue;
+            }
+            $value = $dict->lookup((int)$row['value_id']) ?? '';
+            $node_id = (int)$row['node_id'];
+            if ($key === 'function_name') {
+                $by_node[$node_id]['function_name'] = $value;
+            } else {
+                $by_node[$node_id]['lineno'] = $value;
+            }
+        }
+
+        foreach ($by_node as $node_id => $kvs) {
+            $fn = $kvs['function_name'] ?? '';
+            if ($fn === '') {
+                continue;
+            }
+            $ln = $kvs['lineno'] ?? '';
+            $substrate->frame_labels[$node_id] = $ln !== '' ? "{$fn}:{$ln}" : $fn;
+        }
+    }
+
+    /**
+     * Walk `nodes` → `edges (link_name = 'name')` → `locations` to
+     * populate the substrate's `canonical_names` map. Mirrors the
+     * binary-side helper from `BinaryReportDataProvider`.
+     *
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     * @psalm-suppress PossiblyInvalidArrayAccess, PossiblyNullPropertyFetch
+     * @psalm-suppress UndefinedPropertyFetch, InvalidPropertyFetch
+     */
+    protected static function populateCanonicalNamesFromBinary(
+        self $substrate,
+        BinaryReader $reader,
+    ): void {
+        if (
+            !$reader->hasSection(Format::SECTION_NODES)
+            || !$reader->hasSection(Format::SECTION_EDGES)
+            || !$reader->hasSection(Format::SECTION_LOCATIONS)
+        ) {
+            return;
+        }
+
+        $dict = $reader->getStringDict();
+        $target_types = [
+            'ClassDefinitionContext' => true,
+            'UserFunctionDefinitionContext' => true,
+            'InternalFunctionDefinitionContext' => true,
+        ];
+
+        // Step 1: definition node ids
+        /** @var array<int, true> $is_def_node */
+        $is_def_node = [];
+        $node_count = $reader->getSectionElementCount(Format::SECTION_NODES);
+        $nodeRows = $reader->castSection(Format::SECTION_NODES, 'NodeRow');
+        if ($nodeRows !== null) {
+            for ($i = 0; $i < $node_count; $i++) {
+                $type = $dict->lookup($nodeRows[$i]->type_id);
+                if ($type !== null && isset($target_types[$type])) {
+                    $is_def_node[$nodeRows[$i]->node_id] = true;
+                }
+            }
+        } else {
+            $data = $reader->getSectionData(Format::SECTION_NODES);
+            for ($i = 0; $i < $node_count; $i++) {
+                $off = $i * Format::NODE_ROW_SIZE;
+                $row = unpack('Vnode_id/Vcanonical_id/Vtype_id/Vclass_id', $data, $off);
+                $type = $dict->lookup((int)$row['type_id']);
+                if ($type !== null && isset($target_types[$type])) {
+                    $is_def_node[(int)$row['node_id']] = true;
+                }
+            }
+        }
+
+        if ($is_def_node === []) {
+            return;
+        }
+
+        // Step 2: 'name' edges from definition nodes — no is_tree filter,
+        // see GraphSubstrate::loadCanonicalNames() for why.
+        /** @var array<int, int> def_node_id => name_child_node_id */
+        $name_child_of = [];
+        $edge_count = $reader->getSectionElementCount(Format::SECTION_EDGES);
+        $edgeRows = $reader->castSection(Format::SECTION_EDGES, 'EdgeRow');
+        if ($edgeRows !== null) {
+            for ($i = 0; $i < $edge_count; $i++) {
+                $parent = $edgeRows[$i]->parent_node_id;
+                if (!isset($is_def_node[$parent])) {
+                    continue;
+                }
+                $link = $dict->lookup($edgeRows[$i]->link_name_id);
+                if ($link === 'name') {
+                    $name_child_of[$parent] = $edgeRows[$i]->child_node_id;
+                }
+            }
+        } else {
+            $data = $reader->getSectionData(Format::SECTION_EDGES);
+            for ($i = 0; $i < $edge_count; $i++) {
+                $off = $i * Format::EDGE_ROW_SIZE;
+                $row = unpack('Vparent/Vchild/Vlid/Cis_tree/Cstrength', $data, $off);
+                $parent = (int)$row['parent'];
+                if (!isset($is_def_node[$parent])) {
+                    continue;
+                }
+                $link = $dict->lookup((int)$row['lid']);
+                if ($link === 'name') {
+                    $name_child_of[$parent] = (int)$row['child'];
+                }
+            }
+        }
+
+        if ($name_child_of === []) {
+            return;
+        }
+
+        // Step 3: resolve name child node_ids to their string_value.
+        /** @var array<int, int> child_node_id => def_node_id */
+        $child_to_def = array_flip($name_child_of);
+        $loc_count = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
+        $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
+        if ($locRows !== null) {
+            for ($i = 0; $i < $loc_count; $i++) {
+                $node_id = $locRows[$i]->node_id;
+                if (!isset($child_to_def[$node_id])) {
+                    continue;
+                }
+                $loc_type = $dict->lookup($locRows[$i]->location_type_id);
+                if ($loc_type !== 'ZendStringMemoryLocation') {
+                    continue;
+                }
+                $sv_id = $locRows[$i]->string_value_id;
+                if ($sv_id === Format::NULL_STRING_ID) {
+                    continue;
+                }
+                $sv = $dict->lookup($sv_id);
+                if ($sv === null || $sv === '') {
+                    continue;
+                }
+                $substrate->canonical_names[$child_to_def[$node_id]] = $sv;
+            }
+        } else {
+            $data = $reader->getSectionData(Format::SECTION_LOCATIONS);
+            for ($i = 0; $i < $loc_count; $i++) {
+                $off = $i * Format::LOCATION_ROW_SIZE;
+                $row = unpack(
+                    'Vnode_id/Vlocation_type_id/Vclass_id/Paddress/Psize/Vstring_value_id',
+                    $data,
+                    $off,
+                );
+                $node_id = (int)$row['node_id'];
+                if (!isset($child_to_def[$node_id])) {
+                    continue;
+                }
+                $loc_type = $dict->lookup((int)$row['location_type_id']);
+                if ($loc_type !== 'ZendStringMemoryLocation') {
+                    continue;
+                }
+                $sv_id = (int)$row['string_value_id'];
+                if ($sv_id === Format::NULL_STRING_ID) {
+                    continue;
+                }
+                $sv = $dict->lookup($sv_id);
+                if ($sv === null || $sv === '') {
+                    continue;
+                }
+                $substrate->canonical_names[$child_to_def[$node_id]] = $sv;
+            }
+        }
     }
 
     /**
@@ -545,6 +776,29 @@ class GraphSubstrate
     public function getNodeType(int $nodeId): ?string
     {
         return $this->node_types[$nodeId] ?? null;
+    }
+
+    /**
+     * Frame label for `CallFrameContext` nodes in
+     * `"function_name[:lineno]"` form (or null when no
+     * `function_name` attribute was recorded). The full map is
+     * exposed as {@see self::$frame_labels} for callers that need to
+     * iterate.
+     */
+    public function getFrameLabel(int $nodeId): ?string
+    {
+        return $this->frame_labels[$nodeId] ?? null;
+    }
+
+    /**
+     * Canonical class / method / function name for definition
+     * contexts; null when the node isn't a definition context or
+     * has no `name` child string. The full map is exposed as
+     * {@see self::$canonical_names} for callers that need to iterate.
+     */
+    public function getCanonicalName(int $nodeId): ?string
+    {
+        return $this->canonical_names[$nodeId] ?? null;
     }
 
     /**
@@ -1169,6 +1423,108 @@ class GraphSubstrate
         );
         while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
             $this->node_types[(int)$r[0]] = (string)$r[1];
+        }
+    }
+
+    /**
+     * Load frame labels (`function_name[:lineno]`) into
+     * {@see self::$frame_labels} from `context_node_attributes`. Pre-Stage-B
+     * follow-up, {@see NodeLabeler::loadFrameLabels()} ran this query
+     * itself on the .db path; lifting it onto the substrate so both
+     * paths share the populated map removes the labeler's `\PDO` /
+     * `$run_id` dependency.
+     *
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     */
+    protected function loadFrameLabels(\PDO $db, int $run_id): void
+    {
+        try {
+            $stmt = $db->query(
+                "SELECT node_id, \"key\", value
+                 FROM context_node_attributes
+                 WHERE run_id = {$run_id}
+                   AND \"key\" IN ('function_name', 'lineno')"
+            );
+        } catch (\PDOException) {
+            // Some tests / explore paths construct a substrate from a
+            // minimal SQLite without the attributes table; fall through
+            // silently so the labeler still answers raw link_names.
+            return;
+        }
+
+        /** @var array<int, array{function_name?: string, lineno?: string}> $by_node */
+        $by_node = [];
+        while ($row = $stmt->fetch(\PDO::FETCH_NUM)) {
+            $node_id = (int)$row[0];
+            $key = (string)$row[1];
+            $value = $row[2] === null ? '' : (string)$row[2];
+            if ($key === 'function_name') {
+                $by_node[$node_id]['function_name'] = $value;
+            } elseif ($key === 'lineno') {
+                $by_node[$node_id]['lineno'] = $value;
+            }
+        }
+
+        foreach ($by_node as $node_id => $kvs) {
+            $fn = $kvs['function_name'] ?? '';
+            if ($fn === '') {
+                continue;
+            }
+            $ln = $kvs['lineno'] ?? '';
+            $this->frame_labels[$node_id] = $ln !== '' ? "{$fn}:{$ln}" : $fn;
+        }
+    }
+
+    /**
+     * Load canonical class / method / function names into
+     * {@see self::$canonical_names}. Mirrors the join the original
+     * {@see NodeLabeler::loadCanonicalNames()} ran: for every
+     * `ClassDefinitionContext` / `*FunctionDefinitionContext` node,
+     * follow its `name` link to the child `ZendStringMemoryLocation`
+     * and store the string content.
+     *
+     * No `is_tree` filter on the `name` edge: when a class registers
+     * after its name string has already been collected by some other
+     * path (autoload, opcache-loaded interned strings, etc.), the
+     * resulting edge is recorded as `is_tree = 0`. Filtering by
+     * `is_tree = 1` would drop ~half of the user-defined
+     * `ClassDefinitionContexts` in real captures.
+     *
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     */
+    protected function loadCanonicalNames(\PDO $db, int $run_id): void
+    {
+        try {
+            $stmt = $db->query("
+                SELECT cn.node_id, cnl.string_value
+                FROM context_nodes cn
+                JOIN context_edges name_edge
+                    ON name_edge.parent_node_id = cn.node_id
+                    AND name_edge.run_id = cn.run_id
+                    AND name_edge.link_name = 'name'
+                JOIN context_node_locations cnl
+                    ON cnl.node_id = name_edge.child_node_id
+                    AND cnl.run_id = name_edge.run_id
+                    AND cnl.location_type = 'ZendStringMemoryLocation'
+                WHERE cn.run_id = {$run_id}
+                    AND cn.type IN (
+                        'ClassDefinitionContext',
+                        'UserFunctionDefinitionContext',
+                        'InternalFunctionDefinitionContext'
+                    )
+                    AND cnl.string_value IS NOT NULL
+                    AND cnl.string_value <> ''
+            ");
+        } catch (\PDOException) {
+            // Binary report paths sometimes pass a dummy in-memory PDO
+            // with no schema; fall through silently so the substrate
+            // still answers raw link_names rather than blowing up the
+            // surrounding load.
+            return;
+        }
+
+        while ($row = $stmt->fetch(\PDO::FETCH_NUM)) {
+            $this->canonical_names[(int)$row[0]] = (string)$row[1];
         }
     }
 

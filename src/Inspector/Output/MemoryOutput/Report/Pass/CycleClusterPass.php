@@ -24,18 +24,11 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class CycleClusterPass implements PassInterface
 {
-    /**
-     * @param array<int, string>|null $frame_labels Pre-loaded frame labels (binary path)
-     * @param array<int, string>|null $canonical_names Pre-loaded class/
-     *     method/function canonical names (binary path)
-     */
     public function __construct(
         private GraphSubstrate $substrate,
         private \PDO $db,
         private int $run_id,
         private ?LinkNameResolver $link_resolver = null,
-        private ?array $frame_labels = null,
-        private ?array $canonical_names = null,
     ) {
     }
 
@@ -78,12 +71,7 @@ final class CycleClusterPass implements PassInterface
         // We now look them up on demand from the shared LinkNameResolver
         // inside findBackReference itself.
         $top_groups = array_slice($groups_sorted, 0, 10);
-        $labeler = new NodeLabeler(
-            $this->db,
-            $this->run_id,
-            $this->frame_labels,
-            $this->canonical_names,
-        );
+        $labeler = new NodeLabeler($this->substrate);
 
         $findings = [];
         foreach ($top_groups as $g) {

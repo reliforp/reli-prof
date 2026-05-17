@@ -133,7 +133,7 @@ final class ReportGenerator
             // substrate is built, run it through the in-memory
             // node-type + tree-edge indexes instead of the 4-JOIN SQL.
             $findings = array_merge($findings, $this->runPass(
-                new CallStackPass($db, $run_id, $substrate)
+                new CallStackPass($substrate)
             ));
 
             // Shared resolver replaces the per-edge SQL N+1 that used to
@@ -202,6 +202,12 @@ final class ReportGenerator
             $pass_factories['CycleClusterPass'] = fn (): array => $this->runPass(
                 new CycleClusterPass($substrate, $db_factory(), $run_id, $resolver_factory())
             );
+            // CycleClusterPass keeps `\PDO` / `$run_id` because of its
+            // own per-node SQL fallback for non-tree intra-SCC edge
+            // resolution (separate from NodeLabeler), but no longer
+            // needs frame_labels / canonical_names from
+            // BinaryReportDataProvider — those come from the substrate
+            // now via NodeLabeler.
             $pass_factories['PropertyScalingPass'] = fn (): array => $this->runPass(
                 new PropertyScalingPass(
                     $db_factory(),
@@ -218,7 +224,7 @@ final class ReportGenerator
                 new OwnershipPatternPass($substrate, $db_factory(), $run_id, $resolver_factory())
             );
             $pass_factories['TopArraysPass'] = fn (): array => $this->runPass(
-                new TopArraysPass($db_factory(), $run_id, $substrate)
+                new TopArraysPass($substrate)
             );
             $pass_factories['TopStringsPass'] = fn (): array => $this->runPass(
                 new TopStringsPass($db_factory(), $run_id, $substrate)
@@ -235,14 +241,12 @@ final class ReportGenerator
                 new StructuralDedupPass($db_factory(), $run_id, $substrate, $resolver_factory())
             );
             $pass_factories['DrillDownPass'] = fn (): array => $this->runPass(
-                new DrillDownPass($substrate, $db_factory(), $run_id)
+                new DrillDownPass($substrate)
             );
             $db_objects_store_nodes = $substrate->getNodesByLocationType('ObjectsStoreMemoryLocation');
             $pass_factories['ChokePointPass'] = fn (): array => $this->runPass(
                 new ChokePointPass(
                     $substrate,
-                    $db_factory(),
-                    $run_id,
                     $heap_usage,
                     $db_objects_store_nodes,
                 )
@@ -344,9 +348,10 @@ final class ReportGenerator
 
             // Pre-compute data from binary sections for hybrid passes.
             // Done before forking so child workers inherit the results
-            // via copy-on-write.
-            $frame_labels = BinaryReportDataProvider::loadFrameLabels($reader);
-            $canonical_names = BinaryReportDataProvider::loadCanonicalNames($reader);
+            // via copy-on-write. Frame labels + canonical names used to
+            // be loaded separately into PHP arrays here and threaded
+            // through every pass for `NodeLabeler` — they now live on
+            // `GraphSubstrate` itself (populated during `loadFromBinary`).
             $top_strings = BinaryReportDataProvider::getTopStrings($reader, 10);
             // ObjectsStoreMemoryLocation set, non-tree-strong-edge stats
             // and dedup-candidate aggregation all live on the substrate
@@ -363,10 +368,8 @@ final class ReportGenerator
             $reader->clearCastCache();
 
             // CallStackPass runs before the parallel batch (same as DB path)
-            $dummy_db = new \PDO('sqlite::memory:');
-            $dummy_db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
             $findings = array_merge($findings, $this->runPass(
-                new CallStackPass($dummy_db, 0, $substrate, $frame_labels, $canonical_names)
+                new CallStackPass($substrate)
             ));
 
             // Binary passes don't share a SQLite fd, so each factory
@@ -390,8 +393,6 @@ final class ReportGenerator
                     $dummy_factory(),
                     0,
                     $resolver_factory(),
-                    $frame_labels,
-                    $canonical_names,
                 )
             );
             $pass_factories['PropertyScalingPass'] = fn (): array => $this->runPass(
@@ -410,7 +411,7 @@ final class ReportGenerator
                 new OwnershipPatternPass($substrate, $dummy_factory(), 0, $resolver_factory())
             );
             $pass_factories['TopArraysPass'] = fn (): array => $this->runPass(
-                new TopArraysPass($dummy_factory(), 0, $substrate, $frame_labels)
+                new TopArraysPass($substrate)
             );
             $pass_factories['TopStringsPass'] = fn (): array => $this->runPass(
                 new TopStringsPass(
@@ -418,8 +419,6 @@ final class ReportGenerator
                     0,
                     $substrate,
                     $top_strings,
-                    $frame_labels,
-                    $canonical_names,
                 )
             );
             $pass_factories['NonTreeEdgePass'] = fn (): array => $this->runPass(
@@ -432,23 +431,13 @@ final class ReportGenerator
                 new StructuralDedupPass($dummy_factory(), 0, $substrate, $resolver_factory())
             );
             $pass_factories['DrillDownPass'] = fn (): array => $this->runPass(
-                new DrillDownPass(
-                    $substrate,
-                    $dummy_factory(),
-                    0,
-                    $frame_labels,
-                    $canonical_names,
-                )
+                new DrillDownPass($substrate)
             );
             $pass_factories['ChokePointPass'] = fn (): array => $this->runPass(
                 new ChokePointPass(
                     $substrate,
-                    $dummy_factory(),
-                    0,
                     $heap_usage,
                     $objects_store_nodes,
-                    $frame_labels,
-                    $canonical_names,
                 )
             );
             $pass_factories['BlameAllocationPass'] = fn (): array => $this->runPass(

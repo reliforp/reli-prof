@@ -222,6 +222,12 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $substrate->loadNodeTypesFfi($db, $run_id);
         $substrate->loadEdgesFfi($db, $run_id);
         $substrate->loadAddressMapping($db, $run_id);
+        // Frame labels + canonical names are PHP arrays on the base
+        // class, populated by the same SQL queries the labeler used to
+        // run itself. Lifting them onto the substrate is what lets
+        // {@see NodeLabeler} drop its `\PDO` dependency.
+        $substrate->loadFrameLabels($db, $run_id);
+        $substrate->loadCanonicalNames($db, $run_id);
         $substrate->buildSccAdjacency();
         $substrate->buildCanonicalFfi();
         $substrate->computeSubtreeSizesFfi();
@@ -637,6 +643,14 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                 }
             }
         }
+
+        // Frame labels + canonical names: same maps the base
+        // GraphSubstrate populates on the .db path, here harvested
+        // from the on-disk `attributes` / `nodes` + `edges` + `locations`
+        // sections so {@see NodeLabeler} can answer label queries
+        // without an SQL fallback on the .rmem path.
+        self::populateFrameLabelsFromBinary($substrate, $reader);
+        self::populateCanonicalNamesFromBinary($substrate, $reader);
 
         // ---- Phase 4: Load edges → build CSR ----
         // If on-disk CSR sections exist, load them directly.

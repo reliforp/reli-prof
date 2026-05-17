@@ -60,17 +60,8 @@ final class CallStackPass implements PassInterface
     private const HEADER_CAPTURE_SHUTDOWN = 'Captured inside shutdown handler:';
     private const HEADER_CAPTURE = 'Call Stack at capture:';
 
-    /**
-     * @param array<int, string>|null $frame_labels Pre-loaded frame labels (binary path)
-     * @param array<int, string>|null $canonical_names Pre-loaded class/
-     *     method/function canonical names (binary path)
-     */
     public function __construct(
-        private \PDO $db,
-        private int $run_id,
         private GraphSubstrate $substrate,
-        private ?array $frame_labels = null,
-        private ?array $canonical_names = null,
     ) {
     }
 
@@ -94,12 +85,7 @@ final class CallStackPass implements PassInterface
             }
         }
 
-        $labeler = new NodeLabeler(
-            $this->db,
-            $this->run_id,
-            $this->frame_labels,
-            $this->canonical_names,
-        );
+        $labeler = new NodeLabeler($this->substrate);
 
         $findings = [];
         if ($oom_root !== null) {

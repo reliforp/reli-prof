@@ -239,23 +239,19 @@ class BinaryReportDataProviderTest extends TestCase
         );
     }
 
-    public function testLoadFrameLabelsReturnsFunctionNameAndLineno(): void
+    public function testSubstrateFrameLabelsReturnsFunctionNameAndLineno(): void
     {
+        // Frame-label assertion ported from the deleted
+        // `BinaryReportDataProvider::loadFrameLabels` test. The same
+        // attributes section is now decoded straight into
+        // `GraphSubstrate::$frame_labels` during `loadFromBinary`.
         $reader = $this->buildFixture();
+        $substrate = \Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate::loadFromBinary($reader);
 
-        $labels = BinaryReportDataProvider::loadFrameLabels($reader);
-
-        // Node 1 has function_name=main, lineno=42
-        $this->assertArrayHasKey(1, $labels);
-        $this->assertSame('main:42', $labels[1]);
-
-        // Node 3 has function_name=process, no lineno
-        $this->assertArrayHasKey(3, $labels);
-        $this->assertSame('process', $labels[3]);
-
-        // Nodes 2 and 4 have no function_name attribute
-        $this->assertArrayNotHasKey(2, $labels);
-        $this->assertArrayNotHasKey(4, $labels);
+        $this->assertSame('main:42', $substrate->getFrameLabel(1));
+        $this->assertSame('process', $substrate->getFrameLabel(3));
+        $this->assertNull($substrate->getFrameLabel(2));
+        $this->assertNull($substrate->getFrameLabel(4));
     }
 
     public function testSubstrateNonTreeEdgeStatsWithNoNonTreeEdges(): void

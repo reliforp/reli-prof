@@ -39,6 +39,11 @@ namespace Reli\Inspector\Output\MemoryOutput\Report\Substrate;
  *     `name` child string node ("Twig\Extension\CoreExtension"). This
  *     labeler returns the canonical form at display time without
  *     touching the underlying substrate.
+ *
+ * Both sources are populated on {@see GraphSubstrate} during load
+ * (PDO loaders read `context_node_attributes` + the nodes/edges/
+ * locations join; binary loaders read the corresponding sections).
+ * The labeler is a thin formatter on top — pure CPU, no SQL, no I/O.
  */
 final class NodeLabeler
 {
@@ -48,33 +53,19 @@ final class NodeLabeler
     /** @var array<int, string> node_id => "function_name()" (path form) */
     private array $frame_labels_path_form = [];
 
-    /**
-     * node_id => canonical class / method / function name. Populated for
-     * `ClassDefinitionContext` and `*FunctionDefinitionContext` nodes
-     * from their `name` string child.
-     *
-     * @var array<int, string>
-     */
-    private array $canonical_names = [];
-
-    /** @var bool */
-    private bool $loaded = false;
-
-    /**
-     * @param array<int, string>|null $preloaded_frame_labels Pre-loaded
-     *     frame labels (binary path), in `"function_name:lineno"` form
-     *     (or just `"function_name"` when no lineno is recorded). The
-     *     labeler splits each entry into the two display forms it uses.
-     * @param array<int, string>|null $preloaded_canonical_names Pre-loaded
-     *     canonical class/method/function names (binary path). When
-     *     provided, the SQL fetch is skipped.
-     */
     public function __construct(
-        private ?\PDO $db,
-        private int $run_id,
-        private ?array $preloaded_frame_labels = null,
-        private ?array $preloaded_canonical_names = null,
+        private GraphSubstrate $substrate,
     ) {
+        foreach ($this->substrate->frame_labels as $node_id => $combined) {
+            [$fn, $ln] = self::splitFunctionNameAndLineno($combined);
+            if ($fn === '') {
+                continue;
+            }
+            $this->frame_labels_with_line[$node_id] = $ln !== null
+                ? "{$fn}:{$ln}"
+                : $fn;
+            $this->frame_labels_path_form[$node_id] = self::pathFormForFunction($fn);
+        }
     }
 
     /**
@@ -93,16 +84,12 @@ final class NodeLabeler
      *
      * Falls back to the raw `$link_name` when no override is available
      * for the node.
-     *
-     * @psalm-suppress MixedArrayAccess, MixedAssignment
      */
     public function resolvePathLabel(
         string $link_name,
         int $child_node_id,
         bool $include_call_site = false,
     ): string {
-        $this->ensureLoaded();
-
         if ($include_call_site) {
             if (isset($this->frame_labels_with_line[$child_node_id])) {
                 return $this->frame_labels_with_line[$child_node_id];
@@ -113,80 +100,12 @@ final class NodeLabeler
             }
         }
 
-        if (isset($this->canonical_names[$child_node_id])) {
-            return $this->canonical_names[$child_node_id];
+        $canonical = $this->substrate->getCanonicalName($child_node_id);
+        if ($canonical !== null) {
+            return $canonical;
         }
 
         return $link_name;
-    }
-
-    /** @psalm-suppress MixedArrayAccess, MixedAssignment, MixedPropertyTypeCoercion */
-    private function ensureLoaded(): void
-    {
-        if ($this->loaded) {
-            return;
-        }
-        $this->loaded = true;
-
-        $this->loadFrameLabels();
-        $this->loadCanonicalNames();
-    }
-
-    /** @psalm-suppress MixedArrayAccess, MixedAssignment */
-    private function loadFrameLabels(): void
-    {
-        // Binary path: split the pre-baked "function_name:lineno"
-        // strings into the two display forms.
-        if ($this->preloaded_frame_labels !== null) {
-            foreach ($this->preloaded_frame_labels as $node_id => $combined) {
-                [$fn, $ln] = self::splitFunctionNameAndLineno($combined);
-                if ($fn === '') {
-                    continue;
-                }
-                $this->frame_labels_with_line[$node_id] = $ln !== null
-                    ? "{$fn}:{$ln}"
-                    : $fn;
-                $this->frame_labels_path_form[$node_id] = self::pathFormForFunction($fn);
-            }
-            return;
-        }
-
-        // SQL path
-        if ($this->db === null) {
-            return;
-        }
-
-        $rows = $this->db->query("
-            SELECT node_id, \"key\", value
-            FROM context_node_attributes
-            WHERE run_id = {$this->run_id}
-                AND \"key\" IN ('function_name', 'lineno')
-        ")->fetchAll(\PDO::FETCH_NUM);
-
-        /** @var array<int, array{function_name?:string, lineno?:string}> $by_node */
-        $by_node = [];
-        foreach ($rows as $row) {
-            $node_id = (int)$row[0];
-            $key = (string)$row[1];
-            $value = $row[2] === null ? '' : (string)$row[2];
-            if ($key === 'function_name') {
-                $by_node[$node_id]['function_name'] = $value;
-            } elseif ($key === 'lineno') {
-                $by_node[$node_id]['lineno'] = $value;
-            }
-        }
-
-        foreach ($by_node as $node_id => $kvs) {
-            $fn = $kvs['function_name'] ?? '';
-            if ($fn === '') {
-                continue;
-            }
-            $ln = $kvs['lineno'] ?? '';
-            $this->frame_labels_with_line[$node_id] = $ln !== ''
-                ? "{$fn}:{$ln}"
-                : $fn;
-            $this->frame_labels_path_form[$node_id] = self::pathFormForFunction($fn);
-        }
     }
 
     /**
@@ -227,74 +146,5 @@ final class NodeLabeler
             return $function_name;
         }
         return $function_name . '()';
-    }
-
-    /**
-     * Build the `node_id => canonical_name` map for class definitions and
-     * function/method definitions. The collector emits a `name` child
-     * string node alongside each definition; that string is the canonical
-     * (case-preserved) identifier the source declared.
-     *
-     * @psalm-suppress MixedArrayAccess, MixedAssignment
-     */
-    private function loadCanonicalNames(): void
-    {
-        if ($this->preloaded_canonical_names !== null) {
-            $this->canonical_names = $this->preloaded_canonical_names;
-            return;
-        }
-
-        if ($this->db === null) {
-            return;
-        }
-
-        // The binary report path reuses NodeLabeler with a dummy
-        // in-memory PDO (no schema) and is expected to preload
-        // canonical_names instead. If preload was skipped *and* the db
-        // happens to lack the schema, fall through silently so the
-        // labeler still answers raw link_names rather than blowing up
-        // the surrounding pass.
-        //
-        // No `is_tree` filter on the `name` edge: when a class
-        // registers after its name string has already been collected
-        // (autoload, opcache-loaded interned strings, etc.), the
-        // resulting edge is recorded as `is_tree = 0` (back-reference
-        // to an existing node). Filtering by `is_tree = 1` would drop
-        // ~half of the user-defined ClassDefinitionContexts in real
-        // captures while keeping the internal classes that happened
-        // to be discovered first via the class table walk. Each
-        // ClassDefinitionContext / *FunctionDefinitionContext has at
-        // most one `name`-link edge by construction, so dropping the
-        // filter doesn't introduce duplicates.
-        try {
-            $rows = $this->db->query("
-                SELECT cn.node_id, cnl.string_value
-                FROM context_nodes cn
-                JOIN context_edges name_edge
-                    ON name_edge.parent_node_id = cn.node_id
-                    AND name_edge.run_id = cn.run_id
-                    AND name_edge.link_name = 'name'
-                JOIN context_node_locations cnl
-                    ON cnl.node_id = name_edge.child_node_id
-                    AND cnl.run_id = name_edge.run_id
-                    AND cnl.location_type = 'ZendStringMemoryLocation'
-                WHERE cn.run_id = {$this->run_id}
-                    AND cn.type IN (
-                        'ClassDefinitionContext',
-                        'UserFunctionDefinitionContext',
-                        'InternalFunctionDefinitionContext'
-                    )
-                    AND cnl.string_value IS NOT NULL
-                    AND cnl.string_value <> ''
-            ")->fetchAll(\PDO::FETCH_NUM);
-        } catch (\PDOException) {
-            return;
-        }
-
-        foreach ($rows as $row) {
-            $node_id = (int)$row[0];
-            $name = (string)$row[1];
-            $this->canonical_names[$node_id] = $name;
-        }
     }
 }

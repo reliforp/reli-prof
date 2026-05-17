@@ -56,7 +56,7 @@ class CallStackPassTest extends BaseTestCase
         );
 
         $substrate = GraphSubstrate::loadFromDb($db, 1);
-        $pass = new CallStackPass($db, 1, $substrate);
+        $pass = new CallStackPass($substrate);
         $findings = $pass->analyze();
 
         $this->assertCount(1, $findings);
@@ -110,7 +110,7 @@ class CallStackPassTest extends BaseTestCase
         );
 
         $substrate = GraphSubstrate::loadFromDb($db, 1);
-        $pass = new CallStackPass($db, 1, $substrate);
+        $pass = new CallStackPass($substrate);
         $findings = $pass->analyze();
 
         $this->assertCount(2, $findings, 'both call-stack findings should be emitted');
@@ -152,7 +152,7 @@ class CallStackPassTest extends BaseTestCase
         );
 
         $substrate = GraphSubstrate::loadFromDb($db, 1);
-        $pass = new CallStackPass($db, 1, $substrate);
+        $pass = new CallStackPass($substrate);
         $findings = $pass->analyze();
 
         $this->assertCount(1, $findings);
@@ -184,7 +184,7 @@ class CallStackPassTest extends BaseTestCase
         ");
 
         $substrate = GraphSubstrate::loadFromDb($db, 1);
-        $pass = new CallStackPass($db, 1, $substrate);
+        $pass = new CallStackPass($substrate);
 
         $this->assertSame([], $pass->analyze());
     }

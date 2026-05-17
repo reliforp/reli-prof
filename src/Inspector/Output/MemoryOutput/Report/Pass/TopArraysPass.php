@@ -23,14 +23,8 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 
 final class TopArraysPass implements PassInterface
 {
-    /**
-     * @param array<int, string>|null $frame_labels Pre-loaded frame labels (binary path)
-     */
     public function __construct(
-        private \PDO $db,
-        private int $run_id,
         private GraphSubstrate $substrate,
-        private ?array $frame_labels = null,
     ) {
     }
 
@@ -43,7 +37,7 @@ final class TopArraysPass implements PassInterface
     public function analyze(): array
     {
         $array_element_nodes = $this->loadArrayElementNodes();
-        $labeler = new NodeLabeler($this->db, $this->run_id, $this->frame_labels);
+        $labeler = new NodeLabeler($this->substrate);
         $use_retained = $this->substrate->hasSubtreeSizes();
 
         $arrays = [];
