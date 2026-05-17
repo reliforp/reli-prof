@@ -168,11 +168,14 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     // {@see GraphSubstrate::getDedupCandidateStats()} works against the
     // inherited storage without an FFI variant of its own.
     //
-    // Memory: bounded by node count for the per-node maps (~10–20 bytes
-    // per non-null entry) and by non-tree-strong-edge count for the
-    // edge list (~64 bytes per row). Acceptable for the dedup feature.
-    // A future PR can move these to FFI int-dict storage if profiling
-    // flags them on giant heaps.
+    // Memory: PHP arrays of triples / strings, scaling with
+    // non_tree_strong_edge count and node count respectively. The
+    // per-row payload is small in logical bytes but the PHP zval +
+    // bucket + interned-string overhead makes the real heap cost
+    // several times that — meaningful on heaps where the FFI / CSR
+    // path was chosen precisely to dodge PHP array overhead. Profile
+    // before assuming it's negligible; a follow-up can re-encode these
+    // as FFI int-dict storage like the existing class / type dictionaries.
 
     private bool $subtreeSizesComputed = false;
     private int $nodeSizesSum = 0;
@@ -529,32 +532,43 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $string_value_id = unpack('V', $locData, $off + 28)[1];
                 }
 
-                {
-                if (
-                        $location_type_id !== Format::NULL_STRING_ID
-                        && !isset($substrate->node_location_types[$node_id])
-                ) {
-                    $loc = $dict->lookup($location_type_id);
-                    if ($loc !== null) {
-                        $substrate->node_location_types[$node_id] = $loc;
+                // Apply the shared size-attribution region policy. See
+                // RegionFilter. The dedup metadata (location_type /
+                // string_value) is gated on the same predicate as size
+                // attribution so a node with both an `outside` row and a
+                // relevant row doesn't get its bucket key picked from the
+                // outside row — the .db loader's WHERE clause already
+                // discards outside rows before the per-node aggregation
+                // runs, and parity is the whole point of routing both
+                // paths through the substrate.
+                $isRelevant = RegionFilter::isRelevant($dict->lookup($region_id));
+
+                if ($isRelevant) {
+                    // .db loader uses `min(location_type)` / `min(string_value)`
+                    // — lex-min over duplicate rows. Mirror that here so
+                    // multi-row nodes converge on the same bucket key on
+                    // both paths.
+                    if ($location_type_id !== Format::NULL_STRING_ID) {
+                        $loc = $dict->lookup($location_type_id);
+                        if ($loc !== null) {
+                            $current = $substrate->node_location_types[$node_id] ?? null;
+                            if ($current === null || $loc < $current) {
+                                $substrate->node_location_types[$node_id] = $loc;
+                            }
+                        }
                     }
-                }
-                if (
-                        $string_value_id !== Format::NULL_STRING_ID
-                        && !isset($substrate->node_string_values[$node_id])
-                ) {
-                    $sv = $dict->lookup($string_value_id);
-                    if ($sv !== null) {
-                        $substrate->node_string_values[$node_id] = $sv;
+                    if ($string_value_id !== Format::NULL_STRING_ID) {
+                        $sv = $dict->lookup($string_value_id);
+                        if ($sv !== null) {
+                            $current = $substrate->node_string_values[$node_id] ?? null;
+                            if ($current === null || $sv < $current) {
+                                $substrate->node_string_values[$node_id] = $sv;
+                            }
+                        }
                     }
-                }
                 }
 
-                // Apply the shared size-attribution region policy. See RegionFilter.
-                if (
-                    $needSizeAccumulation
-                    && RegionFilter::isRelevant($dict->lookup($region_id))
-                ) {
+                if ($needSizeAccumulation && $isRelevant) {
                     if ($directMap !== null) {
                         $slot = $node_id + $directOffset;
                         $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : $directMap[$slot];

@@ -264,30 +264,30 @@ class GraphSubstrate
                         $substrate->node_classes[$node_id] = $cls;
                     }
                 }
-                // First-non-null wins. The .db loader uses `min()` over
-                // the duplicate-row group, which for the typical "one
-                // location-type/string-value per node" shape is the same
-                // value; on the rare multi-row node both paths converge
-                // on a single deterministic key. Required by
-                // `getDedupCandidateStats()` for B6-correct bucketing.
+                // The .db loader uses `min(location_type)` / `min(string_value)`
+                // (SQLite lex-min over duplicate rows). Mirror that here
+                // rather than "first encountered" — file-order would
+                // otherwise pick a different row than SQL when a node has
+                // multiple non-null values, drifting the dedup bucket key
+                // between the .db and .rmem paths.
                 $location_type_id = $row['location_type_id'];
-                if (
-                    $location_type_id !== Format::NULL_STRING_ID
-                    && !isset($substrate->node_location_types[$node_id])
-                ) {
+                if ($location_type_id !== Format::NULL_STRING_ID) {
                     $loc = $dict->lookup($location_type_id);
                     if ($loc !== null) {
-                        $substrate->node_location_types[$node_id] = $loc;
+                        $current = $substrate->node_location_types[$node_id] ?? null;
+                        if ($current === null || $loc < $current) {
+                            $substrate->node_location_types[$node_id] = $loc;
+                        }
                     }
                 }
                 $string_value_id = $row['string_value_id'];
-                if (
-                    $string_value_id !== Format::NULL_STRING_ID
-                    && !isset($substrate->node_string_values[$node_id])
-                ) {
+                if ($string_value_id !== Format::NULL_STRING_ID) {
                     $sv = $dict->lookup($string_value_id);
                     if ($sv !== null) {
-                        $substrate->node_string_values[$node_id] = $sv;
+                        $current = $substrate->node_string_values[$node_id] ?? null;
+                        if ($current === null || $sv < $current) {
+                            $substrate->node_string_values[$node_id] = $sv;
+                        }
                     }
                 }
             }
