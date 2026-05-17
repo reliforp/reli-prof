@@ -27,13 +27,15 @@ final class NonTreeEdgePass implements PassInterface
      *     target_count: int,
      *     sample_parent_node_id: int,
      *     sample_child_node_id: int
-     * }>|null $precomputed_edge_stats
+     * }> $precomputed_edge_stats
+     *     Aggregated non-tree-strong-edge stats. Produced by
+     *     {@see GraphSubstrate::getNonTreeEdgeStats()} — the pass is a
+     *     pure formatter on top of the substrate primitive, with no SQL
+     *     fallback (#787 Stage B follow-up).
      */
     public function __construct(
-        private \PDO $db,
-        private int $run_id,
         private GraphSubstrate $substrate,
-        private ?array $precomputed_edge_stats = null,
+        private array $precomputed_edge_stats,
     ) {
     }
 
@@ -46,45 +48,24 @@ final class NonTreeEdgePass implements PassInterface
     #[\Override]
     public function analyze(): array
     {
-        if ($this->precomputed_edge_stats !== null) {
-            $rows = $this->precomputed_edge_stats;
-        } else {
-            $rows = $this->db->query("
-                SELECT
-                    e.link_name,
-                    count(*) as ref_count,
-                    count(DISTINCT e.child_node_id) as target_count,
-                    min(e.parent_node_id) as sample_parent_node_id,
-                    min(e.child_node_id) as sample_child_node_id
-                FROM context_edges e
-                WHERE e.run_id = {$this->run_id}
-                    AND e.is_tree = 0
-                    AND e.strength = 'strong'
-                GROUP BY e.link_name
-                HAVING count(*) > 10
-                ORDER BY count(*) DESC
-                LIMIT 20
-            ")->fetchAll(\PDO::FETCH_ASSOC);
-        }
-
         $findings = [];
-        foreach ($rows as $row) {
-            $link_name = (string)$row['link_name'];
+        foreach ($this->precomputed_edge_stats as $row) {
+            $link_name = $row['link_name'];
             $source_class = $this->resolveDirectSourceClass(
-                (int)$row['sample_parent_node_id'],
+                $row['sample_parent_node_id'],
             ) ?? '';
             $target_class = $this->substrate->getNodeClass(
-                (int)$row['sample_child_node_id'],
+                $row['sample_child_node_id'],
             ) ?? '';
 
             $finding = $this->buildSharedFinding(
                 $link_name,
-                (int)$row['ref_count'],
-                (int)$row['target_count'],
+                $row['ref_count'],
+                $row['target_count'],
                 $source_class,
                 $target_class,
-                (int)$row['sample_parent_node_id'],
-                (int)$row['sample_child_node_id'],
+                $row['sample_parent_node_id'],
+                $row['sample_child_node_id'],
             );
             if ($finding !== null) {
                 $findings[] = $finding;

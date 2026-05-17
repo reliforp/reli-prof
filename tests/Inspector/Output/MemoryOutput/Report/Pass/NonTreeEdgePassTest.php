@@ -43,7 +43,10 @@ class NonTreeEdgePassTest extends BaseTestCase
         $this->seedRepresentativeScenario($db);
 
         $substrate = GraphSubstrate::loadFromDb($db, 1);
-        $graph_findings = (new NonTreeEdgePass($db, 1, $substrate))->analyze();
+        $graph_findings = (new NonTreeEdgePass(
+            $substrate,
+            $substrate->getNonTreeEdgeStats(20),
+        ))->analyze();
 
         $shared_graph = $this->findFinding(
             $graph_findings,

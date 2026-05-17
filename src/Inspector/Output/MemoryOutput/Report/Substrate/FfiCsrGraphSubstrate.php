@@ -212,6 +212,13 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
             $substrate->bulkFetchChunk = $bulk_fetch_chunk;
         }
         $substrate->loadNodeSizesFfi($db, $run_id);
+        // Inverted `location_type` → node-set index for
+        // `getNodesByLocationType()`. `loadNodeSizesFfi` only captures the
+        // lex-min primary type per node (suitable for the dedup bucket
+        // key but not for the "any row of this type" set semantics the
+        // ChokePoint deprioritisation needs), so the base-class loader
+        // does a separate `SELECT DISTINCT location_type, node_id` pass.
+        $substrate->loadNodeLocationTypeSets($db, $run_id);
         $substrate->loadNodeTypesFfi($db, $run_id);
         $substrate->loadEdgesFfi($db, $run_id);
         $substrate->loadAddressMapping($db, $run_id);
@@ -551,10 +558,13 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     if ($location_type_id !== Format::NULL_STRING_ID) {
                         $loc = $dict->lookup($location_type_id);
                         if ($loc !== null) {
+                            // lex-min primary for dedup bucket key,
                             $current = $substrate->node_location_types[$node_id] ?? null;
                             if ($current === null || $loc < $current) {
                                 $substrate->node_location_types[$node_id] = $loc;
                             }
+                            // and full set for `getNodesByLocationType()`.
+                            $substrate->nodes_by_location_type[$loc][$node_id] = true;
                         }
                     }
                     if ($string_value_id !== Format::NULL_STRING_ID) {

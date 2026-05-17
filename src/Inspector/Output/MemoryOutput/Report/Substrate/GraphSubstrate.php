@@ -81,6 +81,21 @@ class GraphSubstrate
     public array $node_location_types = [];
 
     /**
+     * Inverted location-type index: `location_type` → set of node_ids
+     * that have **at least one** location row of that type. Backs
+     * {@see self::getNodesByLocationType()}, which preserves the set
+     * semantics of `SELECT DISTINCT node_id … WHERE location_type = ?`.
+     * Distinct from {@see self::$node_location_types} on purpose — that
+     * one is the lex-min primary type used as a bucket key for dedup,
+     * while this one answers "does this node touch this type at all?".
+     * A multi-row node lands in every bucket of this map but only the
+     * lex-min slot of `$node_location_types`.
+     *
+     * @var array<string, array<int, true>>
+     */
+    public array $nodes_by_location_type = [];
+
+    /**
      * Per-node interned string content (only set when the node carries
      * a non-null `string_value`). Used by `getDedupCandidateStats()` to
      * build the bucket's `examples` payload without re-scanning
@@ -150,6 +165,7 @@ class GraphSubstrate
     {
         $substrate = new static();
         $substrate->loadNodeSizes($db, $run_id);
+        $substrate->loadNodeLocationTypeSets($db, $run_id);
         $substrate->loadNodeTypes($db, $run_id);
         $substrate->loadEdges($db, $run_id);
         $substrate->loadAddressMapping($db, $run_id);
@@ -275,10 +291,13 @@ class GraphSubstrate
                 if ($location_type_id !== Format::NULL_STRING_ID) {
                     $loc = $dict->lookup($location_type_id);
                     if ($loc !== null) {
+                        // lex-min primary for dedup bucket key,
                         $current = $substrate->node_location_types[$node_id] ?? null;
                         if ($current === null || $loc < $current) {
                             $substrate->node_location_types[$node_id] = $loc;
                         }
+                        // and full set for `getNodesByLocationType()`.
+                        $substrate->nodes_by_location_type[$loc][$node_id] = true;
                     }
                 }
                 $string_value_id = $row['string_value_id'];
@@ -757,6 +776,108 @@ class GraphSubstrate
         ];
     }
 
+    /**
+     * Aggregate non-tree strong edges by `link_name`. Replaces the
+     * `GROUP BY link_name … HAVING count(*) > 10` query
+     * `NonTreeEdgePass` used to issue (and the parallel
+     * `BinaryReportDataProvider::getNonTreeEdgeStats` walk for `.rmem`
+     * input). Returns the top `$limit` link names by ref_count, each
+     * carrying a distinct-child target_count and one sample edge for
+     * downstream `getNodeClass()` / `getTreeLinkName()` lookups.
+     *
+     * Bucket threshold (`ref_count > 10`) matches the SQL HAVING; the
+     * pre-Stage-B SQL path also did not filter root-parented edges
+     * because non-tree edges always have a non-null parent — the
+     * substrate's loaders only push into `non_tree_strong_edges` when
+     * `parent !== -1`, which is the same set.
+     *
+     * @return list<array{
+     *     link_name: string,
+     *     ref_count: int,
+     *     target_count: int,
+     *     sample_parent_node_id: int,
+     *     sample_child_node_id: int
+     * }>
+     */
+    public function getNonTreeEdgeStats(int $limit = 20): array
+    {
+        // sample_parent_node_id / sample_child_node_id are independent
+        // running `min()`s over the bucket — exactly what SQLite's
+        // `min(e.parent_node_id)` / `min(e.child_node_id)` in the old
+        // SQL aggregation returned. Independent (not row-correlated)
+        // means the sampled (parent, child) pair may not be a real
+        // edge, but the downstream pass uses each one only as a seed
+        // for a substrate-side class lookup, so the parity is what
+        // matters.
+        /** @var array<string, array{
+         *     ref_count: int,
+         *     targets: array<int, true>,
+         *     sample_parent_node_id: int,
+         *     sample_child_node_id: int
+         * }> $agg */
+        $agg = [];
+        foreach ($this->iterateNonTreeStrongEdges() as $edge) {
+            $link_name = $edge[2];
+            $parent = $edge[0];
+            $child = $edge[1];
+            if (!isset($agg[$link_name])) {
+                $agg[$link_name] = [
+                    'ref_count' => 0,
+                    'targets' => [],
+                    'sample_parent_node_id' => $parent,
+                    'sample_child_node_id' => $child,
+                ];
+            } else {
+                if ($parent < $agg[$link_name]['sample_parent_node_id']) {
+                    $agg[$link_name]['sample_parent_node_id'] = $parent;
+                }
+                if ($child < $agg[$link_name]['sample_child_node_id']) {
+                    $agg[$link_name]['sample_child_node_id'] = $child;
+                }
+            }
+            $agg[$link_name]['ref_count']++;
+            $agg[$link_name]['targets'][$child] = true;
+        }
+
+        $results = [];
+        foreach ($agg as $link_name => $info) {
+            if ($info['ref_count'] <= 10) {
+                continue;
+            }
+            $results[] = [
+                'link_name' => $link_name,
+                'ref_count' => $info['ref_count'],
+                'target_count' => count($info['targets']),
+                'sample_parent_node_id' => $info['sample_parent_node_id'],
+                'sample_child_node_id' => $info['sample_child_node_id'],
+            ];
+        }
+        usort($results, static fn (array $a, array $b): int => $b['ref_count'] <=> $a['ref_count']);
+        return array_slice($results, 0, $limit);
+    }
+
+    /**
+     * Set of every node_id whose location rows include `$location_type`.
+     * Replaces the `SELECT DISTINCT node_id FROM context_node_locations
+     * WHERE location_type = ?` query `ChokePointPass` used to issue for
+     * the `ObjectsStoreMemoryLocation` deprioritisation set (and the
+     * parallel `BinaryReportDataProvider::getNodesByLocationType` walk
+     * for `.rmem` input). Returns the same `array<int, true>` shape the
+     * pass uses for `isset()` lookups.
+     *
+     * Backed by the inverted {@see self::$nodes_by_location_type} index,
+     * **not** by the lex-min primary {@see self::$node_location_types} —
+     * a node carrying both `ObjectsStoreMemoryLocation` and a
+     * lex-smaller secondary type is included here, matching the
+     * `WHERE … = ?` set semantics of the old SQL.
+     *
+     * @return array<int, true>
+     */
+    public function getNodesByLocationType(string $location_type): array
+    {
+        return $this->nodes_by_location_type[$location_type] ?? [];
+    }
+
     /** @return list<int> */
     public function getRoots(): array
     {
@@ -972,6 +1093,36 @@ class GraphSubstrate
             if ($r[4] !== null) {
                 $this->node_string_values[$node_id] = (string)$r[4];
             }
+        }
+    }
+
+    /**
+     * Populate the inverted `location_type` → node_id set index
+     * ({@see self::$nodes_by_location_type}). Mirrors the
+     * `SELECT DISTINCT node_id … WHERE location_type = ?` semantics
+     * `ChokePointPass`'s SQL fallback used: a multi-row node lands in
+     * every bucket whose location_type it touches, not just its
+     * primary lex-min slot.
+     *
+     * @psalm-suppress MixedArrayAccess, MixedAssignment, MixedArgument
+     */
+    protected function loadNodeLocationTypeSets(\PDO $db, int $run_id): void
+    {
+        // Region predicate kept consistent with `loadNodeSizes` —
+        // chokepoint deprioritisation should not be triggered by
+        // outside-region location rows the size attribution already
+        // dropped.
+        $regionPredicate = RegionFilter::sqlPredicate('region');
+        $stmt = $db->query(
+            "SELECT DISTINCT location_type, node_id"
+            . " FROM context_node_locations WHERE run_id = {$run_id}"
+            . " AND {$regionPredicate}"
+            . " AND location_type IS NOT NULL"
+        );
+        while ($r = $stmt->fetch(\PDO::FETCH_NUM)) {
+            $type = (string)$r[0];
+            $node_id = (int)$r[1];
+            $this->nodes_by_location_type[$type][$node_id] = true;
         }
     }
 

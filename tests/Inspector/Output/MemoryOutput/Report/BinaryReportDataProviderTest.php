@@ -17,6 +17,8 @@ use PHPUnit\Framework\TestCase;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader;
 use Reli\Inspector\Output\MemoryOutput\BinaryMemoryOutput;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\CallFrameHeaderMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ObjectsStoreMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
 use Reli\Lib\Process\MemoryLocation;
@@ -162,43 +164,79 @@ class BinaryReportDataProviderTest extends TestCase
         }
     }
 
-    public function testGetNodesByLocationType(): void
+    public function testSubstrateNodesByLocationTypeOverRmemFixture(): void
     {
+        // `BinaryReportDataProvider::getNodesByLocationType` moved onto
+        // `GraphSubstrate` in #787 Stage B follow-up so the bucket-level
+        // primitive can't drift between the .db and .rmem paths.
+        // Asserts here exercise the same end-to-end shape over an .rmem
+        // fixture (substrate loaded via `loadFromBinary`).
         $reader = $this->buildFixture();
+        $substrate = \Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate::loadFromBinary($reader);
 
-        // Find all ZendObjectMemoryLocation nodes
-        $object_nodes = BinaryReportDataProvider::getNodesByLocationType(
-            $reader,
-            'ZendObjectMemoryLocation',
-        );
-
+        $object_nodes = $substrate->getNodesByLocationType('ZendObjectMemoryLocation');
         $this->assertArrayHasKey(1, $object_nodes);
         $this->assertArrayHasKey(3, $object_nodes);
-        $this->assertArrayNotHasKey(2, $object_nodes); // string node
-        $this->assertArrayNotHasKey(4, $object_nodes); // string node
+        $this->assertArrayNotHasKey(2, $object_nodes);
+        $this->assertArrayNotHasKey(4, $object_nodes);
 
-        // Find all ZendStringMemoryLocation nodes
-        $string_nodes = BinaryReportDataProvider::getNodesByLocationType(
-            $reader,
-            'ZendStringMemoryLocation',
-        );
-
+        $string_nodes = $substrate->getNodesByLocationType('ZendStringMemoryLocation');
         $this->assertArrayHasKey(2, $string_nodes);
         $this->assertArrayHasKey(4, $string_nodes);
-        $this->assertArrayNotHasKey(1, $string_nodes); // object node
-        $this->assertArrayNotHasKey(3, $string_nodes); // object node
+        $this->assertArrayNotHasKey(1, $string_nodes);
+        $this->assertArrayNotHasKey(3, $string_nodes);
+
+        $this->assertEmpty($substrate->getNodesByLocationType('NonExistentLocationType'));
     }
 
-    public function testGetNodesByLocationTypeReturnsEmptyForUnknownType(): void
+    public function testSubstrateNodesByLocationTypeMatchesAnyRowNotJustPrimaryLexMin(): void
     {
-        $reader = $this->buildFixture();
-
-        $result = BinaryReportDataProvider::getNodesByLocationType(
-            $reader,
-            'NonExistentLocationType',
+        // Regression for the Stage B follow-up review: `getNodesByLocationType`
+        // mirrors the OLD `SELECT DISTINCT node_id … WHERE location_type = ?`
+        // semantics ("any row of this type"), NOT the lex-min "primary
+        // type" semantics that backs `getNodeLocationType()`. A node with
+        // multiple location rows of different types must be discoverable
+        // by every type it carries, even when its lex-min slot is taken
+        // by an alphabetically-smaller type.
+        $sink = new BinaryContextTreeSink(batch_size: 8);
+        $sink->emitNode(
+            node_id: 1,
+            parent_node_id: null,
+            link_name: 'root',
+            type: 'RootContext',
+            // Two locations on one node, ObjectsStore + CallFrameHeader.
+            // 'C' < 'O' lexicographically, so the lex-min primary is
+            // CallFrameHeader — yet a query for ObjectsStoreMemoryLocation
+            // must still find this node.
+            locations: [
+                new ObjectsStoreMemoryLocation(0x1000, 256),
+                new CallFrameHeaderMemoryLocation(0x2000, 128),
+            ],
+            attributes: [],
         );
+        $binary_output = new BinaryMemoryOutput($this->rmem_path);
+        $binary_output->finalizeStreaming($sink, [
+            ['zend_mm_heap_usage' => '384'],
+        ]);
 
-        $this->assertEmpty($result);
+        $reader = Reader::open($this->rmem_path);
+        $substrate = \Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate::loadFromBinary($reader);
+
+        $this->assertSame(
+            'CallFrameHeaderMemoryLocation',
+            $substrate->getNodeLocationType(1),
+            'primary location type is lex-min',
+        );
+        $this->assertArrayHasKey(
+            1,
+            $substrate->getNodesByLocationType('ObjectsStoreMemoryLocation'),
+            'node 1 must be discoverable via its non-primary ObjectsStore row',
+        );
+        $this->assertArrayHasKey(
+            1,
+            $substrate->getNodesByLocationType('CallFrameHeaderMemoryLocation'),
+            'node 1 must also be discoverable via its primary CallFrameHeader row',
+        );
     }
 
     public function testLoadFrameLabelsReturnsFunctionNameAndLineno(): void
@@ -220,18 +258,18 @@ class BinaryReportDataProviderTest extends TestCase
         $this->assertArrayNotHasKey(4, $labels);
     }
 
-    public function testGetNonTreeEdgeStatsWithNoNonTreeEdges(): void
+    public function testSubstrateNonTreeEdgeStatsWithNoNonTreeEdges(): void
     {
+        // Same end-to-end coverage as the old
+        // `BinaryReportDataProvider::getNonTreeEdgeStats` test, now via
+        // the substrate primitive (the BinaryReportDataProvider method
+        // was deleted in #787 Stage B follow-up).
         $reader = $this->buildFixture();
-
-        // Our fixture has only tree edges (parent-child relationships),
-        // so non-tree edge stats should be empty
-        $result = BinaryReportDataProvider::getNonTreeEdgeStats($reader, 20);
-
-        $this->assertEmpty($result);
+        $substrate = \Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate::loadFromBinary($reader);
+        $this->assertEmpty($substrate->getNonTreeEdgeStats(20));
     }
 
-    public function testGetNonTreeEdgeStatsWithReferences(): void
+    public function testSubstrateNonTreeEdgeStatsWithReferences(): void
     {
         // Build a fixture with enough non-tree references to pass the > 10 filter
         $sink = new BinaryContextTreeSink(batch_size: 64);
@@ -279,7 +317,8 @@ class BinaryReportDataProviderTest extends TestCase
         ]);
 
         $reader = Reader::open($this->rmem_path);
-        $result = BinaryReportDataProvider::getNonTreeEdgeStats($reader, 20);
+        $substrate = \Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate::loadFromBinary($reader);
+        $result = $substrate->getNonTreeEdgeStats(20);
 
         $this->assertNotEmpty($result);
         // Should have one group with link_name 'shared_ref' and ref_count >= 15
