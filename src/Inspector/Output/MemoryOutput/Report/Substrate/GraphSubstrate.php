@@ -275,10 +275,20 @@ class GraphSubstrate
                 $substrate->node_sizes[$node_id] = ($substrate->node_sizes[$node_id] ?? 0) + $size;
 
                 $class_id = $row['class_id'];
-                if ($class_id !== Format::NULL_STRING_ID && !isset($substrate->node_classes[$node_id])) {
+                if ($class_id !== Format::NULL_STRING_ID) {
                     $cls = $dict->lookup($class_id);
                     if ($cls !== null) {
-                        $substrate->node_classes[$node_id] = $cls;
+                        // Track the lex-min class name (matching the
+                        // PDO loader's `min(class_name)` — see
+                        // {@see self::loadNodeSizes()}). Pre-Stage-B
+                        // follow-up this was first-encountered-non-null,
+                        // which drifted on multi-class nodes between
+                        // the .db and .rmem paths even though every
+                        // typical heap shape carries one class per node.
+                        $current = $substrate->node_classes[$node_id] ?? null;
+                        if ($current === null || $cls < $current) {
+                            $substrate->node_classes[$node_id] = $cls;
+                        }
                     }
                 }
                 // The .db loader uses `min(location_type)` / `min(string_value)`

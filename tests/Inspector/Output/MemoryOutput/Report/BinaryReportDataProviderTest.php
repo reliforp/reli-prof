@@ -239,6 +239,44 @@ class BinaryReportDataProviderTest extends TestCase
         );
     }
 
+    public function testSubstrateGetNodeClassPicksLexMinOnRmemPath(): void
+    {
+        // Pre-fix the binary writer / loader captured class names as
+        // "first non-null encountered", whereas the PDO loaders used
+        // SQLite `min(class_name)` — so a node carrying multiple
+        // ZendObjectMemoryLocation rows with different class names
+        // could resolve to a different class on the .rmem path than on
+        // the .db path. Post-fix both paths converge on the lex-min.
+        $sink = new BinaryContextTreeSink(batch_size: 8);
+        $sink->emitNode(
+            node_id: 1,
+            parent_node_id: null,
+            link_name: 'root',
+            type: 'RootContext',
+            // Two object locations on a single node. Apple < Banana
+            // lex-wise, so the captured class should be 'App\\Apple'.
+            // Order of emission deliberately picks Banana first to
+            // make sure the writer isn't just doing first-non-null.
+            locations: [
+                new ZendObjectMemoryLocation(0x1000, 64, 1, 7, 'App\\Banana'),
+                new ZendObjectMemoryLocation(0x1100, 64, 1, 7, 'App\\Apple'),
+            ],
+            attributes: [],
+        );
+        $binary_output = new BinaryMemoryOutput($this->rmem_path);
+        $binary_output->finalizeStreaming($sink, [
+            ['zend_mm_heap_usage' => '128'],
+        ]);
+
+        $reader = Reader::open($this->rmem_path);
+        $substrate = \Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate::loadFromBinary($reader);
+        $this->assertSame(
+            'App\\Apple',
+            $substrate->getNodeClass(1),
+            'binary loader must pick lex-min class name on multi-class node',
+        );
+    }
+
     public function testLoadFrameLabelsReturnsFunctionNameAndLineno(): void
     {
         $reader = $this->buildFixture();

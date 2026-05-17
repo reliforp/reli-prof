@@ -589,14 +589,35 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                         $ffiNodeSizes[$csrIdx] = $ffiNodeSizes[$csrIdx] + $size;
                         $substrate->nodeSizesSum += $size;
 
-                        if ($class_id !== Format::NULL_STRING_ID && $nodeClassIds[$csrIdx] === -1) {
+                        if ($class_id !== Format::NULL_STRING_ID) {
                             $className = $dict->lookup($class_id);
                             if ($className !== null) {
-                                if (!isset($substrate->classDictReverse[$className])) {
-                                    $substrate->classDictReverse[$className] = count($substrate->classDict);
-                                    $substrate->classDict[] = $className;
+                                // Track running lex-min class name to
+                                // match the PDO loader's
+                                // `min(class_name)`. The on-disk
+                                // `node_classes` fast-path baked above
+                                // already uses lex-min semantics
+                                // (see {@see BinaryContextTreeSink}),
+                                // so this fallback only fires when the
+                                // section is absent or for older
+                                // first-non-null .rmem files — keeping
+                                // the same convention here means
+                                // newer .rmem files (with the section)
+                                // and older ones (re-derived via
+                                // locations scan) produce the same key.
+                                $existing_id = $nodeClassIds[$csrIdx];
+                                $shouldReplace = $existing_id === -1;
+                                if (!$shouldReplace) {
+                                    $existing_name = $substrate->classDict[$existing_id] ?? null;
+                                    $shouldReplace = $existing_name !== null && $className < $existing_name;
                                 }
-                                $nodeClassIds[$csrIdx] = $substrate->classDictReverse[$className];
+                                if ($shouldReplace) {
+                                    if (!isset($substrate->classDictReverse[$className])) {
+                                        $substrate->classDictReverse[$className] = count($substrate->classDict);
+                                        $substrate->classDict[] = $className;
+                                    }
+                                    $nodeClassIds[$csrIdx] = $substrate->classDictReverse[$className];
+                                }
                             }
                         }
                     }

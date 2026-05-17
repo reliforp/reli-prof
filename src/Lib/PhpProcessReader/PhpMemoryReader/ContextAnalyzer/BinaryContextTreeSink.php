@@ -328,11 +328,24 @@ final class BinaryContextTreeSink implements ContextTreeSink
             $this->ensurePerNodeCapacity($node_id);
             if (!$this->perNodeRegionFiltered || RegionFilter::isRelevant($region)) {
                 $this->perNodeSizes[$node_id] = $this->perNodeSizes[$node_id] + $location->size;
-                if (
-                    $class_id !== Format::NULL_STRING_ID
-                    && $this->perNodeClasses[$node_id] === Format::NULL_STRING_ID
-                ) {
-                    $this->perNodeClasses[$node_id] = $class_id;
+                if ($class_id !== Format::NULL_STRING_ID) {
+                    // The on-disk `node_classes` section is the FFI
+                    // substrate's class fast-path on .rmem reports, and
+                    // its semantics needs to match the PDO loader's
+                    // `min(class_name)` so multi-class nodes resolve to
+                    // the same name on both report paths. Compare by
+                    // interned class_name string (one dict lookup per
+                    // multi-class node — typical heaps emit one class
+                    // per node so the comparison is rarely taken).
+                    $existing_id = $this->perNodeClasses[$node_id];
+                    if ($existing_id === Format::NULL_STRING_ID) {
+                        $this->perNodeClasses[$node_id] = $class_id;
+                    } elseif ($existing_id !== $class_id) {
+                        $existing_name = $this->stringDict->lookup($existing_id);
+                        if ($existing_name !== null && $class_name_val !== null && $class_name_val < $existing_name) {
+                            $this->perNodeClasses[$node_id] = $class_id;
+                        }
+                    }
                 }
             }
 
