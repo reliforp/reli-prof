@@ -43,7 +43,10 @@ class DedupCandidatePassTest extends BaseTestCase
         $this->seedRepresentativeScenario($db);
 
         $substrate = GraphSubstrate::loadFromDb($db, 1);
-        $graph_findings = (new DedupCandidatePass($db, 1, $substrate))->analyze();
+        $graph_findings = (new DedupCandidatePass(
+            $substrate,
+            $substrate->getDedupCandidateStats(10),
+        ))->analyze();
 
         $dedup_graph = $this->findFinding(
             $graph_findings,
@@ -67,7 +70,10 @@ class DedupCandidatePassTest extends BaseTestCase
         $this->seedSharedSingletonScenario($db);
 
         $substrate = GraphSubstrate::loadFromDb($db, 1);
-        $findings = (new DedupCandidatePass($db, 1, $substrate))->analyze();
+        $findings = (new DedupCandidatePass(
+            $substrate,
+            $substrate->getDedupCandidateStats(10),
+        ))->analyze();
 
         $this->assertNull($this->findFinding(
             $findings,
@@ -89,7 +95,10 @@ class DedupCandidatePassTest extends BaseTestCase
         $this->seedHeterogeneousClassScenario($db);
 
         $substrate = GraphSubstrate::loadFromDb($db, 1);
-        $findings = (new DedupCandidatePass($db, 1, $substrate))->analyze();
+        $findings = (new DedupCandidatePass(
+            $substrate,
+            $substrate->getDedupCandidateStats(10),
+        ))->analyze();
 
         // Without the per-class group key the SQL would have produced a
         // single bucket of count=120 mixing both classes. With the fix
@@ -130,7 +139,10 @@ class DedupCandidatePassTest extends BaseTestCase
         $this->seedTreeChainSharedScenario($db);
 
         $substrate = GraphSubstrate::loadFromDb($db, 1);
-        $findings = (new DedupCandidatePass($db, 1, $substrate))->analyze();
+        $findings = (new DedupCandidatePass(
+            $substrate,
+            $substrate->getDedupCandidateStats(10),
+        ))->analyze();
 
         $finding = $this->findFinding(
             $findings,
