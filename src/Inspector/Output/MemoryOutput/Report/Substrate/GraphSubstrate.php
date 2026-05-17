@@ -71,9 +71,10 @@ class GraphSubstrate
      * identity (B6) and by future passes that need a node's "what kind
      * of allocation is this?" answer without an extra SQL hop.
      *
-     * The .db loader uses `min(location_type)` over duplicate rows so
-     * the binary path's first-non-null traversal stays consistent —
-     * both keys are deterministic for the same dataset.
+     * Both substrate paths converge on the lexicographically smallest
+     * non-null value when a node has multiple location rows: the .db
+     * loader uses SQLite `min(location_type)` and the binary loaders
+     * track the running min as they walk the locations section.
      *
      * @var array<int, string>
      */
@@ -940,17 +941,19 @@ class GraphSubstrate
     {
         // Apply the shared size-attribution region policy. See RegionFilter.
         //
-        // `min(class_name)`, `min(location_type)`, `min(string_value)` —
+        // `min(class_name)` / `min(location_type)` / `min(string_value)` —
         // SQLite's `min` ignores NULLs and picks the lexicographically
-        // smallest value, so the resulting per-node tuple is deterministic
-        // across runs and matches what DedupCandidatePass used to compute
-        // inline in its own CTE. The binary loader mirrors the same
-        // first-encountered-non-null shape (see {@see loadFromBinary}), so
-        // both substrate paths produce the same dedup-bucket keys for the
-        // same heap.
+        // smallest value, so the per-node tuple is deterministic across
+        // runs. Matches what the FFI variant's `loadNodeSizesFfi` uses, so
+        // the two PDO loaders agree on `node_classes` on the rare nodes
+        // that carry multiple location rows with distinct class names.
+        // The binary loaders track a running lex-min for location_type
+        // and string_value (class capture there is still first-non-null
+        // — pre-existing behaviour, broader callers, out of scope for
+        // Stage B; see #787 follow-up).
         $regionPredicate = RegionFilter::sqlPredicate('region');
         $stmt = $db->query(
-            "SELECT node_id, sum(size) as s, group_concat(DISTINCT class_name) as cls,"
+            "SELECT node_id, sum(size) as s, min(class_name) as cls,"
             . " min(location_type) as loc_type, min(string_value) as str_val"
             . " FROM context_node_locations WHERE run_id = {$run_id}"
             . " AND {$regionPredicate}"
@@ -961,7 +964,7 @@ class GraphSubstrate
             $node_id = (int)$r[0];
             $this->node_sizes[$node_id] = (int)$r[1];
             if ($r[2] !== null) {
-                $this->node_classes[$node_id] = $r[2];
+                $this->node_classes[$node_id] = (string)$r[2];
             }
             if ($r[3] !== null) {
                 $this->node_location_types[$node_id] = (string)$r[3];
