@@ -24,17 +24,25 @@ use Reli\Inspector\Output\MemoryOutput\Report\Substrate\SizeFormatter;
 final class ChokePointPass implements PassInterface
 {
     /**
-     * @param array<int, true>|null $objects_store_nodes Pre-computed set (binary path)
-     * @param array<int, string>|null $frame_labels Pre-loaded frame labels (binary path)
-     * @param array<int, string>|null $canonical_names Pre-loaded class/
-     *     method/function canonical names (binary path)
+     * @param array<int, true> $objects_store_nodes Set of node_ids whose
+     *     primary location_type is `ObjectsStoreMemoryLocation` — used
+     *     to deprioritise (not exclude) trivially-large chokepoints.
+     *     Produced by {@see GraphSubstrate::getNodesByLocationType()}.
+     * @param array<int, string>|null $frame_labels Pre-loaded frame labels
+     *     for {@see NodeLabeler}. Null on the `.db` path; the labeler then
+     *     resolves them via the injected `$db` / `$run_id` per its own
+     *     contract (separate from this pass's bucket-aggregation
+     *     migration).
+     * @param array<int, string>|null $canonical_names Pre-loaded class /
+     *     method / function canonical names for {@see NodeLabeler}; same
+     *     binary-vs-db contract as `$frame_labels`.
      */
     public function __construct(
         private GraphSubstrate $substrate,
         private \PDO $db,
         private int $run_id,
-        private int $heap_usage = 0,
-        private ?array $objects_store_nodes = null,
+        private int $heap_usage,
+        private array $objects_store_nodes,
         private ?array $frame_labels = null,
         private ?array $canonical_names = null,
     ) {
@@ -50,21 +58,7 @@ final class ChokePointPass implements PassInterface
     public function analyze(): array
     {
         $chokepoints = [];
-
-        // Identify objects_store node IDs — used to deprioritize, not exclude.
-        if ($this->objects_store_nodes !== null) {
-            $objects_store_nodes = $this->objects_store_nodes;
-        } else {
-            $objects_store_nodes = [];
-            $os_stmt = $this->db->query(
-                "SELECT DISTINCT node_id FROM context_node_locations"
-                . " WHERE run_id = {$this->run_id}"
-                . " AND location_type = 'ObjectsStoreMemoryLocation'"
-            );
-            while ($nid = $os_stmt->fetchColumn()) {
-                $objects_store_nodes[(int)$nid] = true;
-            }
-        }
+        $objects_store_nodes = $this->objects_store_nodes;
 
         foreach ($this->substrate->iterateSubtreeSizes() as $node => $subtree) {
             // Skip non-canonical duplicates to avoid double-counting
@@ -118,10 +112,11 @@ final class ChokePointPass implements PassInterface
         }
         $chokepoints = $filtered;
 
-        // The parent walk + node type lookups now come from the
-        // substrate's in-memory indexes (loadEdgesFfi / loadNodeTypesFfi),
-        // so the only prepared statement left here is the loc_stmt
-        // class+location_type lookup, which is called at most 10 times.
+        // The parent walk + node type / class / location_type lookups
+        // all come from the substrate's in-memory indexes; the only
+        // remaining `\PDO` use is the {@see NodeLabeler}'s frame-label /
+        // canonical-name fallback on the `.db` path (out of scope for
+        // the Stage B bucket-aggregation migration).
         $labeler = new NodeLabeler(
             $this->db,
             $this->run_id,
@@ -129,27 +124,10 @@ final class ChokePointPass implements PassInterface
             $this->canonical_names,
         );
 
-        $loc_stmt = null;
-        if ($this->objects_store_nodes === null) {
-            // SQL path: prepare per-node location lookup
-            $loc_stmt = $this->db->prepare(
-                "SELECT class_name, location_type FROM context_node_locations"
-                . " WHERE node_id = ? AND run_id = {$this->run_id} LIMIT 1"
-            );
-        }
-
         $findings = [];
         foreach (array_slice($chokepoints, 0, 10) as [$node, $shallow, $subtree, $ratio]) {
-            if ($loc_stmt !== null) {
-                $loc_stmt->execute([$node]);
-                $loc = $loc_stmt->fetch(\PDO::FETCH_ASSOC);
-                $class = $loc['class_name'] ?? '';
-                $loc_type = $loc['location_type'] ?? '';
-            } else {
-                // Binary path: use substrate for class, skip location_type
-                $class = $this->substrate->getNodeClass($node) ?? '';
-                $loc_type = '';
-            }
+            $class = $this->substrate->getNodeClass($node) ?? '';
+            $loc_type = $this->substrate->getNodeLocationType($node) ?? '';
 
             // Build a meaningful label: prefer class_name > location_type > node type > link_name
             $label = '';

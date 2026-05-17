@@ -223,8 +223,9 @@ final class ReportGenerator
             $pass_factories['TopStringsPass'] = fn (): array => $this->runPass(
                 new TopStringsPass($db_factory(), $run_id, $substrate)
             );
+            $db_non_tree_edge_stats = $substrate->getNonTreeEdgeStats(20);
             $pass_factories['NonTreeEdgePass'] = fn (): array => $this->runPass(
-                new NonTreeEdgePass($db_factory(), $run_id, $substrate)
+                new NonTreeEdgePass($substrate, $db_non_tree_edge_stats)
             );
             $db_dedup_candidates = $substrate->getDedupCandidateStats(10);
             $pass_factories['DedupCandidatePass'] = fn (): array => $this->runPass(
@@ -236,8 +237,15 @@ final class ReportGenerator
             $pass_factories['DrillDownPass'] = fn (): array => $this->runPass(
                 new DrillDownPass($substrate, $db_factory(), $run_id)
             );
+            $db_objects_store_nodes = $substrate->getNodesByLocationType('ObjectsStoreMemoryLocation');
             $pass_factories['ChokePointPass'] = fn (): array => $this->runPass(
-                new ChokePointPass($substrate, $db_factory(), $run_id, $heap_usage)
+                new ChokePointPass(
+                    $substrate,
+                    $db_factory(),
+                    $run_id,
+                    $heap_usage,
+                    $db_objects_store_nodes,
+                )
             );
             $pass_factories['BlameAllocationPass'] = fn (): array => $this->runPass(
                 new BlameAllocationPass($substrate)
@@ -339,16 +347,15 @@ final class ReportGenerator
             // via copy-on-write.
             $frame_labels = BinaryReportDataProvider::loadFrameLabels($reader);
             $canonical_names = BinaryReportDataProvider::loadCanonicalNames($reader);
-            $objects_store_nodes = BinaryReportDataProvider::getNodesByLocationType(
-                $reader,
-                'ObjectsStoreMemoryLocation',
-            );
             $top_strings = BinaryReportDataProvider::getTopStrings($reader, 10);
-            $non_tree_edge_stats = BinaryReportDataProvider::getNonTreeEdgeStats($reader, 20);
-            // Dedup-candidate aggregation lives on the substrate now —
-            // same primitive on both .db and .rmem paths so the B6
-            // (class + location_type bucket key) fix can't drift between
-            // them. See Stage B of #787.
+            // ObjectsStoreMemoryLocation set, non-tree-strong-edge stats
+            // and dedup-candidate aggregation all live on the substrate
+            // now — same primitive on both .db and .rmem paths so the
+            // bucket keys can't drift. See #787 Stage B (dedup) and the
+            // Stage B follow-up that promoted these two onto the
+            // substrate as well.
+            $objects_store_nodes = $substrate->getNodesByLocationType('ObjectsStoreMemoryLocation');
+            $non_tree_edge_stats = $substrate->getNonTreeEdgeStats(20);
             $dedup_candidates = $substrate->getDedupCandidateStats(10);
 
             // Release Reader's castSection cache — substrate and data
@@ -416,7 +423,7 @@ final class ReportGenerator
                 )
             );
             $pass_factories['NonTreeEdgePass'] = fn (): array => $this->runPass(
-                new NonTreeEdgePass($dummy_factory(), 0, $substrate, $non_tree_edge_stats)
+                new NonTreeEdgePass($substrate, $non_tree_edge_stats)
             );
             $pass_factories['DedupCandidatePass'] = fn (): array => $this->runPass(
                 new DedupCandidatePass($substrate, $dedup_candidates)

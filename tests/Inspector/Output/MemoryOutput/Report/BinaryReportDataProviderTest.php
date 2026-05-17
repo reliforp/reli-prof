@@ -162,43 +162,29 @@ class BinaryReportDataProviderTest extends TestCase
         }
     }
 
-    public function testGetNodesByLocationType(): void
+    public function testSubstrateNodesByLocationTypeOverRmemFixture(): void
     {
+        // `BinaryReportDataProvider::getNodesByLocationType` moved onto
+        // `GraphSubstrate` in #787 Stage B follow-up so the bucket-level
+        // primitive can't drift between the .db and .rmem paths.
+        // Asserts here exercise the same end-to-end shape over an .rmem
+        // fixture (substrate loaded via `loadFromBinary`).
         $reader = $this->buildFixture();
+        $substrate = \Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate::loadFromBinary($reader);
 
-        // Find all ZendObjectMemoryLocation nodes
-        $object_nodes = BinaryReportDataProvider::getNodesByLocationType(
-            $reader,
-            'ZendObjectMemoryLocation',
-        );
-
+        $object_nodes = $substrate->getNodesByLocationType('ZendObjectMemoryLocation');
         $this->assertArrayHasKey(1, $object_nodes);
         $this->assertArrayHasKey(3, $object_nodes);
-        $this->assertArrayNotHasKey(2, $object_nodes); // string node
-        $this->assertArrayNotHasKey(4, $object_nodes); // string node
+        $this->assertArrayNotHasKey(2, $object_nodes);
+        $this->assertArrayNotHasKey(4, $object_nodes);
 
-        // Find all ZendStringMemoryLocation nodes
-        $string_nodes = BinaryReportDataProvider::getNodesByLocationType(
-            $reader,
-            'ZendStringMemoryLocation',
-        );
-
+        $string_nodes = $substrate->getNodesByLocationType('ZendStringMemoryLocation');
         $this->assertArrayHasKey(2, $string_nodes);
         $this->assertArrayHasKey(4, $string_nodes);
-        $this->assertArrayNotHasKey(1, $string_nodes); // object node
-        $this->assertArrayNotHasKey(3, $string_nodes); // object node
-    }
+        $this->assertArrayNotHasKey(1, $string_nodes);
+        $this->assertArrayNotHasKey(3, $string_nodes);
 
-    public function testGetNodesByLocationTypeReturnsEmptyForUnknownType(): void
-    {
-        $reader = $this->buildFixture();
-
-        $result = BinaryReportDataProvider::getNodesByLocationType(
-            $reader,
-            'NonExistentLocationType',
-        );
-
-        $this->assertEmpty($result);
+        $this->assertEmpty($substrate->getNodesByLocationType('NonExistentLocationType'));
     }
 
     public function testLoadFrameLabelsReturnsFunctionNameAndLineno(): void
@@ -220,18 +206,18 @@ class BinaryReportDataProviderTest extends TestCase
         $this->assertArrayNotHasKey(4, $labels);
     }
 
-    public function testGetNonTreeEdgeStatsWithNoNonTreeEdges(): void
+    public function testSubstrateNonTreeEdgeStatsWithNoNonTreeEdges(): void
     {
+        // Same end-to-end coverage as the old
+        // `BinaryReportDataProvider::getNonTreeEdgeStats` test, now via
+        // the substrate primitive (the BinaryReportDataProvider method
+        // was deleted in #787 Stage B follow-up).
         $reader = $this->buildFixture();
-
-        // Our fixture has only tree edges (parent-child relationships),
-        // so non-tree edge stats should be empty
-        $result = BinaryReportDataProvider::getNonTreeEdgeStats($reader, 20);
-
-        $this->assertEmpty($result);
+        $substrate = \Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate::loadFromBinary($reader);
+        $this->assertEmpty($substrate->getNonTreeEdgeStats(20));
     }
 
-    public function testGetNonTreeEdgeStatsWithReferences(): void
+    public function testSubstrateNonTreeEdgeStatsWithReferences(): void
     {
         // Build a fixture with enough non-tree references to pass the > 10 filter
         $sink = new BinaryContextTreeSink(batch_size: 64);
@@ -279,7 +265,8 @@ class BinaryReportDataProviderTest extends TestCase
         ]);
 
         $reader = Reader::open($this->rmem_path);
-        $result = BinaryReportDataProvider::getNonTreeEdgeStats($reader, 20);
+        $substrate = \Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate::loadFromBinary($reader);
+        $result = $substrate->getNonTreeEdgeStats(20);
 
         $this->assertNotEmpty($result);
         // Should have one group with link_name 'shared_ref' and ref_count >= 15

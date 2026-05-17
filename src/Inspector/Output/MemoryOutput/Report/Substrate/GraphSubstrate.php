@@ -757,6 +757,99 @@ class GraphSubstrate
         ];
     }
 
+    /**
+     * Aggregate non-tree strong edges by `link_name`. Replaces the
+     * `GROUP BY link_name … HAVING count(*) > 10` query
+     * `NonTreeEdgePass` used to issue (and the parallel
+     * `BinaryReportDataProvider::getNonTreeEdgeStats` walk for `.rmem`
+     * input). Returns the top `$limit` link names by ref_count, each
+     * carrying a distinct-child target_count and one sample edge for
+     * downstream `getNodeClass()` / `getTreeLinkName()` lookups.
+     *
+     * Bucket threshold (`ref_count > 10`) matches the SQL HAVING; the
+     * pre-Stage-B SQL path also did not filter root-parented edges
+     * because non-tree edges always have a non-null parent — the
+     * substrate's loaders only push into `non_tree_strong_edges` when
+     * `parent !== -1`, which is the same set.
+     *
+     * @return list<array{
+     *     link_name: string,
+     *     ref_count: int,
+     *     target_count: int,
+     *     sample_parent_node_id: int,
+     *     sample_child_node_id: int
+     * }>
+     */
+    public function getNonTreeEdgeStats(int $limit = 20): array
+    {
+        /** @var array<string, array{
+         *     ref_count: int,
+         *     targets: array<int, true>,
+         *     sample_parent_node_id: int,
+         *     sample_child_node_id: int
+         * }> $agg */
+        $agg = [];
+        foreach ($this->iterateNonTreeStrongEdges() as $edge) {
+            $link_name = $edge[2];
+            if (!isset($agg[$link_name])) {
+                $agg[$link_name] = [
+                    'ref_count' => 0,
+                    'targets' => [],
+                    'sample_parent_node_id' => $edge[0],
+                    'sample_child_node_id' => $edge[1],
+                ];
+            }
+            $agg[$link_name]['ref_count']++;
+            $agg[$link_name]['targets'][$edge[1]] = true;
+        }
+
+        $results = [];
+        foreach ($agg as $link_name => $info) {
+            if ($info['ref_count'] <= 10) {
+                continue;
+            }
+            $results[] = [
+                'link_name' => $link_name,
+                'ref_count' => $info['ref_count'],
+                'target_count' => count($info['targets']),
+                'sample_parent_node_id' => $info['sample_parent_node_id'],
+                'sample_child_node_id' => $info['sample_child_node_id'],
+            ];
+        }
+        usort($results, static fn (array $a, array $b): int => $b['ref_count'] <=> $a['ref_count']);
+        return array_slice($results, 0, $limit);
+    }
+
+    /**
+     * Set of every node_id whose primary location_type matches
+     * `$location_type`. Replaces the
+     * `SELECT DISTINCT node_id FROM context_node_locations WHERE
+     * location_type = ?` query `ChokePointPass` used to issue for the
+     * `ObjectsStoreMemoryLocation` deprioritisation set (and the
+     * parallel `BinaryReportDataProvider::getNodesByLocationType` scan
+     * for `.rmem` input). Returns the same `array<int, true>` shape
+     * the pass uses for `isset()` lookups.
+     *
+     * The per-node `location_type` index used here is populated with
+     * lex-min semantics — see `getDedupCandidateStats()` for the same
+     * key convention. A node carrying both
+     * `ObjectsStoreMemoryLocation` and a lex-smaller secondary type
+     * will be missed by this set on both substrate paths, mirroring
+     * the SQL's `WHERE location_type = ?` filter on the `min()` row.
+     *
+     * @return array<int, true>
+     */
+    public function getNodesByLocationType(string $location_type): array
+    {
+        $set = [];
+        foreach ($this->node_location_types as $node_id => $type) {
+            if ($type === $location_type) {
+                $set[$node_id] = true;
+            }
+        }
+        return $set;
+    }
+
     /** @return list<int> */
     public function getRoots(): array
     {
