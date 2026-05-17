@@ -69,11 +69,10 @@ final class BlameAllocationPass implements PassInterface
         // Track which canonicals have been blamed to avoid double-counting
         $blamed_canonicals = [];
 
+        // `iterateNodeSizes()` is guaranteed to skip zero-size
+        // scaffolding nodes, so the previous `if ($size === 0)` guard
+        // is no longer needed here.
         foreach ($this->substrate->iterateNodeSizes() as $node => $size) {
-            if ($size === 0) {
-                continue;
-            }
-
             // Skip non-canonical duplicates to avoid double-counting
             $canon = $this->substrate->getCanonical($node);
             if (isset($blamed_canonicals[$canon])) {
