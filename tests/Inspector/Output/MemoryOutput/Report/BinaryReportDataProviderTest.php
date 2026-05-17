@@ -17,6 +17,8 @@ use PHPUnit\Framework\TestCase;
 use Reli\Inspector\Output\MemoryOutput\BinaryFormat\Reader;
 use Reli\Inspector\Output\MemoryOutput\BinaryMemoryOutput;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\CallFrameHeaderMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ObjectsStoreMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
 use Reli\Lib\Process\MemoryLocation;
@@ -185,6 +187,56 @@ class BinaryReportDataProviderTest extends TestCase
         $this->assertArrayNotHasKey(3, $string_nodes);
 
         $this->assertEmpty($substrate->getNodesByLocationType('NonExistentLocationType'));
+    }
+
+    public function testSubstrateNodesByLocationTypeMatchesAnyRowNotJustPrimaryLexMin(): void
+    {
+        // Regression for the Stage B follow-up review: `getNodesByLocationType`
+        // mirrors the OLD `SELECT DISTINCT node_id … WHERE location_type = ?`
+        // semantics ("any row of this type"), NOT the lex-min "primary
+        // type" semantics that backs `getNodeLocationType()`. A node with
+        // multiple location rows of different types must be discoverable
+        // by every type it carries, even when its lex-min slot is taken
+        // by an alphabetically-smaller type.
+        $sink = new BinaryContextTreeSink(batch_size: 8);
+        $sink->emitNode(
+            node_id: 1,
+            parent_node_id: null,
+            link_name: 'root',
+            type: 'RootContext',
+            // Two locations on one node, ObjectsStore + CallFrameHeader.
+            // 'C' < 'O' lexicographically, so the lex-min primary is
+            // CallFrameHeader — yet a query for ObjectsStoreMemoryLocation
+            // must still find this node.
+            locations: [
+                new ObjectsStoreMemoryLocation(0x1000, 256),
+                new CallFrameHeaderMemoryLocation(0x2000, 128),
+            ],
+            attributes: [],
+        );
+        $binary_output = new BinaryMemoryOutput($this->rmem_path);
+        $binary_output->finalizeStreaming($sink, [
+            ['zend_mm_heap_usage' => '384'],
+        ]);
+
+        $reader = Reader::open($this->rmem_path);
+        $substrate = \Reli\Inspector\Output\MemoryOutput\Report\Substrate\GraphSubstrate::loadFromBinary($reader);
+
+        $this->assertSame(
+            'CallFrameHeaderMemoryLocation',
+            $substrate->getNodeLocationType(1),
+            'primary location type is lex-min',
+        );
+        $this->assertArrayHasKey(
+            1,
+            $substrate->getNodesByLocationType('ObjectsStoreMemoryLocation'),
+            'node 1 must be discoverable via its non-primary ObjectsStore row',
+        );
+        $this->assertArrayHasKey(
+            1,
+            $substrate->getNodesByLocationType('CallFrameHeaderMemoryLocation'),
+            'node 1 must also be discoverable via its primary CallFrameHeader row',
+        );
     }
 
     public function testLoadFrameLabelsReturnsFunctionNameAndLineno(): void
