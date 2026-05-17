@@ -64,6 +64,48 @@ class GraphSubstrate
     public array $node_classes = [];
 
     /**
+     * Per-node primary location type ("ZendStringMemoryLocation",
+     * "ObjectsStoreMemoryLocation", "ZendArrayMemoryLocation", etc.).
+     * Populated alongside {@see self::$node_sizes}. Used by
+     * `getDedupCandidateStats()` to bucket dedup candidates by target
+     * identity (B6) and by future passes that need a node's "what kind
+     * of allocation is this?" answer without an extra SQL hop.
+     *
+     * Both substrate paths converge on the lexicographically smallest
+     * non-null value when a node has multiple location rows: the .db
+     * loader uses SQLite `min(location_type)` and the binary loaders
+     * track the running min as they walk the locations section.
+     *
+     * @var array<int, string>
+     */
+    public array $node_location_types = [];
+
+    /**
+     * Per-node interned string content (only set when the node carries
+     * a non-null `string_value`). Used by `getDedupCandidateStats()` to
+     * build the bucket's `examples` payload without re-scanning
+     * `context_node_locations` per bucket.
+     *
+     * @var array<int, string>
+     */
+    public array $node_string_values = [];
+
+    /**
+     * Non-tree strong edges in the loaded run, as a flat list of
+     * `[parent_node_id, child_node_id, link_name]` triples. Populated
+     * during edge load. The DedupCandidate primitive scans this list
+     * once instead of issuing a `is_tree = 0 AND strength = 'strong'`
+     * query against `context_edges`, removing the last bucket-level SQL
+     * aggregation from the report pipeline (Stage B of #787).
+     *
+     * Synthetic-root edges (`parent_node_id IS NULL`) are excluded
+     * because dedup targets non-root sharing only.
+     *
+     * @var list<array{int, int, string}>
+     */
+    protected array $non_tree_strong_edges = [];
+
+    /**
      * Per-node context type ("PhpReferenceContext", "ObjectPropertiesContext",
      * etc.). Populated alongside loadNodeSizes so the path-walking passes
      * can answer "what is this node?" without per-row prepared statements.
@@ -223,6 +265,32 @@ class GraphSubstrate
                         $substrate->node_classes[$node_id] = $cls;
                     }
                 }
+                // The .db loader uses `min(location_type)` / `min(string_value)`
+                // (SQLite lex-min over duplicate rows). Mirror that here
+                // rather than "first encountered" — file-order would
+                // otherwise pick a different row than SQL when a node has
+                // multiple non-null values, drifting the dedup bucket key
+                // between the .db and .rmem paths.
+                $location_type_id = $row['location_type_id'];
+                if ($location_type_id !== Format::NULL_STRING_ID) {
+                    $loc = $dict->lookup($location_type_id);
+                    if ($loc !== null) {
+                        $current = $substrate->node_location_types[$node_id] ?? null;
+                        if ($current === null || $loc < $current) {
+                            $substrate->node_location_types[$node_id] = $loc;
+                        }
+                    }
+                }
+                $string_value_id = $row['string_value_id'];
+                if ($string_value_id !== Format::NULL_STRING_ID) {
+                    $sv = $dict->lookup($string_value_id);
+                    if ($sv !== null) {
+                        $current = $substrate->node_string_values[$node_id] ?? null;
+                        if ($current === null || $sv < $current) {
+                            $substrate->node_string_values[$node_id] = $sv;
+                        }
+                    }
+                }
             }
         }
 
@@ -263,6 +331,10 @@ class GraphSubstrate
                     $substrate->all_children[$parent][] = $child;
                     if ($is_strong) {
                         $substrate->strong_all_children[$parent][] = $child;
+                    }
+                    if (!$is_tree && $is_strong) {
+                        $link_name_for_edge = $dict->lookup($row['link_name_id']) ?? '';
+                        $substrate->non_tree_strong_edges[] = [$parent, $child, $link_name_for_edge];
                     }
                 }
                 $substrate->all_parents[$child][] = $parent;
@@ -456,6 +528,235 @@ class GraphSubstrate
         return $this->node_types[$nodeId] ?? null;
     }
 
+    /**
+     * Primary location type for the given node, e.g.
+     * "ZendStringMemoryLocation" or "ObjectsStoreMemoryLocation". Returns
+     * null when the node has no recorded location.
+     */
+    public function getNodeLocationType(int $nodeId): ?string
+    {
+        return $this->node_location_types[$nodeId] ?? null;
+    }
+
+    /**
+     * Interned string content for the given node, when the node is a
+     * `zend_string` location with non-null `string_value`. Returns null
+     * for non-string nodes or missing data.
+     */
+    public function getNodeStringValue(int $nodeId): ?string
+    {
+        return $this->node_string_values[$nodeId] ?? null;
+    }
+
+    /**
+     * Iterate non-tree strong edges (parent_node_id, child_node_id,
+     * link_name) — the edge set the dedup pass needs to bucket.
+     * Synthetic-root edges (parent == -1) are excluded.
+     *
+     * @return iterable<array{int, int, string}>
+     */
+    public function iterateNonTreeStrongEdges(): iterable
+    {
+        return $this->non_tree_strong_edges;
+    }
+
+    /**
+     * Aggregate non-tree-strong edges into dedup-candidate buckets.
+     *
+     * Buckets are keyed by `(link_name, child shallow size, child class,
+     * child location_type)` — the same 4-tuple `DedupCandidatePass` used
+     * to compute via SQL CTE. The class + location_type axes guard
+     * against B6 drift: heterogeneous classes that happen to share a
+     * shallow size do not collapse into one bucket, so the bucket's
+     * sample-mean retained size cannot be skewed by an outlier copy.
+     *
+     * Returns the same shape `DedupCandidatePass` expects in its
+     * `$precomputed_dedup_candidates` slot, so the pass becomes a pure
+     * formatter on top of this primitive (no SQL).
+     *
+     * @return list<array{
+     *     link_name: string,
+     *     size: int,
+     *     cnt: int,
+     *     total_waste: int,
+     *     sample_parent_node_id: int,
+     *     sample_child_node_id: int,
+     *     sample_location_type: ?string,
+     *     target_class: ?string,
+     *     target_location_type: ?string,
+     *     sample_child_node_ids: list<int>,
+     *     examples: array<string, mixed>
+     * }>
+     */
+    public function getDedupCandidateStats(int $limit = 10): array
+    {
+        // 1st pass: bucket by the full 4-tuple key. Per-bucket state
+        // tracks the set of distinct member node_ids (so `cnt` reflects
+        // de-duplicated children), a sample parent for owner-class
+        // resolution, plus the per-member metadata the examples builder
+        // needs. `link_name == 'key'` is filtered here — array-key
+        // edges are uninteresting for dedup and used to be dropped at
+        // SQL level by `link_name <> 'key'`.
+        //
+        // Storage reads go through the accessors so the FFI substrate
+        // can serve the same primitive over its int-dict tables without
+        // materialising a PHP `node_classes` map.
+        /**
+         * @var array<string, array{
+         *     link_name: string,
+         *     size: int,
+         *     target_class: ?string,
+         *     target_location_type: ?string,
+         *     sample_parent_node_id: int,
+         *     sample_child_node_id: int,
+         *     seen_children: array<int, true>,
+         *     sample_child_node_ids: list<int>,
+         *     string_counts: array<string, int>,
+         *     object_samples: list<string>
+         * }> $groups
+         */
+        $groups = [];
+
+        foreach ($this->iterateNonTreeStrongEdges() as $edge) {
+            $link_name = $edge[2];
+            if ($link_name === 'key') {
+                continue;
+            }
+            $child = $edge[1];
+            $size = $this->getNodeSize($child);
+            if ($size <= 0) {
+                continue;
+            }
+            $class_name = $this->getNodeClass($child);
+            $location_type = $this->getNodeLocationType($child);
+            $key = $link_name . "\0" . $size
+                . "\0" . ($class_name ?? '')
+                . "\0" . ($location_type ?? '');
+
+            if (!isset($groups[$key])) {
+                $groups[$key] = [
+                    'link_name' => $link_name,
+                    'size' => $size,
+                    'target_class' => $class_name,
+                    'target_location_type' => $location_type,
+                    'sample_parent_node_id' => $edge[0],
+                    'sample_child_node_id' => $child,
+                    'seen_children' => [],
+                    'sample_child_node_ids' => [],
+                    'string_counts' => [],
+                    'object_samples' => [],
+                ];
+            }
+
+            if (isset($groups[$key]['seen_children'][$child])) {
+                continue;
+            }
+            $groups[$key]['seen_children'][$child] = true;
+            // Carry every member id — DedupCandidatePass uses these as
+            // seeds for `unionReachableTreeSize` (T2.1) so a 20-cap here
+            // would under-count the bucket's reachable retained set.
+            $groups[$key]['sample_child_node_ids'][] = $child;
+
+            $string_value = $this->getNodeStringValue($child);
+            if ($string_value !== null) {
+                $groups[$key]['string_counts'][$string_value] =
+                    ($groups[$key]['string_counts'][$string_value] ?? 0) + 1;
+            } elseif (count($groups[$key]['object_samples']) < 3) {
+                $label = $class_name ?? $location_type ?? 'unknown';
+                $sample = "{$label} ({$size}B)";
+                if (!in_array($sample, $groups[$key]['object_samples'], true)) {
+                    $groups[$key]['object_samples'][] = $sample;
+                }
+            }
+        }
+
+        if ($groups === []) {
+            return [];
+        }
+
+        // Apply the same `cnt > 50 AND total_waste > 10240` threshold
+        // the SQL HAVING clause used, then sort by `total_waste` desc and
+        // truncate to `$limit`. `total_waste = cnt × shallow_size` is the
+        // coarse impact estimate; DedupCandidatePass refines it on the
+        // returned buckets via `unionReachableTreeSize()` against the
+        // tree-edge subtrees.
+        $results = [];
+        foreach ($groups as $group) {
+            $cnt = count($group['seen_children']);
+            if ($cnt <= 50) {
+                continue;
+            }
+            $total_waste = $cnt * $group['size'];
+            if ($total_waste <= 10240) {
+                continue;
+            }
+            $results[] = [
+                'link_name' => $group['link_name'],
+                'size' => $group['size'],
+                'cnt' => $cnt,
+                'total_waste' => $total_waste,
+                'sample_parent_node_id' => $group['sample_parent_node_id'],
+                'sample_child_node_id' => $group['sample_child_node_id'],
+                'sample_location_type' => $group['target_location_type'],
+                'target_class' => $group['target_class'],
+                'target_location_type' => $group['target_location_type'],
+                'sample_child_node_ids' => $group['sample_child_node_ids'],
+                'examples' => self::buildDedupExamples(
+                    $group['string_counts'],
+                    $group['object_samples'],
+                ),
+            ];
+        }
+
+        usort($results, static fn (array $a, array $b): int => $b['total_waste'] <=> $a['total_waste']);
+        return array_slice($results, 0, $limit);
+    }
+
+    /**
+     * Build the `examples` payload from per-bucket accumulators.
+     * Mirrors the shape `DedupCandidatePass::buildEvidenceSummary`
+     * consumes — see B6 in docs/internals/memory-report-ux-improvements.md.
+     *
+     * @param array<string, int> $string_counts
+     * @param list<string> $object_samples
+     * @return array<string, mixed>
+     */
+    private static function buildDedupExamples(
+        array $string_counts,
+        array $object_samples,
+    ): array {
+        if ($string_counts !== []) {
+            arsort($string_counts);
+            $values = array_keys($string_counts);
+            $top_value = $values[0] ?? '';
+            if (strlen($top_value) > 60) {
+                $top_value = substr($top_value, 0, 57) . '...';
+            }
+
+            $samples = array_map(
+                static fn (string $value): string => strlen($value) > 40
+                    ? substr($value, 0, 37) . '...'
+                    : $value,
+                array_slice($values, 0, 5),
+            );
+
+            $top_count = reset($string_counts);
+            return [
+                'type' => 'string',
+                'identical_count' => $top_count > 1 ? $top_count : 0,
+                'sample_value' => $top_value,
+                'samples' => $samples,
+                'distinct_values' => count($string_counts),
+            ];
+        }
+
+        return [
+            'type' => 'object',
+            'samples' => $object_samples,
+            'identical_count' => 0,
+        ];
+    }
+
     /** @return list<int> */
     public function getRoots(): array
     {
@@ -639,9 +940,21 @@ class GraphSubstrate
     protected function loadNodeSizes(\PDO $db, int $run_id): void
     {
         // Apply the shared size-attribution region policy. See RegionFilter.
+        //
+        // `min(class_name)` / `min(location_type)` / `min(string_value)` —
+        // SQLite's `min` ignores NULLs and picks the lexicographically
+        // smallest value, so the per-node tuple is deterministic across
+        // runs. Matches what the FFI variant's `loadNodeSizesFfi` uses, so
+        // the two PDO loaders agree on `node_classes` on the rare nodes
+        // that carry multiple location rows with distinct class names.
+        // The binary loaders track a running lex-min for location_type
+        // and string_value (class capture there is still first-non-null
+        // — pre-existing behaviour, broader callers, out of scope for
+        // Stage B; see #787 follow-up).
         $regionPredicate = RegionFilter::sqlPredicate('region');
         $stmt = $db->query(
-            "SELECT node_id, sum(size) as s, group_concat(DISTINCT class_name) as cls"
+            "SELECT node_id, sum(size) as s, min(class_name) as cls,"
+            . " min(location_type) as loc_type, min(string_value) as str_val"
             . " FROM context_node_locations WHERE run_id = {$run_id}"
             . " AND {$regionPredicate}"
             . " GROUP BY node_id"
@@ -651,7 +964,13 @@ class GraphSubstrate
             $node_id = (int)$r[0];
             $this->node_sizes[$node_id] = (int)$r[1];
             if ($r[2] !== null) {
-                $this->node_classes[$node_id] = $r[2];
+                $this->node_classes[$node_id] = (string)$r[2];
+            }
+            if ($r[3] !== null) {
+                $this->node_location_types[$node_id] = (string)$r[3];
+            }
+            if ($r[4] !== null) {
+                $this->node_string_values[$node_id] = (string)$r[4];
             }
         }
     }
@@ -710,6 +1029,9 @@ class GraphSubstrate
                 $this->all_children[$parent][] = $child;
                 if ($is_strong) {
                     $this->strong_all_children[$parent][] = $child;
+                }
+                if (!$is_tree && $is_strong) {
+                    $this->non_tree_strong_edges[] = [$parent, $child, $link_name];
                 }
             }
             $this->all_parents[$child][] = $parent;

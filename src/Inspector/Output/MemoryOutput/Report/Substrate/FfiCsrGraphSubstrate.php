@@ -159,6 +159,24 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
     /** @var \FFI\CArray<int>|null */
     private ?\FFI\CData $nodeTypeIds = null;     // int16_t[nodeCount], -1 = unknown
 
+    // Per-node location_type / string_value / non-tree-strong-edge data
+    // for the dedup primitive lives on the base GraphSubstrate as PHP
+    // arrays ({@see GraphSubstrate::$node_location_types},
+    // {@see GraphSubstrate::$node_string_values},
+    // {@see GraphSubstrate::$non_tree_strong_edges}). The FFI loaders
+    // below populate those PHP arrays directly so
+    // {@see GraphSubstrate::getDedupCandidateStats()} works against the
+    // inherited storage without an FFI variant of its own.
+    //
+    // Memory: PHP arrays of triples / strings, scaling with
+    // non_tree_strong_edge count and node count respectively. The
+    // per-row payload is small in logical bytes but the PHP zval +
+    // bucket + interned-string overhead makes the real heap cost
+    // several times that — meaningful on heaps where the FFI / CSR
+    // path was chosen precisely to dodge PHP array overhead. Profile
+    // before assuming it's negligible; a follow-up can re-encode these
+    // as FFI int-dict storage like the existing class / type dictionaries.
+
     private bool $subtreeSizesComputed = false;
     private int $nodeSizesSum = 0;
 
@@ -469,16 +487,22 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // Scan locations for whatever the on-disk fast paths above did
         // not cover. With FLAG_NODE_SIZES_REGION_FILTERED set in the
         // header (and `node_sizes` + `canonical_map` sections both
-        // present) this whole block is skipped — the single biggest
-        // perf win on the report-load path for large dumps.
+        // present) the size + canonical paths are skipped — the single
+        // biggest perf win on the report-load path for large dumps.
+        //
+        // The dedup primitive needs per-node `location_type` and
+        // `string_value` metadata. There is no on-disk section for
+        // those yet, so when only the size + canonical fast paths fire
+        // we still need a one-shot scan to fill them. A follow-up PR
+        // can add dedicated sections to keep the fast path lossless.
         /** @var array<int, list<int>> $addr_to_nodes address → [node_id, ...] for canonical */
         $addr_to_nodes = [];
         $needSizeAccumulation = !$sizesLoaded;
         $needCanonicalGrouping = !$canonicalLoaded;
-        if (
-            ($needSizeAccumulation || $needCanonicalGrouping)
-            && $reader->hasSection(Format::SECTION_LOCATIONS)
-        ) {
+        // Dedup metadata always rides this scan until a dedicated on-disk
+        // section (writer follow-up) exists, so an `&& true` here keeps
+        // the gate readable next to the other flags.
+        if ($reader->hasSection(Format::SECTION_LOCATIONS)) {
             $locCount = $reader->getSectionElementCount(Format::SECTION_LOCATIONS);
             $locRows = $reader->castSection(Format::SECTION_LOCATIONS, 'LocationRow');
             $locData = $locRows === null ? $reader->getSectionData(Format::SECTION_LOCATIONS) : null;
@@ -495,6 +519,8 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $class_id = $locRows[$i]->class_id;
                     $size = $locRows[$i]->size;
                     $region_id = $locRows[$i]->region_id;
+                    $location_type_id = $locRows[$i]->location_type_id;
+                    $string_value_id = $locRows[$i]->string_value_id;
                 } else {
                     $off = $i * Format::LOCATION_ROW_SIZE;
                     $node_id = unpack('V', $locData, $off)[1];
@@ -502,13 +528,47 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $class_id = unpack('V', $locData, $off + 8)[1];
                     $size = unpack('P', $locData, $off + 20)[1];
                     $region_id = unpack('V', $locData, $off + 40)[1];
+                    $location_type_id = unpack('V', $locData, $off + 4)[1];
+                    $string_value_id = unpack('V', $locData, $off + 28)[1];
                 }
 
-                // Apply the shared size-attribution region policy. See RegionFilter.
-                if (
-                    $needSizeAccumulation
-                    && RegionFilter::isRelevant($dict->lookup($region_id))
-                ) {
+                // Apply the shared size-attribution region policy. See
+                // RegionFilter. The dedup metadata (location_type /
+                // string_value) is gated on the same predicate as size
+                // attribution so a node with both an `outside` row and a
+                // relevant row doesn't get its bucket key picked from the
+                // outside row — the .db loader's WHERE clause already
+                // discards outside rows before the per-node aggregation
+                // runs, and parity is the whole point of routing both
+                // paths through the substrate.
+                $isRelevant = RegionFilter::isRelevant($dict->lookup($region_id));
+
+                if ($isRelevant) {
+                    // .db loader uses `min(location_type)` / `min(string_value)`
+                    // — lex-min over duplicate rows. Mirror that here so
+                    // multi-row nodes converge on the same bucket key on
+                    // both paths.
+                    if ($location_type_id !== Format::NULL_STRING_ID) {
+                        $loc = $dict->lookup($location_type_id);
+                        if ($loc !== null) {
+                            $current = $substrate->node_location_types[$node_id] ?? null;
+                            if ($current === null || $loc < $current) {
+                                $substrate->node_location_types[$node_id] = $loc;
+                            }
+                        }
+                    }
+                    if ($string_value_id !== Format::NULL_STRING_ID) {
+                        $sv = $dict->lookup($string_value_id);
+                        if ($sv !== null) {
+                            $current = $substrate->node_string_values[$node_id] ?? null;
+                            if ($current === null || $sv < $current) {
+                                $substrate->node_string_values[$node_id] = $sv;
+                            }
+                        }
+                    }
+                }
+
+                if ($needSizeAccumulation && $isRelevant) {
                     if ($directMap !== null) {
                         $slot = $node_id + $directOffset;
                         $csrIdx = ($slot < 0 || $slot >= $directSize) ? -1 : $directMap[$slot];
@@ -572,6 +632,7 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // If on-disk CSR sections exist, load them directly.
         if ($reader->hasSection('tree_csr_rowptr')) {
             $substrate->loadCsrFromSections($reader, $nc, $dict);
+            $substrate->populateNonTreeStrongEdgesFromSection($reader, $dict);
             $substrate->linkDictReverse = []; // Free after edge loading (~80 MB)
             $substrate->buildSccAdjacency();
 
@@ -725,6 +786,11 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     $strongAllDeg[$pi] = $strongAllDeg[$pi] + 1;
                     $strongAllCount++;
                 }
+                if (!$is_tree && $is_strong) {
+                    $link_name_for_edge = $dict->lookup($link_name_id) ?? '';
+                    $substrate->non_tree_strong_edges[] =
+                        [$parent, $child, $link_name_for_edge];
+                }
             }
             $revDeg[$ci] = $revDeg[$ci] + 1;
         }
@@ -806,6 +872,59 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         $substrate->computeSubtreeSizesFfi();
         $substrate->computeSccFfi();
         return $substrate;
+    }
+
+    /**
+     * Populate {@see GraphSubstrate::$non_tree_strong_edges} from
+     * SECTION_EDGES on the on-disk-CSR fast path.
+     *
+     * The pre-built non-tree CSR (`ntcsr_rowptr` / `ntcsr_colidx`) only
+     * stores parent → child CSR indices; the link_name for each
+     * non-tree edge isn't on disk, so the dedup primitive — which
+     * buckets by `link_name` — would see an empty list otherwise.
+     * Iterating SECTION_EDGES once gives us the raw triples without
+     * forcing the slower full-rebuild path.
+     *
+     * @psalm-suppress MixedAssignment, MixedArrayAccess
+     */
+    private function populateNonTreeStrongEdgesFromSection(
+        BinaryReader $reader,
+        \Reli\Inspector\Output\MemoryOutput\BinaryFormat\StringDict $dict,
+    ): void {
+        if (!$reader->hasSection(Format::SECTION_EDGES)) {
+            return;
+        }
+        $edgeCount = $reader->getSectionElementCount(Format::SECTION_EDGES);
+        $edgeRows = $reader->castSection(Format::SECTION_EDGES, 'EdgeRow');
+        $edgeData = $edgeRows === null ? $reader->getSectionData(Format::SECTION_EDGES) : null;
+        for ($i = 0; $i < $edgeCount; $i++) {
+            if ($edgeRows !== null) {
+                $raw_parent = $edgeRows[$i]->parent_node_id;
+                $child = $edgeRows[$i]->child_node_id;
+                $link_name_id = $edgeRows[$i]->link_name_id;
+                $is_tree = $edgeRows[$i]->is_tree;
+                $is_strong = $edgeRows[$i]->strength === 0;
+            } else {
+                $row = unpack(
+                    'Vparent_node_id/Vchild_node_id/Vlink_name_id/Cis_tree/Cstrength',
+                    $edgeData,
+                    $i * Format::EDGE_ROW_SIZE,
+                );
+                $raw_parent = (int)$row['parent_node_id'];
+                $child = (int)$row['child_node_id'];
+                $link_name_id = (int)$row['link_name_id'];
+                $is_tree = (int)$row['is_tree'];
+                $is_strong = (int)$row['strength'] === 0;
+            }
+            if ($is_tree || !$is_strong) {
+                continue;
+            }
+            if ($raw_parent === 0xFFFFFFFF) {
+                continue;
+            }
+            $link_name = $dict->lookup($link_name_id) ?? '';
+            $this->non_tree_strong_edges[] = [$raw_parent, $child, $link_name];
+        }
     }
 
     /**
@@ -1578,9 +1697,17 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         // by-reference aliasing dance, which Psalm can't model.
 
         // Apply the shared size-attribution region policy. See RegionFilter.
+        //
+        // location_type + string_value are also picked up here (via min()
+        // on duplicate-row groups, same semantics as the PHP-array base
+        // loader) so {@see GraphSubstrate::getDedupCandidateStats()} can
+        // bucket dedup candidates by the full (link_name, size, class,
+        // location_type) tuple without an extra scan over the node_id
+        // space.
         $regionPredicate = RegionFilter::sqlPredicate('region');
         $stmt = $db->prepare(
-            "SELECT node_id, sum(size) as s, min(class_name) as cls
+            "SELECT node_id, sum(size) as s, min(class_name) as cls,
+                    min(location_type) as loc_type, min(string_value) as str_val
              FROM context_node_locations
              WHERE run_id = ? AND node_id > ?
                AND {$regionPredicate}
@@ -1622,6 +1749,18 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                         $this->classDict[] = $className;
                     }
                     $nodeClassIds[$csrIdx] = $this->classDictReverse[$className];
+                }
+                // Inherited PHP-array maps on GraphSubstrate. Keyed by
+                // raw node_id (not CSR index) so the getDedupCandidateStats
+                // implementation on the base class can read them through
+                // {@see GraphSubstrate::getNodeLocationType()} /
+                // {@see GraphSubstrate::getNodeStringValue()} without
+                // CSR-index translation.
+                if ($r[3] !== null) {
+                    $this->node_location_types[$node_id] = (string)$r[3];
+                }
+                if ($r[4] !== null) {
+                    $this->node_string_values[$node_id] = (string)$r[4];
                 }
                 $last_node_id = $node_id;
             }
@@ -1871,6 +2010,9 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
                     if ($is_strong) {
                         $strongAllDeg[$pi] = $strongAllDeg[$pi] + 1;
                         $strongAllCount++;
+                    }
+                    if (!$is_tree && $is_strong) {
+                        $this->non_tree_strong_edges[] = [$parent, $child, $link_name];
                     }
                 }
                 $revDeg[$ci] = $revDeg[$ci] + 1;

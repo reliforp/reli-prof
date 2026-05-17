@@ -226,8 +226,9 @@ final class ReportGenerator
             $pass_factories['NonTreeEdgePass'] = fn (): array => $this->runPass(
                 new NonTreeEdgePass($db_factory(), $run_id, $substrate)
             );
+            $db_dedup_candidates = $substrate->getDedupCandidateStats(10);
             $pass_factories['DedupCandidatePass'] = fn (): array => $this->runPass(
-                new DedupCandidatePass($db_factory(), $run_id, $substrate)
+                new DedupCandidatePass($substrate, $db_dedup_candidates)
             );
             $pass_factories['StructuralDedupPass'] = fn (): array => $this->runPass(
                 new StructuralDedupPass($db_factory(), $run_id, $substrate, $resolver_factory())
@@ -344,7 +345,11 @@ final class ReportGenerator
             );
             $top_strings = BinaryReportDataProvider::getTopStrings($reader, 10);
             $non_tree_edge_stats = BinaryReportDataProvider::getNonTreeEdgeStats($reader, 20);
-            $dedup_candidates = BinaryReportDataProvider::getDedupCandidateStats($reader, 10);
+            // Dedup-candidate aggregation lives on the substrate now —
+            // same primitive on both .db and .rmem paths so the B6
+            // (class + location_type bucket key) fix can't drift between
+            // them. See Stage B of #787.
+            $dedup_candidates = $substrate->getDedupCandidateStats(10);
 
             // Release Reader's castSection cache — substrate and data
             // providers are done with it. Frees ~2 GB of FFI buffers.
@@ -414,12 +419,7 @@ final class ReportGenerator
                 new NonTreeEdgePass($dummy_factory(), 0, $substrate, $non_tree_edge_stats)
             );
             $pass_factories['DedupCandidatePass'] = fn (): array => $this->runPass(
-                new DedupCandidatePass(
-                    $dummy_factory(),
-                    0,
-                    $substrate,
-                    $dedup_candidates,
-                )
+                new DedupCandidatePass($substrate, $dedup_candidates)
             );
             $pass_factories['StructuralDedupPass'] = fn (): array => $this->runPass(
                 new StructuralDedupPass($dummy_factory(), 0, $substrate, $resolver_factory())
