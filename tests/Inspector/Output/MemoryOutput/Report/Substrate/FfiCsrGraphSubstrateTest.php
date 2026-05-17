@@ -63,6 +63,54 @@ class FfiCsrGraphSubstrateTest extends BaseTestCase
         $this->assertTrue($found128);
     }
 
+    public function testIterateNodeSizesSkipsZeroSizeScaffoldingForBothVariants(): void
+    {
+        // The `top` context has no locations — it's the collector's
+        // anchor for the synthetic root. Pre-fix, the PHP-array
+        // substrate's `loadNodeSizes` excluded it (no row in
+        // context_node_locations) while the FFI substrate's
+        // `loadNodeSizesFfi` enumerated `context_nodes` first and gave
+        // it a zero-size CSR slot. The drift surfaced as
+        // `TopArraysPass` emitting "global_variables 86 KB retained,
+        // table: 0 B" findings only on the FFI / .rmem path.
+        //
+        // After the fix both `iterateNodeSizes()` impls filter
+        // `size > 0`, so the two substrates yield the same set on the
+        // same input.
+        $leaf = $this->createMockContext('leaf', [], [
+            new ZendObjectMemoryLocation(0x2000, 128, 1, 7, 'App\\Leaf'),
+        ]);
+        // Intermediate scaffolding node with no locations — same shape
+        // as the real synthetic roots the collector emits for
+        // `global_variables` / `interned_strings`.
+        $scaffold = $this->createMockContext('scaffold', ['inner' => $leaf], []);
+        $top = $this->createMockContext('top', ['root' => $scaffold], []);
+        $this->buildDb($top);
+
+        $db = $this->openDb();
+        $phpArraySizes = iterator_to_array(
+            GraphSubstrate::loadFromDb($db, 1)->iterateNodeSizes(),
+        );
+        $ffiSizes = iterator_to_array(
+            FfiCsrGraphSubstrate::loadFromDb($db, 1)->iterateNodeSizes(),
+        );
+
+        ksort($phpArraySizes);
+        ksort($ffiSizes);
+        $this->assertSame(
+            $phpArraySizes,
+            $ffiSizes,
+            'iterateNodeSizes() must agree across substrate variants',
+        );
+        foreach ($ffiSizes as $node_id => $size) {
+            $this->assertGreaterThan(
+                0,
+                $size,
+                "node {$node_id} has size 0 — scaffolding leaked into iterateNodeSizes()",
+            );
+        }
+    }
+
     public function testSubtreeSizesComputed(): void
     {
         $child = $this->createMockContext('child', [], [

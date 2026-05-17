@@ -1461,12 +1461,21 @@ final class FfiCsrGraphSubstrate extends GraphSubstrate
         return $this->nodeSizesSum;
     }
 
-    /** @return iterable<int, int> node_id => size */
+    /**
+     * See {@see GraphSubstrate::iterateNodeSizes()} for the contract —
+     * zero-size scaffolding slots are filtered here to match the
+     * PHP-array variant.
+     *
+     * @return iterable<int, int> node_id => size
+     */
     #[\Override]
     public function iterateNodeSizes(): iterable
     {
         for ($i = 0; $i < $this->nodeCount; $i++) {
-            yield $this->indexToNodeFfi[$i] => $this->ffiNodeSizes[$i];
+            $size = $this->ffiNodeSizes[$i];
+            if ($size > 0) {
+                yield $this->indexToNodeFfi[$i] => $size;
+            }
         }
     }
 

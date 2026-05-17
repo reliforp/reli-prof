@@ -922,10 +922,38 @@ class GraphSubstrate
         return array_sum($this->node_sizes);
     }
 
-    /** @return iterable<int, int> node_id => size */
+    /**
+     * Yield (node_id, size) for every node that carries a non-zero
+     * attributed shallow size — i.e. an actual heap allocation. Skips
+     * scaffolding nodes the collector emits to anchor synthetic roots
+     * like `global_variables` / `interned_strings`: they exist in the
+     * graph (with children + edges + subtree size), but they aren't
+     * real allocations, so passes that ask "iterate the heap's nodes"
+     * shouldn't see them.
+     *
+     * On the PHP-array `.db` loader this filter is essentially a no-op
+     * because `loadNodeSizes` only queries `context_node_locations` —
+     * scaffolding nodes have no row there. The FFI variant enumerates
+     * from `context_nodes` first (it needs every CSR slot for graph
+     * walks), so its `ffiNodeSizes` does include zero-size scaffolding
+     * slots; filtering here keeps both substrate paths' output to
+     * `TopArraysPass` / `RmemModel::getTypeRanking` etc. byte-for-byte
+     * aligned instead of leaving the two paths to drift on whether
+     * `global_variables` shows up as a `large_array` with `table: 0 B`.
+     *
+     * Callers that need every CSR-known node (zero-size or not) should
+     * walk `getRoots()` + `getStrongChildren()` instead, which is the
+     * traversal the substrate is actually designed for.
+     *
+     * @return iterable<int, int> node_id => size
+     */
     public function iterateNodeSizes(): iterable
     {
-        return $this->node_sizes;
+        foreach ($this->node_sizes as $node_id => $size) {
+            if ($size > 0) {
+                yield $node_id => $size;
+            }
+        }
     }
 
     /** @return iterable<int, int> node_id => subtree_size */
