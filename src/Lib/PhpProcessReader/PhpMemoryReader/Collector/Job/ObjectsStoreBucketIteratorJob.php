@@ -58,50 +58,31 @@ final class ObjectsStoreBucketIteratorJob implements CollectorJob
         /** @var \Iterator<int, Pointer<ZendObject>> $iterator */
         $iterator = $this->bucket_iterator;
 
-        static $skip_count = 0;
-        static $exc_count = 0;
-        static $emit_count = 0;
         // Find the next valid bucket
         while ($iterator->valid()) {
-            try {
-                /** @var int $key */
-                $key = $iterator->key();
-                /** @var Pointer<ZendObject> $bucket */
-                $bucket = $iterator->current();
-                $iterator->next();
-            } catch (\Throwable $e) {
-                $exc_count++;
-                if ($exc_count <= 5) {
-                    \fwrite(\STDERR, "[reli-debug] iter key/current threw: " . get_class($e) . ": " . $e->getMessage() . "\n");
-                }
-                continue;
-            }
+            /** @var int $key */
+            $key = $iterator->key();
+            /** @var Pointer<ZendObject> $bucket */
+            $bucket = $iterator->current();
+
+            $iterator->next();
 
             if ($key === 0) {
-                $skip_count++;
                 continue;
             }
             if ($bucket->address & 1) {
-                $skip_count++;
                 continue;
             }
             if ($bucket->address === 0) {
-                $skip_count++;
                 continue;
             }
             if ($key >= $this->top) {
-                \fwrite(\STDERR, sprintf("[reli-debug] iter DONE: emit=%d skip=%d exc=%d top=%d key=%d\n", $emit_count, $skip_count, $exc_count, $this->top, $key));
                 return; // Done
             }
 
             // Re-push self for next bucket (processed after this bucket's subtree)
             if ($iterator->valid()) {
                 $queue->push($this);
-            }
-
-            $emit_count++;
-            if ($emit_count <= 3 || $emit_count % 100000 === 0) {
-                \fwrite(\STDERR, sprintf("[reli-debug] emit #%d key=%d addr=0x%x\n", $emit_count, $key, $bucket->address));
             }
 
             // Push the object emit job (processed next = DFS)
@@ -114,6 +95,5 @@ final class ObjectsStoreBucketIteratorJob implements CollectorJob
 
             return;
         }
-        \fwrite(\STDERR, sprintf("[reli-debug] iter EXHAUSTED: emit=%d skip=%d exc=%d top=%d\n", $emit_count, $skip_count, $exc_count, $this->top));
     }
 }

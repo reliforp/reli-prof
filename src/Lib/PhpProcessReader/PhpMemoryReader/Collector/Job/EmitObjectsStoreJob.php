@@ -37,7 +37,6 @@ final class EmitObjectsStoreJob implements CollectorJob
     #[\Override]
     public function execute(CollectorContext $ctx, JobQueue $queue): void
     {
-        \fwrite(\STDERR, "[reli-debug] EmitObjectsStoreJob::execute START\n");
         $objects_store_memory_location = ObjectsStoreMemoryLocation::fromZendObjectsStore(
             $this->objects_store,
         );
