@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext;
 
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\CallFrameHeaderMemoryLocation;
+
 final class CallFrameContext implements ReferenceContext
 {
     use ReferenceContextDefault;
@@ -21,6 +23,7 @@ final class CallFrameContext implements ReferenceContext
         public string $function_name,
         public int $lineno,
         public readonly ?string $filename = null,
+        public ?CallFrameHeaderMemoryLocation $header_memory_location = null,
     ) {
     }
 
@@ -33,6 +36,15 @@ final class CallFrameContext implements ReferenceContext
     public function getLocalVariable(string $variable_name): ReferenceContext|int|null
     {
         return $this->getLocalVariables()?->getVariable($variable_name) ?? null;
+    }
+
+    #[\Override]
+    public function getLocations(): iterable
+    {
+        if ($this->header_memory_location !== null) {
+            return [$this->header_memory_location];
+        }
+        return [];
     }
 
     #[\Override]

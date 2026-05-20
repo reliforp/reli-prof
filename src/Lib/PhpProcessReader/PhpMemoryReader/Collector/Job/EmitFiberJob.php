@@ -53,18 +53,30 @@ final class EmitFiberJob implements CollectorJob
     {
         $fiber_context = new FiberContext();
 
+        // Emit the fiber context first so its node_id is available for
+        // anchoring the call frames and their locals.
+        $fiber_node_id = $ctx->emitNode($fiber_context, $this->object_node_id, 'fiber');
+        $fiber_parent = $fiber_node_id >= 0 ? $fiber_node_id : null;
+
         try {
             if ($this->zend_fiber->execute_data !== null) {
                 $execute_data = $ctx->dereferencer->deref($this->zend_fiber->execute_data);
                 $call_frames_context = new CallFramesContext();
+                $call_frames_node_id = $ctx->emitNode(
+                    $call_frames_context,
+                    $fiber_parent,
+                    'call_frames',
+                );
+                $cf_parent = $call_frames_node_id >= 0 ? $call_frames_node_id : $fiber_parent;
                 foreach ($execute_data->iterateStackChain($ctx->dereferencer) as $key => $frame) {
-                    $call_frame_context = EmitCallFrameJob::collectCallFrameInline(
+                    EmitCallFrameJob::collectCallFrameInline(
                         $frame,
                         $ctx,
+                        $queue,
+                        $cf_parent,
+                        (string)$key,
                     );
-                    $call_frames_context->add((string)$key, $call_frame_context);
                 }
-                $fiber_context->add('call_frames', $call_frames_context);
             }
         } catch (\Throwable) {
         }
@@ -93,7 +105,7 @@ final class EmitFiberJob implements CollectorJob
         } catch (\Throwable) {
         }
 
-        $ctx->emitNode($fiber_context, $this->object_node_id, 'fiber');
+        // Fiber context already emitted at the top of execute(); avoid double-emit.
     }
 
     private function scanFiberCStackForVmStack(CollectorContext $ctx): void
