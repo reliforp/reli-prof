@@ -52,7 +52,17 @@ final class ZendObjectsStore
                 ? new Pointer(
                     PointerArray::class,
                     FFIHelper::castPointerToInt($this->cdata->casted->object_buckets),
-                    $this->cdata->casted->size * 8,
+                    // Cover only slots [0..top): slots [top..size) are
+                    // untouched (handle never assigned), so the dump's
+                    // pagemap-residency filter excludes those pages and a
+                    // full-capacity deref fails with
+                    // MemoryAddressNotInDumpException. The job runner then
+                    // silently swallows the exception, EmitObjectsStoreJob
+                    // never pushes the iterator, and every object that
+                    // is only reachable through the iter path (typical
+                    // leak shape: live in objects_store but unreachable
+                    // from globals/locals/etc.) becomes orphan.
+                    $this->cdata->casted->top * 8,
                 )
                 : null
             ,
