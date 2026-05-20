@@ -48,7 +48,13 @@ final class EmitGeneratorJob implements CollectorJob
     {
         $generator_context = new GeneratorContext();
 
-        // Collect call frames
+        // Emit the generator context first so we have a node_id to attach
+        // call frames (and their locals) under.
+        $generator_node_id = $ctx->emitNode($generator_context, $this->object_node_id, 'generator');
+        $parent = $generator_node_id >= 0 ? $generator_node_id : null;
+
+        // Collect call frames — emit each inline so its locals walking jobs
+        // can be queued with the correct parent.
         try {
             if (
                 $this->zend_generator->execute_data !== null
@@ -56,21 +62,20 @@ final class EmitGeneratorJob implements CollectorJob
             ) {
                 $execute_data = $ctx->dereferencer->deref($this->zend_generator->execute_data);
                 $call_frames_context = new CallFramesContext();
+                $call_frames_node_id = $ctx->emitNode($call_frames_context, $parent, 'call_frames');
+                $cf_parent = $call_frames_node_id >= 0 ? $call_frames_node_id : $parent;
                 foreach ($execute_data->iterateStackChain($ctx->dereferencer) as $key => $frame) {
-                    $call_frame_context = EmitCallFrameJob::collectCallFrameInline(
+                    EmitCallFrameJob::collectCallFrameInline(
                         $frame,
                         $ctx,
+                        $queue,
+                        $cf_parent,
+                        (string)$key,
                     );
-                    $call_frames_context->add((string)$key, $call_frame_context);
                 }
-                $generator_context->add('call_frames', $call_frames_context);
             }
         } catch (\Throwable) {
         }
-
-        // Emit the generator context
-        $generator_node_id = $ctx->emitNode($generator_context, $this->object_node_id, 'generator');
-        $parent = $generator_node_id >= 0 ? $generator_node_id : null;
 
         // Push jobs for value, key, retval (in reverse order for DFS)
         try {
