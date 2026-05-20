@@ -37,14 +37,7 @@ final class EmitObjectsStoreJob implements CollectorJob
     #[\Override]
     public function execute(CollectorContext $ctx, JobQueue $queue): void
     {
-        \fwrite(\STDERR, sprintf(
-            "[reli-debug] EmitObjectsStoreJob START top=%d free_list_head=%d ob=%s\n",
-            $this->objects_store->top,
-            $this->objects_store->free_list_head,
-            $this->objects_store->object_buckets === null
-                ? 'NULL'
-                : sprintf('addr=0x%x size=%d', $this->objects_store->object_buckets->address, $this->objects_store->object_buckets->size),
-        ));
+        \fwrite(\STDERR, "[reli-debug] EmitObjectsStoreJob::execute START\n");
         $objects_store_memory_location = ObjectsStoreMemoryLocation::fromZendObjectsStore(
             $this->objects_store,
         );
@@ -59,27 +52,13 @@ final class EmitObjectsStoreJob implements CollectorJob
             EdgeStrength::Weak,
         );
         $parent = $root_node_id >= 0 ? $root_node_id : null;
-        \fwrite(\STDERR, "[reli-debug] EmitObjectsStoreJob after emitNode root_node_id=$root_node_id\n");
 
         assert($this->objects_store->object_buckets instanceof Pointer);
-        try {
-            $buckets = $ctx->dereferencer->deref($this->objects_store->object_buckets);
-        } catch (\Throwable $e) {
-            \fwrite(\STDERR, "[reli-debug] EmitObjectsStoreJob deref THREW: " . get_class($e) . ": " . $e->getMessage() . "\n");
-            throw $e;
-        }
-        \fwrite(\STDERR, "[reli-debug] EmitObjectsStoreJob deref OK\n");
-
-        try {
-            $bucket_iterator = $buckets->getIteratorOfPointersTo(
-                ZendObject::class,
-                $ctx->zend_type_reader,
-            );
-        } catch (\Throwable $e) {
-            \fwrite(\STDERR, "[reli-debug] EmitObjectsStoreJob getIterator THREW: " . get_class($e) . ": " . $e->getMessage() . "\n");
-            throw $e;
-        }
-        \fwrite(\STDERR, "[reli-debug] EmitObjectsStoreJob getIterator OK\n");
+        $buckets = $ctx->dereferencer->deref($this->objects_store->object_buckets);
+        $bucket_iterator = $buckets->getIteratorOfPointersTo(
+            ZendObject::class,
+            $ctx->zend_type_reader,
+        );
 
         // Push the bucket iterator job
         $queue->push(new ObjectsStoreBucketIteratorJob(
@@ -87,6 +66,5 @@ final class EmitObjectsStoreJob implements CollectorJob
             $this->objects_store->top,
             $parent,
         ));
-        \fwrite(\STDERR, "[reli-debug] EmitObjectsStoreJob pushed iter\n");
     }
 }
