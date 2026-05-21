@@ -77,6 +77,32 @@ final class EmitGeneratorJob implements CollectorJob
         } catch (\Throwable) {
         }
 
+        // Push jobs to walk the `node` field's raw zend_generator* pointers.
+        // These wire `yield from` chains together with refcount management
+        // done in C (not via zval), so without an explicit emit here every
+        // sub-generator that's only reachable through such a chain ends up
+        // tree-owned by objects_store iter despite the parent generator being
+        // walker-reachable. EmitObjectJob is fail-soft for bad pointers
+        // (caught by the job runner) and dispatches to EmitGeneratorJob
+        // recursively when the target's class is Generator.
+        try {
+            foreach ($this->zend_generator->getNodeRawGeneratorPointers($ctx->zend_type_reader)
+                as $idx => $node_gen_ptr
+            ) {
+                $node_pointer = new \Reli\Lib\Process\Pointer\Pointer(
+                    ZendObject::class,
+                    $node_gen_ptr,
+                    $ctx->zend_type_reader->sizeOf('zend_object'),
+                );
+                $queue->push(new EmitObjectJob(
+                    $node_pointer,
+                    $parent,
+                    'node[' . $idx . ']',
+                ));
+            }
+        } catch (\Throwable) {
+        }
+
         // Push jobs for value, key, retval (in reverse order for DFS)
         try {
             $queue->push(new ResolveZvalJob($this->zend_generator->retval, $parent, 'retval'));
