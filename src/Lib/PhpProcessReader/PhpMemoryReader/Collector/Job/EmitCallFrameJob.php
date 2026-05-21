@@ -95,6 +95,25 @@ final class EmitCallFrameJob implements CollectorJob
                 'this',
             ));
         }
+
+        // Closure-object back-reference (see collectCallFrameInline for the
+        // detailed why; mirrored here so active frames are covered too).
+        $closure_addr = $this->execute_data->getClosureObjectAddress($ctx->zend_type_reader);
+        if ($closure_addr !== null) {
+            try {
+                $closure_pointer = new \Reli\Lib\Process\Pointer\Pointer(
+                    \Reli\Lib\PhpInternals\Types\Zend\ZendObject::class,
+                    $closure_addr,
+                    $ctx->zend_type_reader->sizeOf('zend_object'),
+                );
+                $queue->push(new EmitObjectJob(
+                    $closure_pointer,
+                    $parent,
+                    'closure',
+                ));
+            } catch (\Throwable) {
+            }
+        }
     }
 
     /**
@@ -220,6 +239,33 @@ final class EmitCallFrameJob implements CollectorJob
                 $parent,
                 'this',
             ));
+        }
+
+        // Closure-object back-reference: a closure-invocation frame carries
+        // the ZEND_CALL_CLOSURE flag in This.u1.type_info, and PHP recovers
+        // the closure object pointer from the func pointer via the
+        // ZEND_CLOSURE_OBJECT(func) macro. This is how PHP keeps the closure
+        // alive across the call frame *and* across Generator/Fiber suspension
+        // — the captured frame retains the flag and refcount=1 is maintained
+        // without any IS_OBJECT zval ever referencing the closure. Without
+        // this synthetic edge the closure body of every Amp\call() Coroutine
+        // (and similar suspended-closure patterns) appears as "no in-heap
+        // incoming refs" / orphan from objects_store.
+        $closure_addr = $execute_data->getClosureObjectAddress($ctx->zend_type_reader);
+        if ($closure_addr !== null) {
+            try {
+                $closure_pointer = new \Reli\Lib\Process\Pointer\Pointer(
+                    \Reli\Lib\PhpInternals\Types\Zend\ZendObject::class,
+                    $closure_addr,
+                    $ctx->zend_type_reader->sizeOf('zend_object'),
+                );
+                $queue->push(new EmitObjectJob(
+                    $closure_pointer,
+                    $parent,
+                    'closure',
+                ));
+            } catch (\Throwable) {
+            }
         }
 
         return $call_frame_context;

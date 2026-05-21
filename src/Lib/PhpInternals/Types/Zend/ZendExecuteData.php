@@ -246,6 +246,37 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
         return (bool)($this->This->u1->type_info & (1 << 27));
     }
 
+    /**
+     * Return the closure-object address backing this frame's func, or null if
+     * the frame isn't a closure call. ZEND_CALL_CLOSURE (= 1 << 22) is set in
+     * `This.u1.type_info` for closure invocations; the closure object pointer
+     * can be recovered via the `ZEND_CLOSURE_OBJECT(func)` macro
+     * (= `func - offsetof(zend_closure, func)`), which is how PHP itself keeps
+     * the closure alive across the call frame (and across Generator suspension
+     * — the captured frame retains its `ZEND_CALL_CLOSURE` flag, so the
+     * closure's refcount stays bumped without any IS_OBJECT zval reference
+     * being held).
+     */
+    public function getClosureObjectAddress(ZendTypeReader $zend_type_reader): ?int
+    {
+        if ($this->func === null) {
+            return null;
+        }
+        $ZEND_CALL_CLOSURE = 1 << 22;
+        if (($this->This->u1->type_info & $ZEND_CALL_CLOSURE) === 0) {
+            return null;
+        }
+        [$func_offset_in_closure, ] = $zend_type_reader->getOffsetAndSizeOfMember(
+            'zend_closure',
+            'func',
+        );
+        $closure_addr = $this->func->address - $func_offset_in_closure;
+        if ($closure_addr <= 0) {
+            return null;
+        }
+        return $closure_addr;
+    }
+
     public function isInternalCall(Dereferencer $dereferencer): bool
     {
         if (is_null($this->func)) {
