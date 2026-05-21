@@ -368,14 +368,24 @@ final class MemoryLocationsCollector
 
         // Main iterative loop
         $drain_counter = 0;
+        static $debug_exc_stats = [];
         while (!$queue->isEmpty()) {
             $job = $queue->pop();
             assert($job !== null);
             try {
                 $job->execute($ctx, $queue);
-            } catch (\Throwable) {
+            } catch (\Throwable $e) {
                 // Skip failed jobs (bad pointers, unmapped memory, etc.)
                 // and continue processing remaining queue
+                $key = get_class($job) . '::' . get_class($e) . '::' . $e->getMessage();
+                if (!isset($debug_exc_stats[$key])) {
+                    $debug_exc_stats[$key] = 0;
+                    \fwrite(\STDERR, "[reli-debug-exc] FIRST: " . $key . "\n");
+                }
+                $debug_exc_stats[$key]++;
+                if (count($debug_exc_stats) % 20 === 0 && $debug_exc_stats[$key] === 1) {
+                    \fwrite(\STDERR, "[reli-debug-exc] (unique exc types so far: " . count($debug_exc_stats) . ")\n");
+                }
             }
             // Periodically drain emitted contexts from the pools to
             // free memory. Once a context has been emitted and its
@@ -388,6 +398,17 @@ final class MemoryLocationsCollector
         }
         // Final drain for any remaining emitted contexts
         $context_pools->drainEmittedToAddressMap($ctx->address_map);
+
+        // Debug summary: dump top-20 exception types by count
+        if (!empty($debug_exc_stats)) {
+            arsort($debug_exc_stats);
+            \fwrite(\STDERR, "[reli-debug-exc] TOTAL unique exc types: " . count($debug_exc_stats) . ", total exc count: " . array_sum($debug_exc_stats) . "\n");
+            $shown = 0;
+            foreach ($debug_exc_stats as $key => $count) {
+                if ($shown++ >= 30) break;
+                \fwrite(\STDERR, "[reli-debug-exc] [#" . $shown . "] count=" . $count . " " . substr($key, 0, 250) . "\n");
+            }
+        }
 
         // Post-processing: memory limit violation real call stack recovery.
         // This is a rare edge case that reconstructs the call stack from
