@@ -47,6 +47,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\Lexbor\LexborScanRangeFinder;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Lexbor\LexborStateScanner;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\LexborStateContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ModulesContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ReferenceContext;
 use Reli\Lib\PhpProcessReader\PhpTsrmLsCacheFinder;
 use Reli\Lib\PhpProcessReader\PhpZendMemoryManagerChunkFinder;
 use Reli\Lib\Process\MemoryMap\ProcessMemoryMap;
@@ -323,6 +324,24 @@ final class MemoryLocationsCollector
             $vm_stack_memory_locations,
             $chunk_memory_locations,
             $fast_path,
+        );
+
+        // Auto-register every emitted Context's attached locations into the
+        // address_map. The manual `address_map[$addr] = $node_id` writes
+        // scattered across Jobs only cover the primary "registerable" address
+        // each Job knows about — sub-allocations that hang off the same
+        // Context (op_array header/body, object handlers, …) used to slip
+        // through and confuse downstream reachability checks (e.g. the bin
+        // walker's `reachable_count` stat). Existing explicit writes are
+        // left in place so addresses that aren't on the Context (aliases
+        // like the input pointer when it differs from the object's true
+        // slot) keep their mapping.
+        $analyzer->setOnNodeAssigned(
+            static function (int $node_id, ReferenceContext $context) use ($ctx): void {
+                foreach ($context->getLocations() as $location) {
+                    $ctx->address_map[$location->address] = $node_id;
+                }
+            }
         );
 
         // Create the job queue
