@@ -63,7 +63,10 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
     {
         // Today we only walk phar. Other modules can be added once
         // they show up as gap contributors in real workloads.
-        $targets = ['Phar'];
+        // module_registry keys are lowercase — module_entry->name
+        // preserves the original casing but the HashTable key is
+        // lowercased on register (see zend_register_internal_module).
+        $targets = ['phar'];
 
         foreach ($targets as $name) {
             try {
@@ -86,24 +89,29 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
         if ($bucket === null) {
             return;
         }
-        $zval = $bucket->val;
-        if ($zval->getType() !== 'IS_PTR') {
+        // CLAUDE.md FFI CData lifetime rule: re-deref the val zval
+        // through Pointer rather than reading $bucket->val (a sub-view).
+        $val_zval = $ctx->dereferencer->deref($bucket->val->getPointer());
+        if ($val_zval->getType() !== 'IS_PTR') {
+            return;
+        }
+        $entry_addr = $val_zval->value->lval;
+        if ($entry_addr === 0) {
             return;
         }
         $entry_pointer = new Pointer(
             ZendModuleEntry::class,
-            $zval->value->lval,
+            $entry_addr,
             $ctx->zend_type_reader->sizeOf('zend_module_entry'),
         );
         $entry = $ctx->dereferencer->deref($entry_pointer);
         if ($entry->zts) {
-            // ZTS path stores a `ts_rsrc_id*` in globals_ptr and
-            // requires TSRM offset resolution. Defer until we see a
-            // ZTS gap to motivate it.
+            // ZTS stores `ts_rsrc_id*` in globals_ptr and needs TSRM
+            // offset resolution; defer until a ZTS gap motivates it.
             return;
         }
-        $globals_ptr = $entry->globals_ptr;
         $globals_size = $entry->globals_size;
+        $globals_ptr = $entry->globals_ptr;
         if ($globals_ptr === 0 || $globals_size === 0) {
             return;
         }
@@ -150,8 +158,7 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
             if (($type_info & 0xFF) !== self::IS_ARRAY) {
                 continue;
             }
-            $refcount = $ht->gc->refcount;
-            if ($refcount > 0x0FFF_FFFF) {
+            if ($ht->gc->refcount > 0x0FFF_FFFF) {
                 continue;
             }
             try {
