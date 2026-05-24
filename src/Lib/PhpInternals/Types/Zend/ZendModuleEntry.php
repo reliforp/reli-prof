@@ -30,6 +30,15 @@ final class ZendModuleEntry implements CDataDereferencable
      * @var Pointer<RawString>
      */
     public Pointer $version;
+    /**
+     * @psalm-suppress PropertyNotSetInConstructor
+     * @var Pointer<RawString>
+     */
+    public Pointer $name;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $globals_size;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $globals_ptr;
 
     /**
      * @param CastedCData<zend_module_entry> $casted_cdata
@@ -41,6 +50,9 @@ final class ZendModuleEntry implements CDataDereferencable
     ) {
         unset($this->zts);
         unset($this->version);
+        unset($this->name);
+        unset($this->globals_size);
+        unset($this->globals_ptr);
     }
 
     public function __get(string $field_name): mixed
@@ -52,12 +64,26 @@ final class ZendModuleEntry implements CDataDereferencable
                 FFIHelper::castPointerToInt($this->casted_cdata->casted->version),
                 3,
             ),
+            'name' => $this->name = new Pointer(
+                RawString::class,
+                FFIHelper::castPointerToInt($this->casted_cdata->casted->name),
+                256,
+            ),
+            'globals_size' => $this->globals_size
+                = $this->casted_cdata->casted->globals_size,
+            'globals_ptr' => $this->globals_ptr
+                = FFIHelper::castPointerToInt($this->casted_cdata->casted->globals_ptr),
         };
     }
 
     public function getVersion(Dereferencer $dereferencer): string
     {
         return (string)$dereferencer->deref($this->version);
+    }
+
+    public function getName(Dereferencer $dereferencer): string
+    {
+        return (string)$dereferencer->deref($this->name);
     }
 
     #[\Override]

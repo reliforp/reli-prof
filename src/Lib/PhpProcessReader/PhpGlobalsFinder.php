@@ -273,6 +273,11 @@ class PhpGlobalsFinder
         );
     }
 
+    /**
+     * @param TargetPhpSettings<'auto'|value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $target_php_settings
+     *     PhpVersionDetector calls this before php_version is decided,
+     *     so the binding must accept 'auto'.
+     */
     public function findModuleRegistry(
         ProcessSpecifier $process_specifier,
         TargetPhpSettings $target_php_settings

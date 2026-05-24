@@ -561,6 +561,9 @@ class zend_module_entry extends CData
 {
     public int $zts;
     public ?CPointer $version;
+    public ?CPointer $name;
+    public int $globals_size;
+    public ?CPointer $globals_ptr;
 }
 
 class zend_hash_func_ffi extends \FFI
