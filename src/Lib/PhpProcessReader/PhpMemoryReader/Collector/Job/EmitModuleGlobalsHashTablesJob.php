@@ -49,11 +49,67 @@ use Reli\Lib\Process\Pointer\Pointer;
 final class EmitModuleGlobalsHashTablesJob implements CollectorJob
 {
     private const IS_ARRAY = 7;
+    /** Hard ceiling for HashTable size fields. Real PHP HashTables in
+     *  the wild stay well under this; anything past it is a strong
+     *  signal we're staring at garbage bytes (uninitialised inline
+     *  table, misaligned struct, etc.). 16M tops keeps any plausibly
+     *  legitimate big table while cutting off the runaway-bucket-walk
+     *  case that lets a bogus 4G nTableSize hand processZendArray a
+     *  petabyte of work and OOM the analyzer. */
+    private const MAX_SANE_HT_SIZE = 0x100_0000;
+    /** Lower bound for arData — anything below this is almost
+     *  certainly not a real user-space heap pointer. */
+    private const MIN_USER_PTR     = 0x1_0000;
+    /** x86_64 Linux user-space caps at 0x7fff_ffff_ffff. Above that
+     *  is kernel space and `arData` shouldn't ever be there. */
+    private const MAX_USER_PTR     = 0x7fff_ffff_ffff;
 
     public function __construct(
         private ZendArray $module_registry,
         private ?ModulesContext $modules_context = null,
     ) {
+    }
+
+    /**
+     * Validity gate for HashTables we discovered by reading bytes out
+     * of a module-globals struct. Inline HashTables aren't always
+     * fully initialised (mime_types is persistent and may be half-set
+     * up depending on RINIT state), and misaligned struct layouts
+     * land bogus values on the same bytes. Returning false here is
+     * the difference between skipping cleanly and feeding garbage
+     * arData / nTableSize into processZendArray and walking
+     * billions of fake buckets until we OOM.
+     */
+    private function looksLikeWalkableHashTable(ZendArray $ht): bool
+    {
+        if (($ht->gc->type_info & 0xFF) !== self::IS_ARRAY) {
+            return false;
+        }
+        if ($ht->gc->refcount > 0x0FFF_FFFF) {
+            return false;
+        }
+        $size = $ht->nTableSize;
+        $used = $ht->nNumUsed;
+        $elements = $ht->nNumOfElements;
+        if ($size < 0 || $size > self::MAX_SANE_HT_SIZE) {
+            return false;
+        }
+        if ($used < 0 || $used > $size) {
+            return false;
+        }
+        if ($elements < 0 || $elements > $used) {
+            return false;
+        }
+        // Empty HashTables are fine — arData may legitimately be NULL
+        // (or a sentinel "uninitialised buckets" pointer). Only check
+        // arData when we plan to iterate it.
+        if ($used > 0 && $ht->arData !== null) {
+            $arData_addr = $ht->arData->address;
+            if ($arData_addr < self::MIN_USER_PTR || $arData_addr > self::MAX_USER_PTR) {
+                return false;
+            }
+        }
+        return true;
     }
 
     #[\Override]
@@ -188,19 +244,18 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
             $this->walkPharArchives($alias, $parent_id, $ctx, $queue);
         } catch (\Throwable) {
         }
-        // mime_types is a PERSISTENT HashTable (initialized via
-        // zend_hash_init(..., persistent=1) in phar's MINIT) and
-        // walking it via processZendArray in this build OOM'd reli
-        // — the per-request iteration path may not handle persistent
-        // table layouts the same way. Skip until we can debug
-        // safely; the value-side contribution from mime_types is
-        // ~50 strings of file-extension to mime-type, so the gap
-        // impact is tiny.
-        // try {
-        //     $mime = $globals->mime_types;
-        //     $this->walkGlobalsTable($mime, 'mime_types', $parent_id, $ctx, $queue);
-        // } catch (\Throwable) {
-        // }
+        // mime_types is initialised persistent in phar MINIT and
+        // (depending on RINIT state) can show up as a half-initialised
+        // HashTable whose type_info bit fires IS_ARRAY but whose
+        // nTableSize / arData are bogus. The looksLikeWalkableHashTable
+        // guard inside walkGlobalsTable catches that case and skips
+        // cleanly — without it we OOM'd reli at 14 GB feeding the
+        // garbage size to processZendArray.
+        try {
+            $mime = $globals->mime_types;
+            $this->walkGlobalsTable($mime, 'mime_types', $parent_id, $ctx, $queue);
+        } catch (\Throwable) {
+        }
     }
 
     private function walkGlobalsTable(
@@ -215,10 +270,7 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
             if (isset($ctx->address_map[$addr])) {
                 return;
             }
-            if (($ht->gc->type_info & 0xFF) !== self::IS_ARRAY) {
-                return;
-            }
-            if ($ht->gc->refcount > 0x0FFF_FFFF) {
+            if (!$this->looksLikeWalkableHashTable($ht)) {
                 return;
             }
             EmitArrayJob::processZendArray(
@@ -300,10 +352,7 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
             if (isset($ctx->address_map[$addr])) {
                 return;
             }
-            if (($ht->gc->type_info & 0xFF) !== self::IS_ARRAY) {
-                return;
-            }
-            if ($ht->gc->refcount > 0x0FFF_FFFF) {
+            if (!$this->looksLikeWalkableHashTable($ht)) {
                 return;
             }
             EmitArrayJob::processZendArray(
