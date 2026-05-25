@@ -118,12 +118,13 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
     #[\Override]
     public function execute(CollectorContext $ctx, JobQueue $queue): void
     {
-        // The per-archive manifest walker needs the
-        // PharArchiveDataLayout generated layout, which today only
-        // ships for v84. Skip on other versions until those headers
-        // grow `_phar_archive_data_truncated` and the layout gets
-        // regenerated.
-        if ($ctx->zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V84)) {
+        // The walker needs PharGlobalsLayout / PharArchiveDataLayout
+        // generated layouts for the target PHP version. They ship
+        // for v80 and up today; older versions (pre-phar_metadata_tracker,
+        // different zend_array layouts) need separate truncated
+        // structs in their per-version headers and a generator
+        // re-run to land.
+        if ($ctx->zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V80)) {
             return;
         }
 
