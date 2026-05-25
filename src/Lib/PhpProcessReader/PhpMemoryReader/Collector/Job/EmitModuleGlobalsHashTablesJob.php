@@ -188,11 +188,19 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
             $this->walkPharArchives($alias, $parent_id, $ctx, $queue);
         } catch (\Throwable) {
         }
-        try {
-            $mime = $globals->mime_types;
-            $this->walkGlobalsTable($mime, 'mime_types', $parent_id, $ctx, $queue);
-        } catch (\Throwable) {
-        }
+        // mime_types is a PERSISTENT HashTable (initialized via
+        // zend_hash_init(..., persistent=1) in phar's MINIT) and
+        // walking it via processZendArray in this build OOM'd reli
+        // — the per-request iteration path may not handle persistent
+        // table layouts the same way. Skip until we can debug
+        // safely; the value-side contribution from mime_types is
+        // ~50 strings of file-extension to mime-type, so the gap
+        // impact is tiny.
+        // try {
+        //     $mime = $globals->mime_types;
+        //     $this->walkGlobalsTable($mime, 'mime_types', $parent_id, $ctx, $queue);
+        // } catch (\Throwable) {
+        // }
     }
 
     private function walkGlobalsTable(
