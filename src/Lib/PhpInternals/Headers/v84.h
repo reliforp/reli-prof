@@ -527,6 +527,12 @@ typedef struct _phar_archive_data_truncated {
 	zend_array manifest;
 	zend_array virtual_dirs;
 	zend_array mounted_dirs;
+	uint32_t  flags;
+	uint32_t  min_timestamp;
+	uint32_t  max_timestamp;
+	char     *fp;        // really php_stream*; declared as char* per the
+	                     // FFI-void*-segv workaround (see globals_ptr)
+	char     *ufp;       // ditto
 } phar_archive_data_truncated;
 
 // zend_stack.h

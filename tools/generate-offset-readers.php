@@ -131,6 +131,10 @@ $struct_defs = [
             'MANIFEST' => [['manifest'], 'u8'],
             'VIRTUAL_DIRS' => [['virtual_dirs'], 'u8'],
             'MOUNTED_DIRS' => [['mounted_dirs'], 'u8'],
+            // php_stream* pointers; phar caches the .phar file
+            // contents (and decompressed forms) here.
+            'FP' => [['fp'], 'ptr'],
+            'UFP' => [['ufp'], 'ptr'],
         ],
     ],
 ];

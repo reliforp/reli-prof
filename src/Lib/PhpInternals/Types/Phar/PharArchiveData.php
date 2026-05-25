@@ -17,6 +17,7 @@ use FFI\PhpInternals\phar_archive_data_truncated;
 use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\C\RawString;
+use Reli\Lib\PhpInternals\Types\Php\PhpStream;
 use Reli\Lib\PhpInternals\Types\Zend\InlineCDataCreatorTrait;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
 use Reli\Lib\Process\Pointer\PointedTypeResolver;
@@ -58,6 +59,18 @@ final class PharArchiveData implements PointedTypeResolverAware
      * @psalm-suppress PropertyNotSetInConstructor
      */
     public ZendArray $mounted_dirs;
+    /**
+     * Underlying php_stream for the .phar file (typically STDIO).
+     * Address may be 0 for not-yet-opened archives.
+     * @psalm-suppress PropertyNotSetInConstructor
+     */
+    public int $fp_address;
+    /**
+     * Decompressed-content cache stream (typically MEMORY or TEMP).
+     * Address may be 0 when no compressed entries have been touched.
+     * @psalm-suppress PropertyNotSetInConstructor
+     */
+    public int $ufp_address;
 
     /**
      * @param CastedCData<phar_archive_data_truncated> $casted_cdata
@@ -71,6 +84,8 @@ final class PharArchiveData implements PointedTypeResolverAware
         unset($this->manifest);
         unset($this->virtual_dirs);
         unset($this->mounted_dirs);
+        unset($this->fp_address);
+        unset($this->ufp_address);
     }
 
     public function __get(string $field_name): mixed
@@ -92,6 +107,12 @@ final class PharArchiveData implements PointedTypeResolverAware
             'mounted_dirs' => $this->mounted_dirs = $this->createInlineDereferencable(
                 'mounted_dirs',
                 ZendArray::class,
+            ),
+            'fp_address' => $this->fp_address = FFIHelper::castPointerToInt(
+                $this->casted_cdata->casted->fp
+            ),
+            'ufp_address' => $this->ufp_address = FFIHelper::castPointerToInt(
+                $this->casted_cdata->casted->ufp
             ),
         };
     }

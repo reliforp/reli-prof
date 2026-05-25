@@ -572,6 +572,8 @@ class phar_archive_data_truncated extends CData
     public zend_array $manifest;
     public zend_array $virtual_dirs;
     public zend_array $mounted_dirs;
+    public ?CPointer $fp;
+    public ?CPointer $ufp;
 }
 
 class phar_globals_truncated extends CData
