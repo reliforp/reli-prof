@@ -13,8 +13,10 @@ declare(strict_types=1);
 
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\Job;
 
+use Reli\Lib\PhpInternals\Types\Phar\PharArchiveData;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
 use Reli\Lib\PhpInternals\Types\Zend\ZendModuleEntry;
+use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorJob;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\JobQueue;
@@ -61,6 +63,15 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
     #[\Override]
     public function execute(CollectorContext $ctx, JobQueue $queue): void
     {
+        // The per-archive manifest walker needs the
+        // PharArchiveDataLayout generated layout, which today only
+        // ships for v84. Skip on other versions until those headers
+        // grow `_phar_archive_data_truncated` and the layout gets
+        // regenerated.
+        if ($ctx->zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V84)) {
+            return;
+        }
+
         // Today we only walk phar. Other modules can be added once
         // they show up as gap contributors in real workloads.
         // module_registry keys are lowercase — module_entry->name
@@ -166,6 +177,74 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
                     $ht,
                     $parent_id >= 0 ? $parent_id : null,
                     sprintf('ht@+%d', $offset),
+                    EdgeStrength::Strong,
+                    $ctx,
+                    $queue,
+                );
+            } catch (\Throwable) {
+                continue;
+            }
+            if ($module_name === 'phar') {
+                $this->walkPharArchives($ht, $parent_id, $ctx, $queue);
+            }
+        }
+    }
+
+    /**
+     * For each IS_PTR bucket value in $ht (which, when $ht is one of
+     * phar's top-level globals tables, is a `phar_archive_data*`),
+     * deref as PharArchiveData and walk its inline `manifest`
+     * HashTable. processZendArray takes it from there — the manifest's
+     * string keys (per-entry file paths) and string values get emitted
+     * the usual way.
+     *
+     * IS_PTR values that aren't phar_archive_data pointers are
+     * deflected by the manifest's IS_ARRAY gc.type_info check (the
+     * misinterpreted memory at +OFFSET_MANIFEST almost never has the
+     * IS_ARRAY low byte).
+     */
+    private function walkPharArchives(
+        ZendArray $ht,
+        int $parent_id,
+        CollectorContext $ctx,
+        JobQueue $queue,
+    ): void {
+        try {
+            $iterator = $ht->getItemIterator($ctx->dereferencer);
+        } catch (\Throwable) {
+            return;
+        }
+        $archive_size = $ctx->zend_type_reader->sizeOf('phar_archive_data_truncated');
+        foreach ($iterator as $zval) {
+            try {
+                if ($zval->getType() !== 'IS_PTR') {
+                    continue;
+                }
+                $archive_addr = $zval->value->lval;
+                if ($archive_addr === 0) {
+                    continue;
+                }
+                $archive_pointer = new Pointer(
+                    PharArchiveData::class,
+                    $archive_addr,
+                    $archive_size,
+                );
+                $archive = $ctx->dereferencer->deref($archive_pointer);
+                $manifest = $archive->manifest;
+                $manifest_addr = $manifest->getPointer()->address;
+                if (isset($ctx->address_map[$manifest_addr])) {
+                    continue;
+                }
+                if (($manifest->gc->type_info & 0xFF) !== self::IS_ARRAY) {
+                    continue;
+                }
+                if ($manifest->gc->refcount > 0x0FFF_FFFF) {
+                    continue;
+                }
+                EmitArrayJob::processZendArray(
+                    $manifest,
+                    $parent_id >= 0 ? $parent_id : null,
+                    sprintf('phar_manifest@0x%x', $archive_addr),
                     EdgeStrength::Strong,
                     $ctx,
                     $queue,

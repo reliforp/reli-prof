@@ -448,6 +448,24 @@ struct _zend_module_entry {
 	const char *build_id;
 };
 
+// ext/phar/phar_internal.h — extracted enough of phar_archive_data to
+// reach the per-archive `manifest` HashTable. Only fields up to and
+// including `manifest` are needed; the rest of the struct is
+// truncated. (See EmitModuleGlobalsHashTablesJob.) Layout matches the
+// PHP 8.4 phar source so field offsets line up; updating to a later
+// PHP version that reshuffles these fields will require a v85.h copy.
+typedef struct _phar_archive_data_truncated {
+	char     *fname;
+	uint32_t  fname_len;
+	char     *ext;
+	uint32_t  ext_len;
+	char     *alias;
+	uint32_t  alias_len;
+	char      version[12];
+	size_t    halt_offset;
+	zend_array manifest;
+} phar_archive_data_truncated;
+
 // zend_stack.h
 typedef struct _zend_stack {
 	int size, top, max;

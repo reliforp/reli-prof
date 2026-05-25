@@ -566,6 +566,12 @@ class zend_module_entry extends CData
     public ?CPointer $globals_ptr;
 }
 
+class phar_archive_data_truncated extends CData
+{
+    public ?CPointer $fname;
+    public zend_array $manifest;
+}
+
 class zend_hash_func_ffi extends \FFI
 {
     public function zend_hash_func(string $str, int $len): int {}
