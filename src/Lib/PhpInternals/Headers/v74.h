@@ -407,6 +407,117 @@ struct _zend_module_entry {
 	const char *build_id;
 };
 
+// ext/phar/phar_internal.h ZEND_BEGIN_MODULE_GLOBALS(phar) — partial
+// view. Modelled accurately enough to compute the offset of every
+// HashTable field (used by EmitModuleGlobalsHashTablesJob to skip the
+// previous heuristic byte scan and just deref each by name). Function
+// pointer fields are typed `char*` instead of the real signatures
+// because PHP's FFI parser SEGVs reading wide void* fields (same
+// reason globals_ptr is char* in zend_module_entry).
+//
+// PHP 8.0-8.3 layout — int-heavy variant. 8.4 reshuffled cache_list
+// and switched many fields to bool; the 8.4+ headers have a slightly
+// different truncated struct here.
+typedef struct _phar_globals_truncated {
+	zend_array phar_persist_map;
+	zend_array phar_fname_map;
+	char *cached_fp;
+	zend_array phar_alias_map;
+	int phar_SERVER_mung_list;
+	int readonly;
+	char *cache_list;
+	int manifest_cached;
+	int persist;
+	int has_zlib;
+	int has_bz2;
+	unsigned char readonly_orig;
+	unsigned char require_hash_orig;
+	unsigned char intercepted;
+	int request_init;
+	int require_hash;
+	int request_done;
+	int request_ends;
+	char *orig_fopen;
+	char *orig_file_get_contents;
+	char *orig_is_file;
+	char *orig_is_link;
+	char *orig_is_dir;
+	char *orig_opendir;
+	char *orig_file_exists;
+	char *orig_fileperms;
+	char *orig_fileinode;
+	char *orig_filesize;
+	char *orig_fileowner;
+	char *orig_filegroup;
+	char *orig_fileatime;
+	char *orig_filemtime;
+	char *orig_filectime;
+	char *orig_filetype;
+	char *orig_is_writable;
+	char *orig_is_readable;
+	char *orig_is_executable;
+	char *orig_lstat;
+	char *orig_readfile;
+	char *orig_stat;
+	char *cwd;
+	uint32_t cwd_len;
+	int cwd_init;
+	char *openssl_privatekey;
+	uint32_t openssl_privatekey_len;
+	char *last_phar_name;
+	uint32_t last_phar_name_len;
+	char *last_alias;
+	uint32_t last_alias_len;
+	char *last_phar;
+	zend_array mime_types;
+} phar_globals_truncated;
+
+// Partial view of phar's per-entry struct, modelled down to the
+// metadata_tracker so we can deref each manifest bucket value's
+// `phar_entry_info *` and walk the serialized-metadata string field.
+typedef struct _phar_entry_info_truncated {
+	uint32_t  uncompressed_filesize;
+	uint32_t  timestamp;
+	uint32_t  compressed_filesize;
+	uint32_t  crc32;
+	uint32_t  flags;
+	uint32_t  old_flags;
+	// phar_metadata_tracker is { zval val; zend_string *str; }
+	// = 24 bytes total. We splay the two members directly so FFI
+	// gets accurate offsets without modelling phar_metadata_tracker
+	// as a separate type.
+	zval      metadata_val;
+	char     *metadata_str;   // really zend_string*; char* per the
+	                          // FFI-void*-segv workaround
+} phar_entry_info_truncated;
+
+// PHP 8.0-8.3 layout — has `internal_file_start` before halt_offset
+// (removed in 8.4). Manifest sits at offset 72 here (vs 64 in 8.4).
+typedef struct _phar_archive_data_truncated {
+	char     *fname;
+	uint32_t  fname_len;
+	char     *ext;
+	uint32_t  ext_len;
+	char     *alias;
+	uint32_t  alias_len;
+	char      version[12];
+	size_t    internal_file_start;
+	size_t    halt_offset;
+	zend_array manifest;
+	zend_array virtual_dirs;
+	zend_array mounted_dirs;
+	uint32_t  flags;
+	uint32_t  min_timestamp;
+	uint32_t  max_timestamp;
+	char     *fp;        // really php_stream*; declared as char* per the
+	                     // FFI-void*-segv workaround (see globals_ptr)
+	char     *ufp;       // ditto
+	int       refcount;
+	uint32_t  sig_flags;
+	uint32_t  sig_len;
+	char     *signature;
+} phar_archive_data_truncated;
+
 // zend_stack.h
 typedef struct _zend_stack {
 	int size, top, max;

@@ -126,11 +126,12 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
     {
         // The walker needs PharGlobalsLayout / PharArchiveDataLayout
         // generated layouts for the target PHP version. They ship
-        // for v80 and up today; older versions (pre-phar_metadata_tracker,
-        // different zend_array layouts) need separate truncated
-        // structs in their per-version headers and a generator
-        // re-run to land.
-        if ($ctx->zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V80)) {
+        // for v70 onwards; the per-version truncated structs share
+        // the int-heavy / has-internal_file_start layout up through
+        // 8.3, then switch to the bool-unified / no-internal-file-start
+        // layout on 8.4+. Per-entry metadata walking is the only
+        // version-gated knob (see walkArchiveEntryMetadata).
+        if ($ctx->zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V70)) {
             return;
         }
 
@@ -545,7 +546,16 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
                 // (phar_entry_info*), deref the entry struct, and
                 // attach its metadata_str to the per-archive buffer
                 // context when set.
-                $this->walkArchiveEntryMetadata($archive->manifest, $ctx, $archive_buf_ctx);
+                // phar_metadata_tracker (zval + zend_string*) was
+                // introduced in PHP 8.0. On 7.x the per-entry struct
+                // has plain `zval metadata` and (only from 7.4) a
+                // `smart_str metadata_str` at a different offset.
+                // Skip the metadata walk on pre-8.0 — the per-entry
+                // serialized-string path stops being a meaningful gap
+                // contributor below 8.x anyway.
+                if (!$ctx->zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V80)) {
+                    $this->walkArchiveEntryMetadata($archive->manifest, $ctx, $archive_buf_ctx);
+                }
                 if (iterator_to_array($archive_buf_ctx->getLocations()) !== []) {
                     $ctx->emitNode(
                         $archive_buf_ctx,
