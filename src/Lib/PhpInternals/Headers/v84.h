@@ -464,6 +464,8 @@ typedef struct _phar_archive_data_truncated {
 	char      version[12];
 	size_t    halt_offset;
 	zend_array manifest;
+	zend_array virtual_dirs;
+	zend_array mounted_dirs;
 } phar_archive_data_truncated;
 
 // zend_stack.h

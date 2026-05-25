@@ -570,6 +570,8 @@ class phar_archive_data_truncated extends CData
 {
     public ?CPointer $fname;
     public zend_array $manifest;
+    public zend_array $virtual_dirs;
+    public zend_array $mounted_dirs;
 }
 
 class zend_hash_func_ffi extends \FFI
