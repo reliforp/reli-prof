@@ -122,6 +122,18 @@ final class MemoryDumpReaderFactory
             $php_version,
             $container,
         );
+        $module_registry_address = $this->resolveModuleRegistryAddress(
+            $parsed['module_globals'],
+            $parsed['pid'],
+            $php_version,
+            $container,
+        );
+        $tsrm_ls_cache_address = $this->resolveTsrmLsCacheAddress(
+            $parsed['module_globals'],
+            $parsed['pid'],
+            $php_version,
+            $container,
+        );
 
         return new MemoryDumpReader(
             $container->get(MemoryLocationsCollector::class),
@@ -133,7 +145,59 @@ final class MemoryDumpReaderFactory
             rss_bytes: $parsed['rss_bytes'],
             fast_path: $fast_path,
             disable_bin_walk: $disable_bin_walk,
+            module_registry_address: $module_registry_address,
+            tsrm_ls_cache_address: $tsrm_ls_cache_address,
         );
+    }
+
+    /**
+     * @param array<string, int> $module_globals
+     * @param value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
+     */
+    private function resolveModuleRegistryAddress(
+        array $module_globals,
+        int $pid,
+        string $php_version,
+        Container $container,
+    ): ?int {
+        if (isset($module_globals['module_registry'])) {
+            return $module_globals['module_registry'];
+        }
+        try {
+            /** @var PhpGlobalsFinder $finder */
+            $finder = $container->get(PhpGlobalsFinder::class);
+            /** @var TargetPhpSettings<'auto'|value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $settings */
+            $settings = new TargetPhpSettings(php_version: $php_version);
+            return $finder->findModuleRegistry(new ProcessSpecifier($pid), $settings);
+        } catch (\Throwable $e) {
+            Log::debug('tier-2 module_registry resolve failed: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * @param array<string, int> $module_globals
+     * @param value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version
+     */
+    private function resolveTsrmLsCacheAddress(
+        array $module_globals,
+        int $pid,
+        string $php_version,
+        Container $container,
+    ): ?int {
+        if (isset($module_globals['tsrm_ls_cache'])) {
+            return $module_globals['tsrm_ls_cache'];
+        }
+        try {
+            /** @var PhpGlobalsFinder $finder */
+            $finder = $container->get(PhpGlobalsFinder::class);
+            /** @var TargetPhpSettings<value-of<\Reli\Lib\PhpInternals\ZendTypeReader::ALL_SUPPORTED_VERSIONS>> $settings */
+            $settings = new TargetPhpSettings(php_version: $php_version);
+            return $finder->findTsrmLsCache(new ProcessSpecifier($pid), $settings);
+        } catch (\Throwable $e) {
+            Log::debug('tier-2 tsrm_ls_cache resolve failed: ' . $e->getMessage());
+            return null;
+        }
     }
 
     /**
