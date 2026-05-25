@@ -25,3 +25,53 @@ function pharglobals_mime_types(string $buf, int $off): int
 {
     return ord($buf[$off + 456]);
 }
+
+/** @psalm-suppress PossiblyInvalidArrayAccess */
+function pharglobals_cache_list(string $buf, int $off): int
+{
+    return unpack('P', $buf, $off + 184)[1];
+}
+
+/** @psalm-suppress PossiblyInvalidArrayAccess */
+function pharglobals_cwd(string $buf, int $off): int
+{
+    return unpack('P', $buf, $off + 384)[1];
+}
+
+function pharglobals_cwd_len(string $buf, int $off): int
+{
+    return ord($buf[$off + 392]) | (ord($buf[$off + 392 + 1]) << 8) | (ord($buf[$off + 392 + 2]) << 16) | (ord($buf[$off + 392 + 3]) << 24);
+}
+
+/** @psalm-suppress PossiblyInvalidArrayAccess */
+function pharglobals_openssl_privatekey(string $buf, int $off): int
+{
+    return unpack('P', $buf, $off + 400)[1];
+}
+
+function pharglobals_openssl_privatekey_len(string $buf, int $off): int
+{
+    return ord($buf[$off + 408]) | (ord($buf[$off + 408 + 1]) << 8) | (ord($buf[$off + 408 + 2]) << 16) | (ord($buf[$off + 408 + 3]) << 24);
+}
+
+/** @psalm-suppress PossiblyInvalidArrayAccess */
+function pharglobals_last_phar_name(string $buf, int $off): int
+{
+    return unpack('P', $buf, $off + 416)[1];
+}
+
+function pharglobals_last_phar_name_len(string $buf, int $off): int
+{
+    return ord($buf[$off + 424]) | (ord($buf[$off + 424 + 1]) << 8) | (ord($buf[$off + 424 + 2]) << 16) | (ord($buf[$off + 424 + 3]) << 24);
+}
+
+/** @psalm-suppress PossiblyInvalidArrayAccess */
+function pharglobals_last_alias(string $buf, int $off): int
+{
+    return unpack('P', $buf, $off + 432)[1];
+}
+
+function pharglobals_last_alias_len(string $buf, int $off): int
+{
+    return ord($buf[$off + 440]) | (ord($buf[$off + 440 + 1]) << 8) | (ord($buf[$off + 440 + 2]) << 16) | (ord($buf[$off + 440 + 3]) << 24);
+}

@@ -13,4 +13,13 @@ final class PharGlobalsLayout
     public const OFFSET_PHAR_FNAME_MAP = 56;
     public const OFFSET_PHAR_ALIAS_MAP = 120;
     public const OFFSET_MIME_TYPES = 456;
+    public const OFFSET_CACHE_LIST = 184;
+    public const OFFSET_CWD = 384;
+    public const OFFSET_CWD_LEN = 392;
+    public const OFFSET_OPENSSL_PRIVATEKEY = 400;
+    public const OFFSET_OPENSSL_PRIVATEKEY_LEN = 408;
+    public const OFFSET_LAST_PHAR_NAME = 416;
+    public const OFFSET_LAST_PHAR_NAME_LEN = 424;
+    public const OFFSET_LAST_ALIAS = 432;
+    public const OFFSET_LAST_ALIAS_LEN = 440;
 }
