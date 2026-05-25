@@ -574,6 +574,14 @@ class phar_archive_data_truncated extends CData
     public zend_array $mounted_dirs;
 }
 
+class phar_globals_truncated extends CData
+{
+    public zend_array $phar_persist_map;
+    public zend_array $phar_fname_map;
+    public zend_array $phar_alias_map;
+    public zend_array $mime_types;
+}
+
 class zend_hash_func_ffi extends \FFI
 {
     public function zend_hash_func(string $str, int $len): int {}

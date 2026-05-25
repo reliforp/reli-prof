@@ -105,6 +105,19 @@ $struct_defs = [
             'GC_TYPE_INFO' => [['gc', 'u', 'type_info'], 'u32le'],
         ],
     ],
+    'PharGlobals' => [
+        // Partial view of ext/phar's MODULE_GLOBALS struct — modelled
+        // accurately enough to compute the offset of every inline
+        // HashTable so EmitModuleGlobalsHashTablesJob can deref each
+        // by name rather than scanning for IS_ARRAY-looking bytes.
+        'c_type' => 'phar_globals_truncated',
+        'fields' => [
+            'PHAR_PERSIST_MAP' => [['phar_persist_map'], 'u8'],
+            'PHAR_FNAME_MAP'   => [['phar_fname_map'],   'u8'],
+            'PHAR_ALIAS_MAP'   => [['phar_alias_map'],   'u8'],
+            'MIME_TYPES'       => [['mime_types'],       'u8'],
+        ],
+    ],
     'PharArchiveData' => [
         // Generated against the partial view in the per-version header
         // (`_phar_archive_data_truncated`). We only need offsets up to

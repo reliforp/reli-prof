@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\Job;
 
 use Reli\Lib\PhpInternals\Types\Phar\PharArchiveData;
+use Reli\Lib\PhpInternals\Types\Phar\PharGlobals;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
 use Reli\Lib\PhpInternals\Types\Zend\ZendModuleEntry;
 use Reli\Lib\PhpInternals\ZendTypeReader;
@@ -32,27 +33,22 @@ use Reli\Lib\Process\Pointer\Pointer;
  * Some extensions hold large numbers of zend_strings in module-globals
  * HashTables that the standard EG/CG root walk doesn't see. ext/phar
  * is the canonical case: `phar_fname_map`, `phar_alias_map`,
- * `phar_persist_map`, and friends catalog every entry inside every
- * loaded .phar, and on a phpactor / Symfony Console / etc. workload
- * those tables hold tens of thousands of file-path zend_strings that
- * the bin walker enumerates but the analyzer never reaches. Closing
- * that path eliminates the bulk of the bin8/bin16 zend_string gap.
+ * `phar_persist_map`, `mime_types`, and the per-archive `manifest`,
+ * `virtual_dirs`, `mounted_dirs` catalog every entry inside every
+ * loaded .phar.
  *
- * We do this without parsing the per-extension globals struct layout
- * — there's no headers exposing it, and the struct evolves between
- * PHP versions. Instead we scan the globals region at 8-byte
- * alignment, deref each candidate as a `zend_array`, and accept if
- * `gc.type_info` low byte is IS_ARRAY (7). False positives that
- * survive the type check are deflected by {@see EmitArrayJob}'s own
- * validity guards (catches on bad nTableMask, etc.).
+ * For each supported extension we model the prefix of its globals
+ * struct in the per-version C headers (`phar_globals_truncated` in
+ * v84.h) and access the inline HashTables by name. An earlier
+ * iteration scanned the globals region heuristically for IS_ARRAY
+ * signatures; we keep the named-field path now because phar's layout
+ * is stable enough to model and the scan was missing tables that sit
+ * past intermediate bool / function-pointer fields (e.g. mime_types
+ * at offset 456 in PHP 8.4).
  */
 final class EmitModuleGlobalsHashTablesJob implements CollectorJob
 {
     private const IS_ARRAY = 7;
-    /** Stop scanning past this many bytes into the globals struct. */
-    private const MAX_SCAN_BYTES = 4096;
-    /** A zend_array fits on 8-byte alignment within a struct. */
-    private const SCAN_STEP = 8;
 
     public function __construct(
         private ZendArray $module_registry,
@@ -121,13 +117,10 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
             // offset resolution; defer until a ZTS gap motivates it.
             return;
         }
-        $globals_size = $entry->globals_size;
         $globals_ptr = $entry->globals_ptr;
-        if ($globals_ptr === 0 || $globals_size === 0) {
+        if ($globals_ptr === 0) {
             return;
         }
-        $scan_bytes = min($globals_size, self::MAX_SCAN_BYTES);
-        $array_size = $ctx->zend_type_reader->sizeOf('zend_array');
 
         // Hang discovered HashTables under a synthetic
         // `module_globals[<name>]` branch — the existing ModulesContext
@@ -147,46 +140,90 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
             $parent_id = $parent_memo < 0 ? -$parent_memo - 1 : $parent_memo;
         }
 
-        for ($offset = 0; $offset + $array_size <= $scan_bytes; $offset += self::SCAN_STEP) {
-            $candidate_addr = $globals_ptr + $offset;
-            if (isset($ctx->address_map[$candidate_addr])) {
-                continue;
+        // Today the only module we model is phar — deref via the
+        // PharGlobals layout struct and walk each named HashTable. Other
+        // extensions will follow the same pattern when they show up as
+        // a gap contributor: model the globals struct, deref, walk.
+        if ($module_name === 'phar') {
+            $this->walkPharGlobals($globals_ptr, $parent_id, $ctx, $queue);
+        }
+    }
+
+    private function walkPharGlobals(
+        int $globals_ptr,
+        int $parent_id,
+        CollectorContext $ctx,
+        JobQueue $queue,
+    ): void {
+        $globals_pointer = new Pointer(
+            PharGlobals::class,
+            $globals_ptr,
+            $ctx->zend_type_reader->sizeOf('phar_globals_truncated'),
+        );
+        try {
+            $globals = $ctx->dereferencer->deref($globals_pointer);
+        } catch (\Throwable) {
+            return;
+        }
+        // phar_persist_map / phar_fname_map / phar_alias_map hold
+        // phar_archive_data* values — walk the table and then follow
+        // each archive into its own per-archive HashTables. mime_types
+        // is keyed by file extension with string values, so the
+        // archive-follow step doesn't apply.
+        try {
+            $persist = $globals->phar_persist_map;
+            $this->walkGlobalsTable($persist, 'phar_persist_map', $parent_id, $ctx, $queue);
+            $this->walkPharArchives($persist, $parent_id, $ctx, $queue);
+        } catch (\Throwable) {
+        }
+        try {
+            $fname = $globals->phar_fname_map;
+            $this->walkGlobalsTable($fname, 'phar_fname_map', $parent_id, $ctx, $queue);
+            $this->walkPharArchives($fname, $parent_id, $ctx, $queue);
+        } catch (\Throwable) {
+        }
+        try {
+            $alias = $globals->phar_alias_map;
+            $this->walkGlobalsTable($alias, 'phar_alias_map', $parent_id, $ctx, $queue);
+            $this->walkPharArchives($alias, $parent_id, $ctx, $queue);
+        } catch (\Throwable) {
+        }
+        try {
+            $mime = $globals->mime_types;
+            $this->walkGlobalsTable($mime, 'mime_types', $parent_id, $ctx, $queue);
+        } catch (\Throwable) {
+        }
+    }
+
+    private function walkGlobalsTable(
+        ZendArray $ht,
+        string $label,
+        int $parent_id,
+        CollectorContext $ctx,
+        JobQueue $queue,
+    ): void {
+        try {
+            $addr = $ht->getPointer()->address;
+            if (isset($ctx->address_map[$addr])) {
+                return;
             }
-            try {
-                $ht_pointer = new Pointer(
-                    ZendArray::class,
-                    $candidate_addr,
-                    $array_size,
-                );
-                $ht = $ctx->dereferencer->deref($ht_pointer);
-            } catch (\Throwable) {
-                continue;
-            }
-            // gc.type_info low byte == IS_ARRAY filters out 99%+ of
-            // random struct fields. Plausible refcount guards the
-            // remaining false positives.
-            $type_info = $ht->gc->type_info;
-            if (($type_info & 0xFF) !== self::IS_ARRAY) {
-                continue;
+            if (($ht->gc->type_info & 0xFF) !== self::IS_ARRAY) {
+                return;
             }
             if ($ht->gc->refcount > 0x0FFF_FFFF) {
-                continue;
+                return;
             }
-            try {
-                EmitArrayJob::processZendArray(
-                    $ht,
-                    $parent_id >= 0 ? $parent_id : null,
-                    sprintf('ht@+%d', $offset),
-                    EdgeStrength::Strong,
-                    $ctx,
-                    $queue,
-                );
-            } catch (\Throwable) {
-                continue;
-            }
-            if ($module_name === 'phar') {
-                $this->walkPharArchives($ht, $parent_id, $ctx, $queue);
-            }
+            EmitArrayJob::processZendArray(
+                $ht,
+                $parent_id >= 0 ? $parent_id : null,
+                'phar.' . $label,
+                EdgeStrength::Strong,
+                $ctx,
+                $queue,
+            );
+        } catch (\Throwable) {
+            // uninitialised HashTable (e.g. mime_types before RINIT)
+            // — silently skip.
         }
     }
 
