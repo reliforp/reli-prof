@@ -265,35 +265,56 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
         // so the bytes count toward the analyzed total. cache_list
         // has no paired _len; phar terminates it with a NUL so we
         // bound the read at a sane cap (CACHE_LIST_MAX_LEN).
-        $this->emitMallocBuffer($globals->cwd_address, $globals->cwd_len, 'phar.cwd', $ctx);
-        $this->emitMallocBuffer(
+        $globals_buf_ctx = new StandardModuleContext();
+        $this->buildAndAttach($globals->cwd_address, $globals->cwd_len, 'phar.cwd', $ctx, $globals_buf_ctx);
+        $this->buildAndAttach(
             $globals->openssl_privatekey_address,
             $globals->openssl_privatekey_len,
             'phar.openssl_privatekey',
             $ctx,
+            $globals_buf_ctx,
         );
-        $this->emitMallocBuffer(
+        $this->buildAndAttach(
             $globals->last_phar_name_address,
             $globals->last_phar_name_len,
             'phar.last_phar_name',
             $ctx,
+            $globals_buf_ctx,
         );
-        $this->emitMallocBuffer(
+        $this->buildAndAttach(
             $globals->last_alias_address,
             $globals->last_alias_len,
             'phar.last_alias',
             $ctx,
+            $globals_buf_ctx,
         );
         // cache_list has no _len member — phar treats it as a
         // colon-separated NUL-terminated string. Cap the read so a
         // bogus pointer can't blow up the size sum.
-        if ($globals->cache_list_address !== 0) {
-            $this->emitMallocBuffer(
-                $globals->cache_list_address,
-                self::CACHE_LIST_MAX_LEN,
-                'phar.cache_list',
-                $ctx,
-            );
+        $this->buildAndAttach(
+            $globals->cache_list_address,
+            self::CACHE_LIST_MAX_LEN,
+            'phar.cache_list',
+            $ctx,
+            $globals_buf_ctx,
+        );
+        // Emit only if we collected at least one buffer — empty
+        // contexts add noise to the tree.
+        if (iterator_to_array($globals_buf_ctx->getLocations()) !== []) {
+            $ctx->emitNode($globals_buf_ctx, $parent_id >= 0 ? $parent_id : null, 'phar.buffers');
+        }
+    }
+
+    private function buildAndAttach(
+        int $address,
+        int $len,
+        string $tag,
+        CollectorContext $ctx,
+        StandardModuleContext $host,
+    ): void {
+        $loc = $this->buildMallocBuffer($address, $len, $tag, $ctx);
+        if ($loc !== null) {
+            $host->addLocation($loc);
         }
     }
 
@@ -301,20 +322,29 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
      *  don't have a length pair to bound the LocationRow size. */
     private const CACHE_LIST_MAX_LEN = 4096;
 
-    private function emitMallocBuffer(
+    /**
+     * Build a MallocBufferMemoryLocation for $address/$len under the
+     * given $tag. Returns the location (already added to
+     * memory_locations) so the caller can attach it to a host
+     * Context — the binary sink only writes LocationRows for
+     * Context.getLocations() output, so a location not attached
+     * anywhere is silently dropped on serialise.
+     */
+    private function buildMallocBuffer(
         int $address,
         int $len,
         string $tag,
         CollectorContext $ctx,
-    ): void {
+    ): ?MallocBufferMemoryLocation {
         if ($address === 0 || $len <= 0 || $len > self::CACHE_LIST_MAX_LEN) {
-            return;
+            return null;
         }
         if ($ctx->memory_locations->has($address)) {
-            return;
+            return null;
         }
         $location = new MallocBufferMemoryLocation($address, $len, $tag);
         $ctx->memory_locations->add($location);
+        return $location;
     }
 
     private function walkGlobalsTable(
@@ -386,38 +416,67 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
                     $archive_size,
                 );
                 $archive = $ctx->dereferencer->deref($archive_pointer);
+                // Dedup: phar_persist_map / phar_fname_map /
+                // phar_alias_map all hold the same archive pointer,
+                // so this loop fires once per top-level table for
+                // each archive. Record on address_map after the
+                // first walk to skip the duplicates.
+                if (isset($ctx->address_map[$archive_addr])) {
+                    continue;
+                }
+                $ctx->address_map[$archive_addr] = $parent_id >= 0 ? $parent_id : 0;
+
                 // Each inline HashTable inside phar_archive_data —
                 // walking surfaces the per-archive zend_strings the
                 // standard root walk can't reach.
                 $this->walkArchiveTable($archive->manifest, 'manifest', $archive_addr, $parent_id, $ctx, $queue);
                 $this->walkArchiveTable($archive->virtual_dirs, 'virtual_dirs', $archive_addr, $parent_id, $ctx, $queue);
                 $this->walkArchiveTable($archive->mounted_dirs, 'mounted_dirs', $archive_addr, $parent_id, $ctx, $queue);
+                // Per-archive "buffer" context holds the LocationRows
+                // for the .phar file streams (fp/ufp), the char*
+                // identifier/signature buffers, and the per-entry
+                // serialized-metadata strings — the binary sink only
+                // serialises a LocationRow when it's reachable via
+                // some emitted Context.getLocations(), so we
+                // accumulate everything here and emit at the end.
+                $archive_buf_ctx = new StandardModuleContext();
+                $on_loc = static function (\Reli\Lib\Process\MemoryLocation $loc) use ($archive_buf_ctx): void {
+                    $archive_buf_ctx->addLocation($loc);
+                };
                 // The .phar file's underlying php_stream (typically
                 // STDIO) plus the decompressed-content cache stream
                 // (MEMORY/TEMP) — for tools shipped as a phar this
                 // is where the bulk of the file's bytes land.
-                $this->walkArchiveStream($archive->fp_address, $archive_addr, $ctx);
-                $this->walkArchiveStream($archive->ufp_address, $archive_addr, $ctx);
+                $this->walkArchiveStream($archive->fp_address, $ctx, $on_loc);
+                $this->walkArchiveStream($archive->ufp_address, $ctx, $on_loc);
                 // Per-archive char* buffers — fname/ext/alias are
                 // the archive identifiers (small but counted), and
                 // signature is the phar's cryptographic signature
                 // (can be a few KB for OpenSSL).
-                $this->emitMallocBuffer($archive->fname->address, $archive->fname_len, 'phar.archive.fname', $ctx);
-                $this->emitMallocBuffer($archive->ext_address, $archive->ext_len, 'phar.archive.ext', $ctx);
-                $this->emitMallocBuffer($archive->alias_address, $archive->alias_len, 'phar.archive.alias', $ctx);
-                $this->emitMallocBuffer(
+                $this->buildAndAttach($archive->fname->address, $archive->fname_len, 'phar.archive.fname', $ctx, $archive_buf_ctx);
+                $this->buildAndAttach($archive->ext_address, $archive->ext_len, 'phar.archive.ext', $ctx, $archive_buf_ctx);
+                $this->buildAndAttach($archive->alias_address, $archive->alias_len, 'phar.archive.alias', $ctx, $archive_buf_ctx);
+                $this->buildAndAttach(
                     $archive->signature_address,
                     $archive->sig_len,
                     'phar.archive.signature',
                     $ctx,
+                    $archive_buf_ctx,
                 );
                 // Per-entry metadata serialization: phar caches the
                 // serialized form of each entry's metadata as a
                 // zend_string. Walk every manifest bucket value
                 // (phar_entry_info*), deref the entry struct, and
-                // hand its metadata_str to the standard string
-                // emitter when set.
-                $this->walkArchiveEntryMetadata($archive->manifest, $ctx);
+                // attach its metadata_str to the per-archive buffer
+                // context when set.
+                $this->walkArchiveEntryMetadata($archive->manifest, $ctx, $archive_buf_ctx);
+                if (iterator_to_array($archive_buf_ctx->getLocations()) !== []) {
+                    $ctx->emitNode(
+                        $archive_buf_ctx,
+                        $parent_id >= 0 ? $parent_id : null,
+                        sprintf('archive[0x%x]', $archive_addr),
+                    );
+                }
             } catch (\Throwable) {
                 continue;
             }
@@ -435,6 +494,7 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
     private function walkArchiveEntryMetadata(
         ZendArray $manifest,
         CollectorContext $ctx,
+        StandardModuleContext $archive_buf_ctx,
     ): void {
         try {
             $iterator = $manifest->getItemIterator($ctx->dereferencer);
@@ -479,16 +539,24 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
                     $ctx->dereferencer,
                 );
                 $ctx->memory_locations->add($loc);
+                $archive_buf_ctx->addLocation($loc);
             } catch (\Throwable) {
                 continue;
             }
         }
     }
 
+    /**
+     * @param \Closure(\Reli\Lib\Process\MemoryLocation): void $on_location
+     *     Callback invoked for every MemoryLocation the stream walker
+     *     emits — caller attaches each to the archive's per-buffer
+     *     host Context so the LocationRow makes it to the binary
+     *     sink.
+     */
     private function walkArchiveStream(
         int $stream_addr,
-        int $archive_addr,
         CollectorContext $ctx,
+        \Closure $on_location,
     ): void {
         if ($stream_addr === 0) {
             return;
@@ -496,15 +564,7 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
         if (isset($ctx->address_map[$stream_addr])) {
             return;
         }
-        // Stream MemoryLocations land in memory_locations only — we
-        // don't attach to a tree context for these, the analyzed%
-        // numerator only needs the LocationRow. On workloads where
-        // phpactor / a phar SAPI exposes the same stream as a
-        // resource, EmitResourceJob will already have added it and
-        // memory_locations dedup absorbs our second add — this walker
-        // is defensive coverage for the case where phar holds streams
-        // that aren't reachable via resources.
-        $walker = new PhpStreamWalker($ctx, static function () {});
+        $walker = new PhpStreamWalker($ctx, $on_location);
         $stream = $walker->readStream($stream_addr);
         if ($stream === null) {
             return;
