@@ -26,3 +26,15 @@ function phararchivedata_mounted_dirs(string $buf, int $off): int
 {
     return ord($buf[$off + 176]);
 }
+
+/** @psalm-suppress PossiblyInvalidArrayAccess */
+function phararchivedata_fp(string $buf, int $off): int
+{
+    return unpack('P', $buf, $off + 248)[1];
+}
+
+/** @psalm-suppress PossiblyInvalidArrayAccess */
+function phararchivedata_ufp(string $buf, int $off): int
+{
+    return unpack('P', $buf, $off + 256)[1];
+}

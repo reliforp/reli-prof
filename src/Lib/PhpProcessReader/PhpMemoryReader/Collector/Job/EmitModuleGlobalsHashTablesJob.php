@@ -21,6 +21,7 @@ use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorJob;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\JobQueue;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\PhpStream\PhpStreamWalker;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ModulesContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\StandardModuleContext;
@@ -333,10 +334,38 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
                 $this->walkArchiveTable($archive->manifest, 'manifest', $archive_addr, $parent_id, $ctx, $queue);
                 $this->walkArchiveTable($archive->virtual_dirs, 'virtual_dirs', $archive_addr, $parent_id, $ctx, $queue);
                 $this->walkArchiveTable($archive->mounted_dirs, 'mounted_dirs', $archive_addr, $parent_id, $ctx, $queue);
+                // The .phar file's underlying php_stream (typically
+                // STDIO) plus the decompressed-content cache stream
+                // (MEMORY/TEMP) — for tools shipped as a phar this
+                // is where the bulk of the file's bytes land.
+                $this->walkArchiveStream($archive->fp_address, $archive_addr, $ctx);
+                $this->walkArchiveStream($archive->ufp_address, $archive_addr, $ctx);
             } catch (\Throwable) {
                 continue;
             }
         }
+    }
+
+    private function walkArchiveStream(
+        int $stream_addr,
+        int $archive_addr,
+        CollectorContext $ctx,
+    ): void {
+        if ($stream_addr === 0) {
+            return;
+        }
+        if (isset($ctx->address_map[$stream_addr])) {
+            return;
+        }
+        // Stream MemoryLocations land in memory_locations only — we
+        // don't attach to a tree context for these, the analyzed%
+        // numerator only needs the LocationRow.
+        $walker = new PhpStreamWalker($ctx, static function () {});
+        $stream = $walker->readStream($stream_addr);
+        if ($stream === null) {
+            return;
+        }
+        $walker->walkStreamData($stream);
     }
 
     private function walkArchiveTable(
