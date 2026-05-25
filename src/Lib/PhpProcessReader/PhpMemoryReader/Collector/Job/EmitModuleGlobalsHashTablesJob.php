@@ -351,10 +351,12 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
         int $archive_addr,
         CollectorContext $ctx,
     ): void {
+        fwrite(STDERR, sprintf("[DBG phar stream] archive=0x%x stream_addr=0x%x\n", $archive_addr, $stream_addr));
         if ($stream_addr === 0) {
             return;
         }
         if (isset($ctx->address_map[$stream_addr])) {
+            fwrite(STDERR, "[DBG phar stream] already in address_map, skip\n");
             return;
         }
         // Stream MemoryLocations land in memory_locations only — we
@@ -363,9 +365,11 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
         $walker = new PhpStreamWalker($ctx, static function () {});
         $stream = $walker->readStream($stream_addr);
         if ($stream === null) {
+            fwrite(STDERR, "[DBG phar stream] readStream returned null\n");
             return;
         }
-        $walker->walkStreamData($stream);
+        $label = $walker->walkStreamData($stream);
+        fwrite(STDERR, sprintf("[DBG phar stream] walked, label=%s\n", $label ?? '(none)'));
     }
 
     private function walkArchiveTable(
