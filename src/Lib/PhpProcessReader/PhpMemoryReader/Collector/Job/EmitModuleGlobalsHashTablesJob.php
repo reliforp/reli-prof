@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\Job;
 
 use Reli\Lib\PhpInternals\Types\Phar\PharArchiveData;
+use Reli\Lib\PhpInternals\Types\Phar\PharEntryInfo;
 use Reli\Lib\PhpInternals\Types\Phar\PharGlobals;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
 use Reli\Lib\PhpInternals\Types\Zend\ZendModuleEntry;
@@ -21,6 +22,7 @@ use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\CollectorJob;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\JobQueue;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MallocBufferMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\PhpStream\PhpStreamWalker;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\ModulesContext;
@@ -257,6 +259,62 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
             $this->walkGlobalsTable($mime, 'mime_types', $parent_id, $ctx, $queue);
         } catch (\Throwable) {
         }
+        // Per-request transient char* fields in phar's globals
+        // struct. Each tells us "X bytes of zend_mm-allocated buffer
+        // pointed to by globals->FOO" — emit a MallocBufferMemoryLocation
+        // so the bytes count toward the analyzed total. cache_list
+        // has no paired _len; phar terminates it with a NUL so we
+        // bound the read at a sane cap (CACHE_LIST_MAX_LEN).
+        $this->emitMallocBuffer($globals->cwd_address, $globals->cwd_len, 'phar.cwd', $ctx);
+        $this->emitMallocBuffer(
+            $globals->openssl_privatekey_address,
+            $globals->openssl_privatekey_len,
+            'phar.openssl_privatekey',
+            $ctx,
+        );
+        $this->emitMallocBuffer(
+            $globals->last_phar_name_address,
+            $globals->last_phar_name_len,
+            'phar.last_phar_name',
+            $ctx,
+        );
+        $this->emitMallocBuffer(
+            $globals->last_alias_address,
+            $globals->last_alias_len,
+            'phar.last_alias',
+            $ctx,
+        );
+        // cache_list has no _len member — phar treats it as a
+        // colon-separated NUL-terminated string. Cap the read so a
+        // bogus pointer can't blow up the size sum.
+        if ($globals->cache_list_address !== 0) {
+            $this->emitMallocBuffer(
+                $globals->cache_list_address,
+                self::CACHE_LIST_MAX_LEN,
+                'phar.cache_list',
+                $ctx,
+            );
+        }
+    }
+
+    /** Cap for phar's cache_list NUL-terminated buffer when we
+     *  don't have a length pair to bound the LocationRow size. */
+    private const CACHE_LIST_MAX_LEN = 4096;
+
+    private function emitMallocBuffer(
+        int $address,
+        int $len,
+        string $tag,
+        CollectorContext $ctx,
+    ): void {
+        if ($address === 0 || $len <= 0 || $len > self::CACHE_LIST_MAX_LEN) {
+            return;
+        }
+        if ($ctx->memory_locations->has($address)) {
+            return;
+        }
+        $location = new MallocBufferMemoryLocation($address, $len, $tag);
+        $ctx->memory_locations->add($location);
     }
 
     private function walkGlobalsTable(
@@ -340,6 +398,87 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
                 // is where the bulk of the file's bytes land.
                 $this->walkArchiveStream($archive->fp_address, $archive_addr, $ctx);
                 $this->walkArchiveStream($archive->ufp_address, $archive_addr, $ctx);
+                // Per-archive char* buffers — fname/ext/alias are
+                // the archive identifiers (small but counted), and
+                // signature is the phar's cryptographic signature
+                // (can be a few KB for OpenSSL).
+                $this->emitMallocBuffer($archive->fname->address, $archive->fname_len, 'phar.archive.fname', $ctx);
+                $this->emitMallocBuffer($archive->ext_address, $archive->ext_len, 'phar.archive.ext', $ctx);
+                $this->emitMallocBuffer($archive->alias_address, $archive->alias_len, 'phar.archive.alias', $ctx);
+                $this->emitMallocBuffer(
+                    $archive->signature_address,
+                    $archive->sig_len,
+                    'phar.archive.signature',
+                    $ctx,
+                );
+                // Per-entry metadata serialization: phar caches the
+                // serialized form of each entry's metadata as a
+                // zend_string. Walk every manifest bucket value
+                // (phar_entry_info*), deref the entry struct, and
+                // hand its metadata_str to the standard string
+                // emitter when set.
+                $this->walkArchiveEntryMetadata($archive->manifest, $ctx);
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+    }
+
+    /**
+     * For each IS_PTR bucket value in the manifest, deref as
+     * PharEntryInfo and emit a ZendStringMemoryLocation for the
+     * serialized metadata (when set). Per-entry filename / tmp /
+     * link char* are typically persistent (libc heap) so we don't
+     * walk them; metadata_str on a non-persistent phar lives in
+     * zend_mm and is what we're after here.
+     */
+    private function walkArchiveEntryMetadata(
+        ZendArray $manifest,
+        CollectorContext $ctx,
+    ): void {
+        try {
+            $iterator = $manifest->getItemIterator($ctx->dereferencer);
+        } catch (\Throwable) {
+            return;
+        }
+        $entry_size = $ctx->zend_type_reader->sizeOf('phar_entry_info_truncated');
+        foreach ($iterator as $zval) {
+            try {
+                if ($zval->getType() !== 'IS_PTR') {
+                    continue;
+                }
+                $entry_addr = $zval->value->lval;
+                if ($entry_addr === 0) {
+                    continue;
+                }
+                $entry = $ctx->dereferencer->deref(new Pointer(
+                    PharEntryInfo::class,
+                    $entry_addr,
+                    $entry_size,
+                ));
+                $str_addr = $entry->metadata_str_address;
+                if ($str_addr === 0) {
+                    continue;
+                }
+                if ($ctx->memory_locations->has($str_addr)) {
+                    continue;
+                }
+                $str = $ctx->dereferencer->deref(new Pointer(
+                    \Reli\Lib\PhpInternals\Types\Zend\ZendString::class,
+                    $str_addr,
+                    $ctx->zend_type_reader->sizeOf('zend_string'),
+                ));
+                // Same MAX_PLAUSIBLE_STREAM_STRING_LEN heuristic as
+                // EmitResourceJob — bogus `len` reads above this
+                // are recycled-slot garbage, skip.
+                if ($str->len < 0 || $str->len > PhpStreamWalker::MAX_PLAUSIBLE_STREAM_STRING_LEN) {
+                    continue;
+                }
+                $loc = \Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation::fromZendString(
+                    $str,
+                    $ctx->dereferencer,
+                );
+                $ctx->memory_locations->add($loc);
             } catch (\Throwable) {
                 continue;
             }

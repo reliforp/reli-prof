@@ -116,6 +116,24 @@ $struct_defs = [
             'PHAR_FNAME_MAP'   => [['phar_fname_map'],   'u8'],
             'PHAR_ALIAS_MAP'   => [['phar_alias_map'],   'u8'],
             'MIME_TYPES'       => [['mime_types'],       'u8'],
+            // Per-request transient char* fields.
+            'CACHE_LIST'              => [['cache_list'], 'ptr'],
+            'CWD'                     => [['cwd'], 'ptr'],
+            'CWD_LEN'                 => [['cwd_len'], 'u32le'],
+            'OPENSSL_PRIVATEKEY'      => [['openssl_privatekey'], 'ptr'],
+            'OPENSSL_PRIVATEKEY_LEN'  => [['openssl_privatekey_len'], 'u32le'],
+            'LAST_PHAR_NAME'          => [['last_phar_name'], 'ptr'],
+            'LAST_PHAR_NAME_LEN'      => [['last_phar_name_len'], 'u32le'],
+            'LAST_ALIAS'              => [['last_alias'], 'ptr'],
+            'LAST_ALIAS_LEN'          => [['last_alias_len'], 'u32le'],
+        ],
+    ],
+    'PharEntryInfo' => [
+        // Partial view of phar's per-entry struct — only need the
+        // metadata-tracker's serialized-string pointer for walking.
+        'c_type' => 'phar_entry_info_truncated',
+        'fields' => [
+            'METADATA_STR' => [['metadata_str'], 'ptr'],
         ],
     ],
     'PharArchiveData' => [
@@ -126,6 +144,11 @@ $struct_defs = [
         'c_type' => 'phar_archive_data_truncated',
         'fields' => [
             'FNAME' => [['fname'], 'ptr'],
+            'FNAME_LEN' => [['fname_len'], 'u32le'],
+            'EXT' => [['ext'], 'ptr'],
+            'EXT_LEN' => [['ext_len'], 'u32le'],
+            'ALIAS' => [['alias'], 'ptr'],
+            'ALIAS_LEN' => [['alias_len'], 'u32le'],
             // Inline HashTables — we only need their offsets so the
             // Job can hand them to processZendArray.
             'MANIFEST' => [['manifest'], 'u8'],
@@ -135,6 +158,8 @@ $struct_defs = [
             // contents (and decompressed forms) here.
             'FP' => [['fp'], 'ptr'],
             'UFP' => [['ufp'], 'ptr'],
+            'SIG_LEN' => [['sig_len'], 'u32le'],
+            'SIGNATURE' => [['signature'], 'ptr'],
         ],
     ],
 ];

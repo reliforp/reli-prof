@@ -515,6 +515,25 @@ typedef struct _phar_globals_truncated {
 	zend_array mime_types;
 } phar_globals_truncated;
 
+// Partial view of phar's per-entry struct, modelled down to the
+// metadata_tracker so we can deref each manifest bucket value's
+// `phar_entry_info *` and walk the serialized-metadata string field.
+typedef struct _phar_entry_info_truncated {
+	uint32_t  uncompressed_filesize;
+	uint32_t  timestamp;
+	uint32_t  compressed_filesize;
+	uint32_t  crc32;
+	uint32_t  flags;
+	uint32_t  old_flags;
+	// phar_metadata_tracker is { zval val; zend_string *str; }
+	// = 24 bytes total. We splay the two members directly so FFI
+	// gets accurate offsets without modelling phar_metadata_tracker
+	// as a separate type.
+	zval      metadata_val;
+	char     *metadata_str;   // really zend_string*; char* per the
+	                          // FFI-void*-segv workaround
+} phar_entry_info_truncated;
+
 typedef struct _phar_archive_data_truncated {
 	char     *fname;
 	uint32_t  fname_len;
@@ -533,6 +552,10 @@ typedef struct _phar_archive_data_truncated {
 	char     *fp;        // really php_stream*; declared as char* per the
 	                     // FFI-void*-segv workaround (see globals_ptr)
 	char     *ufp;       // ditto
+	int       refcount;
+	uint32_t  sig_flags;
+	uint32_t  sig_len;
+	char     *signature;
 } phar_archive_data_truncated;
 
 // zend_stack.h

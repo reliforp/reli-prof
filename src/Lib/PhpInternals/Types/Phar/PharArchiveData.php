@@ -71,6 +71,20 @@ final class PharArchiveData implements PointedTypeResolverAware
      * @psalm-suppress PropertyNotSetInConstructor
      */
     public int $ufp_address;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $fname_len;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $ext_address;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $ext_len;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $alias_address;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $alias_len;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $signature_address;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $sig_len;
 
     /**
      * @param CastedCData<phar_archive_data_truncated> $casted_cdata
@@ -86,6 +100,13 @@ final class PharArchiveData implements PointedTypeResolverAware
         unset($this->mounted_dirs);
         unset($this->fp_address);
         unset($this->ufp_address);
+        unset($this->fname_len);
+        unset($this->ext_address);
+        unset($this->ext_len);
+        unset($this->alias_address);
+        unset($this->alias_len);
+        unset($this->signature_address);
+        unset($this->sig_len);
     }
 
     public function __get(string $field_name): mixed
@@ -114,6 +135,19 @@ final class PharArchiveData implements PointedTypeResolverAware
             'ufp_address' => $this->ufp_address = FFIHelper::castPointerToInt(
                 $this->casted_cdata->casted->ufp
             ),
+            'fname_len' => $this->fname_len = $this->casted_cdata->casted->fname_len,
+            'ext_address' => $this->ext_address = FFIHelper::castPointerToInt(
+                $this->casted_cdata->casted->ext
+            ),
+            'ext_len' => $this->ext_len = $this->casted_cdata->casted->ext_len,
+            'alias_address' => $this->alias_address = FFIHelper::castPointerToInt(
+                $this->casted_cdata->casted->alias
+            ),
+            'alias_len' => $this->alias_len = $this->casted_cdata->casted->alias_len,
+            'signature_address' => $this->signature_address = FFIHelper::castPointerToInt(
+                $this->casted_cdata->casted->signature
+            ),
+            'sig_len' => $this->sig_len = $this->casted_cdata->casted->sig_len,
         };
     }
 

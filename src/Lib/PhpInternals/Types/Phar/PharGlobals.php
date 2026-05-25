@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpInternals\Types\Phar;
 
 use FFI\PhpInternals\phar_globals_truncated;
+use Reli\Lib\FFI\FFIHelper;
 use Reli\Lib\PhpInternals\CastedCData;
 use Reli\Lib\PhpInternals\Types\Zend\InlineCDataCreatorTrait;
 use Reli\Lib\PhpInternals\Types\Zend\ZendArray;
@@ -40,6 +41,29 @@ final class PharGlobals implements PointedTypeResolverAware
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendArray $mime_types;
 
+    /** Per-request transient char* fields. Address may be 0
+     *  (uninitialised). Length is read from the paired *_len field;
+     *  for cache_list (no length pair) the buffer is null-terminated,
+     *  caller probes it. */
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $cache_list_address;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $cwd_address;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $cwd_len;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $openssl_privatekey_address;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $openssl_privatekey_len;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $last_phar_name_address;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $last_phar_name_len;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $last_alias_address;
+    /** @psalm-suppress PropertyNotSetInConstructor */
+    public int $last_alias_len;
+
     /**
      * @param CastedCData<phar_globals_truncated> $casted_cdata
      * @param Pointer<PharGlobals> $pointer
@@ -52,6 +76,15 @@ final class PharGlobals implements PointedTypeResolverAware
         unset($this->phar_fname_map);
         unset($this->phar_alias_map);
         unset($this->mime_types);
+        unset($this->cache_list_address);
+        unset($this->cwd_address);
+        unset($this->cwd_len);
+        unset($this->openssl_privatekey_address);
+        unset($this->openssl_privatekey_len);
+        unset($this->last_phar_name_address);
+        unset($this->last_phar_name_len);
+        unset($this->last_alias_address);
+        unset($this->last_alias_len);
     }
 
     public function __get(string $field_name): mixed
@@ -73,6 +106,27 @@ final class PharGlobals implements PointedTypeResolverAware
                 'mime_types',
                 ZendArray::class,
             ),
+            'cache_list_address' => $this->cache_list_address = FFIHelper::castPointerToInt(
+                $this->casted_cdata->casted->cache_list
+            ),
+            'cwd_address' => $this->cwd_address = FFIHelper::castPointerToInt(
+                $this->casted_cdata->casted->cwd
+            ),
+            'cwd_len' => $this->cwd_len = $this->casted_cdata->casted->cwd_len,
+            'openssl_privatekey_address' => $this->openssl_privatekey_address = FFIHelper::castPointerToInt(
+                $this->casted_cdata->casted->openssl_privatekey
+            ),
+            'openssl_privatekey_len' => $this->openssl_privatekey_len
+                = $this->casted_cdata->casted->openssl_privatekey_len,
+            'last_phar_name_address' => $this->last_phar_name_address = FFIHelper::castPointerToInt(
+                $this->casted_cdata->casted->last_phar_name
+            ),
+            'last_phar_name_len' => $this->last_phar_name_len
+                = $this->casted_cdata->casted->last_phar_name_len,
+            'last_alias_address' => $this->last_alias_address = FFIHelper::castPointerToInt(
+                $this->casted_cdata->casted->last_alias
+            ),
+            'last_alias_len' => $this->last_alias_len = $this->casted_cdata->casted->last_alias_len,
         };
     }
 
