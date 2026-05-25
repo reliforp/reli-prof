@@ -230,28 +230,47 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
                     $archive_size,
                 );
                 $archive = $ctx->dereferencer->deref($archive_pointer);
-                $manifest = $archive->manifest;
-                $manifest_addr = $manifest->getPointer()->address;
-                if (isset($ctx->address_map[$manifest_addr])) {
-                    continue;
-                }
-                if (($manifest->gc->type_info & 0xFF) !== self::IS_ARRAY) {
-                    continue;
-                }
-                if ($manifest->gc->refcount > 0x0FFF_FFFF) {
-                    continue;
-                }
-                EmitArrayJob::processZendArray(
-                    $manifest,
-                    $parent_id >= 0 ? $parent_id : null,
-                    sprintf('phar_manifest@0x%x', $archive_addr),
-                    EdgeStrength::Strong,
-                    $ctx,
-                    $queue,
-                );
+                // Each inline HashTable inside phar_archive_data —
+                // walking surfaces the per-archive zend_strings the
+                // standard root walk can't reach.
+                $this->walkArchiveTable($archive->manifest, 'manifest', $archive_addr, $parent_id, $ctx, $queue);
+                $this->walkArchiveTable($archive->virtual_dirs, 'virtual_dirs', $archive_addr, $parent_id, $ctx, $queue);
+                $this->walkArchiveTable($archive->mounted_dirs, 'mounted_dirs', $archive_addr, $parent_id, $ctx, $queue);
             } catch (\Throwable) {
                 continue;
             }
+        }
+    }
+
+    private function walkArchiveTable(
+        ZendArray $ht,
+        string $label,
+        int $archive_addr,
+        int $parent_id,
+        CollectorContext $ctx,
+        JobQueue $queue,
+    ): void {
+        try {
+            $addr = $ht->getPointer()->address;
+            if (isset($ctx->address_map[$addr])) {
+                return;
+            }
+            if (($ht->gc->type_info & 0xFF) !== self::IS_ARRAY) {
+                return;
+            }
+            if ($ht->gc->refcount > 0x0FFF_FFFF) {
+                return;
+            }
+            EmitArrayJob::processZendArray(
+                $ht,
+                $parent_id >= 0 ? $parent_id : null,
+                sprintf('phar_%s@0x%x', $label, $archive_addr),
+                EdgeStrength::Strong,
+                $ctx,
+                $queue,
+            );
+        } catch (\Throwable) {
+            // Bad pointer / uninitialised HashTable — skip silently.
         }
     }
 }

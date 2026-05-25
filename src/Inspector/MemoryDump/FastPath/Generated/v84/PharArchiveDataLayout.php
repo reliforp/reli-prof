@@ -8,7 +8,9 @@ namespace Reli\Inspector\MemoryDump\FastPath\Generated\v84;
 
 final class PharArchiveDataLayout
 {
-    public const SIZE = 120;
+    public const SIZE = 232;
     public const OFFSET_FNAME = 0;
     public const OFFSET_MANIFEST = 64;
+    public const OFFSET_VIRTUAL_DIRS = 120;
+    public const OFFSET_MOUNTED_DIRS = 176;
 }

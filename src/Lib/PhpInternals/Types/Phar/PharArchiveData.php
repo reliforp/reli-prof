@@ -44,6 +44,20 @@ final class PharArchiveData implements PointedTypeResolverAware
     public Pointer $fname;
     /** @psalm-suppress PropertyNotSetInConstructor */
     public ZendArray $manifest;
+    /**
+     * Per-archive hash of every virtual directory path inside the phar
+     * (`.box`, `.box/vendor`, `.box/vendor/composer`, …). Keys are
+     * zend_strings, values are empty markers — walking emits the keys.
+     * @psalm-suppress PropertyNotSetInConstructor
+     */
+    public ZendArray $virtual_dirs;
+    /**
+     * Per-archive hash of `Phar::mount()` mappings. Usually empty;
+     * when populated, keys are virtual paths and values are char*
+     * pointers to the mount-target filename.
+     * @psalm-suppress PropertyNotSetInConstructor
+     */
+    public ZendArray $mounted_dirs;
 
     /**
      * @param CastedCData<phar_archive_data_truncated> $casted_cdata
@@ -55,6 +69,8 @@ final class PharArchiveData implements PointedTypeResolverAware
     ) {
         unset($this->fname);
         unset($this->manifest);
+        unset($this->virtual_dirs);
+        unset($this->mounted_dirs);
     }
 
     public function __get(string $field_name): mixed
@@ -67,6 +83,14 @@ final class PharArchiveData implements PointedTypeResolverAware
             ),
             'manifest' => $this->manifest = $this->createInlineDereferencable(
                 'manifest',
+                ZendArray::class,
+            ),
+            'virtual_dirs' => $this->virtual_dirs = $this->createInlineDereferencable(
+                'virtual_dirs',
+                ZendArray::class,
+            ),
+            'mounted_dirs' => $this->mounted_dirs = $this->createInlineDereferencable(
+                'mounted_dirs',
                 ZendArray::class,
             ),
         };

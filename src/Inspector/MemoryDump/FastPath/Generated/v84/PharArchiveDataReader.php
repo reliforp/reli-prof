@@ -16,3 +16,13 @@ function phararchivedata_manifest(string $buf, int $off): int
 {
     return ord($buf[$off + 64]);
 }
+
+function phararchivedata_virtual_dirs(string $buf, int $off): int
+{
+    return ord($buf[$off + 120]);
+}
+
+function phararchivedata_mounted_dirs(string $buf, int $off): int
+{
+    return ord($buf[$off + 176]);
+}

@@ -113,7 +113,11 @@ $struct_defs = [
         'c_type' => 'phar_archive_data_truncated',
         'fields' => [
             'FNAME' => [['fname'], 'ptr'],
-            'MANIFEST' => [['manifest'], 'u8'], // inline HashTable; we only need its offset
+            // Inline HashTables — we only need their offsets so the
+            // Job can hand them to processZendArray.
+            'MANIFEST' => [['manifest'], 'u8'],
+            'VIRTUAL_DIRS' => [['virtual_dirs'], 'u8'],
+            'MOUNTED_DIRS' => [['mounted_dirs'], 'u8'],
         ],
     ],
 ];
