@@ -351,25 +351,26 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
         int $archive_addr,
         CollectorContext $ctx,
     ): void {
-        fwrite(STDERR, sprintf("[DBG phar stream] archive=0x%x stream_addr=0x%x\n", $archive_addr, $stream_addr));
         if ($stream_addr === 0) {
             return;
         }
         if (isset($ctx->address_map[$stream_addr])) {
-            fwrite(STDERR, "[DBG phar stream] already in address_map, skip\n");
             return;
         }
         // Stream MemoryLocations land in memory_locations only — we
         // don't attach to a tree context for these, the analyzed%
-        // numerator only needs the LocationRow.
+        // numerator only needs the LocationRow. On workloads where
+        // phpactor / a phar SAPI exposes the same stream as a
+        // resource, EmitResourceJob will already have added it and
+        // memory_locations dedup absorbs our second add — this walker
+        // is defensive coverage for the case where phar holds streams
+        // that aren't reachable via resources.
         $walker = new PhpStreamWalker($ctx, static function () {});
         $stream = $walker->readStream($stream_addr);
         if ($stream === null) {
-            fwrite(STDERR, "[DBG phar stream] readStream returned null\n");
             return;
         }
-        $label = $walker->walkStreamData($stream);
-        fwrite(STDERR, sprintf("[DBG phar stream] walked, label=%s\n", $label ?? '(none)'));
+        $walker->walkStreamData($stream);
     }
 
     private function walkArchiveTable(
