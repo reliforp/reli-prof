@@ -70,6 +70,12 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
     public function __construct(
         private ZendArray $module_registry,
         private ?ModulesContext $modules_context = null,
+        /** TSRM thread-local-storage cache base address. When set
+         *  (and non-null), ZTS phar globals are resolved via the
+         *  TSRM id-indexing path (see resolveZtsGlobalsAddress).
+         *  null means NTS or "couldn't determine" — the walker
+         *  silently skips ZTS phar in that case. */
+        private ?int $tsrm_ls_cache_address = null,
     ) {
     }
 
@@ -173,11 +179,14 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
         );
         $entry = $ctx->dereferencer->deref($entry_pointer);
         if ($entry->zts) {
-            // ZTS stores `ts_rsrc_id*` in globals_ptr and needs TSRM
-            // offset resolution; defer until a ZTS gap motivates it.
-            return;
+            // ZTS: globals_ptr holds a `ts_rsrc_id*` (pointer to int).
+            // Resolve the per-thread globals address via the id-indexing
+            // path, matching what TsrmGlobalsResolver::resolveById
+            // does for EG / CG / SG.
+            $globals_ptr = $this->resolveZtsGlobalsAddress($entry->globals_ptr, $ctx);
+        } else {
+            $globals_ptr = $entry->globals_ptr;
         }
-        $globals_ptr = $entry->globals_ptr;
         if ($globals_ptr === 0) {
             return;
         }
@@ -207,6 +216,72 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
         if ($module_name === 'phar') {
             $this->walkPharGlobals($globals_ptr, $parent_id, $ctx, $queue);
         }
+    }
+
+    /**
+     * Resolve a ZTS module's per-thread globals address from a
+     * `ts_rsrc_id*` slot. Mirrors the inline math in
+     * TsrmGlobalsResolver::resolveById — we duplicate it here
+     * because that resolver is keyed on libphp symbol names
+     * (executor_globals etc.) and the per-thread cache offset for
+     * phar comes out of phar.so's own BSS, which the symbol reader
+     * isn't wired up to read today.
+     *
+     * Returns 0 on any failure — caller treats that as "skip this
+     * module" same as a NULL NTS pointer.
+     */
+    private function resolveZtsGlobalsAddress(
+        int $id_ptr_address,
+        CollectorContext $ctx,
+    ): int {
+        if ($this->tsrm_ls_cache_address === null) {
+            return 0;
+        }
+        if ($id_ptr_address === 0) {
+            return 0;
+        }
+        try {
+            $id = $this->readLE($ctx, $id_ptr_address, 4, 'V');
+            if ($id === null || $id <= 0) {
+                return 0;
+            }
+            $cache_base = $this->readLE($ctx, $this->tsrm_ls_cache_address, 8, 'P');
+            if ($cache_base === null || $cache_base === 0) {
+                return 0;
+            }
+            $globals = $this->readLE($ctx, $cache_base + ($id - 1) * 8, 8, 'P');
+            return $globals ?? 0;
+        } catch (\Throwable) {
+            return 0;
+        }
+    }
+
+    /**
+     * Read $size bytes from process memory at $address and unpack
+     * with $format ('V' for u32 LE, 'P' for u64 LE). Returns null
+     * on any failure — caller treats that as "skip this resolve".
+     */
+    private function readLE(
+        CollectorContext $ctx,
+        int $address,
+        int $size,
+        string $format,
+    ): ?int {
+        $bytes = (string)$ctx->dereferencer->deref(
+            new \Reli\Lib\Process\Pointer\Pointer(
+                \Reli\Lib\PhpInternals\Types\C\RawString::class,
+                $address,
+                $size,
+            )
+        );
+        if (strlen($bytes) < $size) {
+            return null;
+        }
+        $unpacked = @unpack($format, $bytes);
+        if ($unpacked === false || !isset($unpacked[1]) || !is_int($unpacked[1])) {
+            return null;
+        }
+        return $unpacked[1];
     }
 
     private function walkPharGlobals(

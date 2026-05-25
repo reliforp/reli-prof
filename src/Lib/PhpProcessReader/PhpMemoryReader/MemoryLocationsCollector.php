@@ -147,6 +147,7 @@ final class MemoryLocationsCollector
         ?\Reli\Inspector\MemoryDump\FastPath\FastPathReader $fast_path = null,
         bool $disable_bin_walk = false,
         ?int $module_registry_address = null,
+        ?int $tsrm_ls_cache_address = null,
     ): CollectedMemories {
         $pid = $process_specifier->pid;
         $php_version = $target_php_settings->php_version;
@@ -403,6 +404,7 @@ final class MemoryLocationsCollector
                 $queue->push(new Collector\Job\EmitModuleGlobalsHashTablesJob(
                     $module_registry,
                     $modules_context,
+                    $tsrm_ls_cache_address,
                 ));
             } catch (\Throwable $e) {
                 Log::debug('failed to push EmitModuleGlobalsHashTablesJob', [

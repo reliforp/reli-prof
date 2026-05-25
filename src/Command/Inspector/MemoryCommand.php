@@ -112,6 +112,15 @@ final class MemoryCommand extends ReliCommand
             $process_specifier,
             $target_php_settings
         );
+        // For ZTS targets we also need TSRM's per-thread cache base
+        // so the module-globals walker can resolve `ts_rsrc_id` slots
+        // (e.g. phar's globals_id) into actual per-thread addresses.
+        // NTS targets return null cheaply and the walker skips the
+        // ZTS path.
+        $tsrm_ls_cache_address = $this->php_globals_finder->findTsrmLsCache(
+            $process_specifier,
+            $target_php_settings_version_decided,
+        );
 
         if ($memory_profiler_settings->stop_process) {
             $this->process_stopper->stop($process_specifier->pid);
@@ -134,6 +143,7 @@ final class MemoryCommand extends ReliCommand
                 $binary_output,
                 $sink,
                 $module_registry_address,
+                $tsrm_ls_cache_address,
             );
             Log::info('end memory command');
             return 0;
@@ -163,6 +173,7 @@ final class MemoryCommand extends ReliCommand
                 $binary_output,
                 $sink,
                 $module_registry_address,
+                $tsrm_ls_cache_address,
             );
 
             $result = new MemoryAnalysisResult(
@@ -199,6 +210,7 @@ final class MemoryCommand extends ReliCommand
         \Reli\Inspector\Output\MemoryOutput\BinaryMemoryOutput $binary_output,
         \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink $sink,
         ?int $module_registry_address = null,
+        ?int $tsrm_ls_cache_address = null,
     ): array {
         $collected_memories = $this->memory_locations_collector->collectAll(
             $process_specifier,
@@ -209,6 +221,7 @@ final class MemoryCommand extends ReliCommand
             $bg_address,
             $sink,
             module_registry_address: $module_registry_address,
+            tsrm_ls_cache_address: $tsrm_ls_cache_address,
         );
 
         $region_result = $sink->computeRegionSumsAndOverhead();
