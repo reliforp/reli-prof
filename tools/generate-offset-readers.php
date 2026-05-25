@@ -105,6 +105,17 @@ $struct_defs = [
             'GC_TYPE_INFO' => [['gc', 'u', 'type_info'], 'u32le'],
         ],
     ],
+    'PharArchiveData' => [
+        // Generated against the partial view in the per-version header
+        // (`_phar_archive_data_truncated`). We only need offsets up to
+        // the inline `manifest` HashTable — see
+        // EmitModuleGlobalsHashTablesJob for how those are consumed.
+        'c_type' => 'phar_archive_data_truncated',
+        'fields' => [
+            'FNAME' => [['fname'], 'ptr'],
+            'MANIFEST' => [['manifest'], 'u8'], // inline HashTable; we only need its offset
+        ],
+    ],
 ];
 
 foreach ($versions as $version) {
