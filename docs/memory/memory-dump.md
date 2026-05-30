@@ -99,6 +99,26 @@ php ./reli inspector:memory:analyze snapshot.rdump \
     -r /path/to/target/root
 ```
 
+## Capturing from inside the process (ext-rdump)
+
+`inspector:memory:dump` attaches from the *outside* via `ptrace` /
+`process_vm_readv`. The [ext-rdump](https://github.com/reliforp/ext-rdump)
+extension writes the same dump from *inside* the target, either with a single
+call or automatically when `memory_limit` is exceeded:
+
+```php
+<?php
+rdump_dump('/tmp/app.rdump');          // snapshot of the current process
+// rdump_dump('/tmp/app.rdump', true); // full: embed read-only segments too
+```
+
+```ini
+; php.ini: dump automatically when memory_limit is exceeded
+rdump.oom_dump=/tmp/oom-%p.rdump
+```
+
+Use it when `ptrace` is unavailable.
+
 ## Comparison with `gcore`
 
 | | `inspector:memory:dump` | `gcore` |
