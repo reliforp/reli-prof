@@ -424,7 +424,7 @@ struct _zend_module_entry {
 	void (*info_func)(zend_module_entry *zend_module);
 	const char *version;
 	size_t globals_size;
-	void* globals_ptr; // ts_rsrc_id* globals_id_ptr; in ZTS
+	char* globals_ptr; // ts_rsrc_id* globals_id_ptr; in ZTS (declared as char* not void* — FFI's void* field access SEGVs on cast)
 	void (*globals_ctor)(void *global);
 	void (*globals_dtor)(void *global);
 	zend_result (*post_deactivate_func)(void);
