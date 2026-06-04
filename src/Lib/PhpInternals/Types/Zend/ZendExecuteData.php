@@ -247,6 +247,16 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
     }
 
     /**
+     * Whether this frame is a closure invocation (ZEND_CALL_CLOSURE, set in
+     * This.u1.type_info). When set, the closure object is recoverable from
+     * the frame's `func` pointer even though no IS_OBJECT zval references it.
+     */
+    public function isClosureCall(): bool
+    {
+        return (bool)($this->This->u1->type_info & (1 << 22));
+    }
+
+    /**
      * Return the closure-object address backing this frame's func, or null if
      * the frame isn't a closure call. ZEND_CALL_CLOSURE (= 1 << 22) is set in
      * `This.u1.type_info` for closure invocations; the closure object pointer
@@ -262,8 +272,7 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
         if ($this->func === null) {
             return null;
         }
-        $ZEND_CALL_CLOSURE = 1 << 22;
-        if (($this->This->u1->type_info & $ZEND_CALL_CLOSURE) === 0) {
+        if (!$this->isClosureCall()) {
             return null;
         }
         [$func_offset_in_closure, ] = $zend_type_reader->getOffsetAndSizeOfMember(
