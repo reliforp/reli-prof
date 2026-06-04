@@ -504,6 +504,37 @@ typedef struct _phar_entry_info_truncated {
 	                          // FFI-void*-segv workaround
 } phar_entry_info_truncated;
 
+// Full phar_entry_info (8.0+ layout) — modelled so the per-entry struct
+// allocation (one emalloc(sizeof(phar_entry_info)) per file in the phar
+// manifest) can be attributed. Pointers are char* per the FFI-void*-segv
+// workaround; sizeof is 160 on LP64.
+typedef struct _phar_entry_info {
+	uint32_t  uncompressed_filesize;
+	uint32_t  timestamp;
+	uint32_t  compressed_filesize;
+	uint32_t  crc32;
+	uint32_t  flags;
+	uint32_t  old_flags;
+	zval      metadata_val;
+	char     *metadata_str;
+	uint32_t  filename_len;
+	char     *filename;
+	int       fp_type;
+	int64_t   offset_abs;
+	int64_t   offset;
+	int64_t   header_offset;
+	char     *fp;
+	char     *cfp;
+	int       fp_refcount;
+	char     *tmp;
+	char     *phar;
+	char     *link;
+	char      tar_type;
+	uint32_t  manifest_pos;
+	unsigned short inode;
+	uint32_t  bitfields;
+} phar_entry_info;
+
 // PHP 8.0-8.3 layout — has `internal_file_start` before halt_offset
 // (removed in 8.4). Manifest sits at offset 72 here (vs 64 in 8.4).
 typedef struct _phar_archive_data_truncated {

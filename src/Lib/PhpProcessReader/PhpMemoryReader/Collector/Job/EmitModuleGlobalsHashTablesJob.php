@@ -66,6 +66,10 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
     /** x86_64 Linux user-space caps at 0x7fff_ffff_ffff. Above that
      *  is kernel space and `arData` shouldn't ever be there. */
     private const MAX_USER_PTR     = 0x7fff_ffff_ffff;
+    /** Sanity ceiling on a phar entry's filename length — real paths are
+     *  well under this; a larger value is a garbage read off a recycled
+     *  slot. */
+    private const MAX_ENTRY_FILENAME_LEN = 0x4000;
 
     public function __construct(
         private ZendArray $module_registry,
@@ -540,22 +544,12 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
                     $ctx,
                     $archive_buf_ctx,
                 );
-                // Per-entry metadata serialization: phar caches the
-                // serialized form of each entry's metadata as a
-                // zend_string. Walk every manifest bucket value
-                // (phar_entry_info*), deref the entry struct, and
-                // attach its metadata_str to the per-archive buffer
-                // context when set.
-                // phar_metadata_tracker (zval + zend_string*) was
-                // introduced in PHP 8.0. On 7.x the per-entry struct
-                // has plain `zval metadata` and (only from 7.4) a
-                // `smart_str metadata_str` at a different offset.
-                // Skip the metadata walk on pre-8.0 — the per-entry
-                // serialized-string path stops being a meaningful gap
-                // contributor below 8.x anyway.
-                if (!$ctx->zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V80)) {
-                    $this->walkArchiveEntryMetadata($archive->manifest, $ctx, $archive_buf_ctx);
-                }
+                // Per-entry walk: attribute the phar_entry_info struct
+                // allocation (one emalloc per file in the manifest — the
+                // dominant per-entry heap cost) for every version, and on
+                // 8.0+ additionally follow each entry's serialized
+                // metadata zend_string.
+                $this->walkArchiveEntries($archive->manifest, $ctx, $archive_buf_ctx);
                 if (iterator_to_array($archive_buf_ctx->getLocations()) !== []) {
                     $ctx->emitNode(
                         $archive_buf_ctx,
@@ -577,7 +571,7 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
      * walk them; metadata_str on a non-persistent phar lives in
      * zend_mm and is what we're after here.
      */
-    private function walkArchiveEntryMetadata(
+    private function walkArchiveEntries(
         ZendArray $manifest,
         CollectorContext $ctx,
         StandardModuleContext $archive_buf_ctx,
@@ -587,7 +581,15 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
         } catch (\Throwable) {
             return;
         }
-        $entry_size = $ctx->zend_type_reader->sizeOf('phar_entry_info_truncated');
+        // The struct allocation itself — one emalloc(sizeof(phar_entry_info))
+        // per manifest entry — is the dominant per-entry heap cost and lands
+        // in a small ZendMM bin the object-graph walk never reaches.
+        $entry_struct_size = $ctx->zend_type_reader->sizeOf('phar_entry_info');
+        // The serialized-metadata zend_string (phar_metadata_tracker) is an
+        // 8.0+ concept; on 7.x the per-entry struct lays metadata out
+        // differently and the metadata-string path stops being a meaningful
+        // gap contributor, so only the struct itself is attributed there.
+        $walk_metadata = !$ctx->zend_type_reader->isPhpVersionLowerThan(ZendTypeReader::V80);
         foreach ($iterator as $zval) {
             try {
                 if ($zval->getType() !== 'IS_PTR') {
@@ -597,11 +599,49 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
                 if ($entry_addr === 0) {
                     continue;
                 }
+                if (!$ctx->memory_locations->has($entry_addr)) {
+                    $entry_loc = new MallocBufferMemoryLocation(
+                        $entry_addr,
+                        $entry_struct_size,
+                        'phar.entry',
+                    );
+                    $ctx->memory_locations->add($entry_loc);
+                    $archive_buf_ctx->addLocation($entry_loc);
+                }
+
                 $entry = $ctx->dereferencer->deref(new Pointer(
                     PharEntryInfo::class,
                     $entry_addr,
-                    $entry_size,
+                    $entry_struct_size,
                 ));
+
+                // The entry's path (`filename`/`filename_len`) is usually
+                // its own char* allocation, but a cached/persistent
+                // manifest can point it into a shared buffer that another
+                // walker already attributed (e.g. the phar image). Count
+                // it only when no existing location contains it, so the
+                // bytes aren't double-counted.
+                $fn_addr = $entry->filename_address;
+                $fn_len = $entry->filename_len;
+                if (
+                    $fn_addr !== 0
+                    && $fn_len > 0 && $fn_len <= self::MAX_ENTRY_FILENAME_LEN
+                    && !$ctx->memory_locations->has($fn_addr)
+                ) {
+                    $fn_loc = new MallocBufferMemoryLocation(
+                        $fn_addr,
+                        $fn_len,
+                        'phar.entry.filename',
+                    );
+                    if ($ctx->memory_locations->getContainingMemoryLocation($fn_loc) === null) {
+                        $ctx->memory_locations->add($fn_loc);
+                        $archive_buf_ctx->addLocation($fn_loc);
+                    }
+                }
+
+                if (!$walk_metadata) {
+                    continue;
+                }
                 $str_addr = $entry->metadata_str_address;
                 if ($str_addr === 0) {
                     continue;

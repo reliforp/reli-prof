@@ -606,6 +606,13 @@ class phar_entry_info_truncated extends CData
     public ?CPointer $metadata_str;
 }
 
+class phar_entry_info extends CData
+{
+    public ?CPointer $filename;
+    public int $filename_len;
+    public ?CPointer $metadata_str;
+}
+
 class phar_globals_truncated extends CData
 {
     public zend_array $phar_persist_map;
