@@ -46,7 +46,10 @@ final class EmitCallFrameJob implements CollectorJob
         // Push jobs for child elements (reverse order for DFS)
 
         // Extra named params
-        if ($this->execute_data->hasExtraNamedParams() and !is_null($this->execute_data->extra_named_params)) {
+        if (
+            $this->execute_data->hasExtraNamedParams($ctx->zend_type_reader)
+            and !is_null($this->execute_data->extra_named_params)
+        ) {
             $queue->push(new EmitArrayJob(
                 $this->execute_data->extra_named_params,
                 $parent,
@@ -55,7 +58,10 @@ final class EmitCallFrameJob implements CollectorJob
         }
 
         // Symbol table
-        if ($this->execute_data->hasSymbolTable() and !is_null($this->execute_data->symbol_table)) {
+        if (
+            $this->execute_data->hasSymbolTable($ctx->zend_type_reader)
+            and !is_null($this->execute_data->symbol_table)
+        ) {
             $queue->push(new EmitArrayJob(
                 $this->execute_data->symbol_table,
                 $parent,
@@ -191,7 +197,10 @@ final class EmitCallFrameJob implements CollectorJob
         $parent = $frame_node_id >= 0 ? $frame_node_id : null;
 
         // Extra named params
-        if ($execute_data->hasExtraNamedParams() and !is_null($execute_data->extra_named_params)) {
+        if (
+            $execute_data->hasExtraNamedParams($ctx->zend_type_reader)
+            and !is_null($execute_data->extra_named_params)
+        ) {
             $queue->push(new EmitArrayJob(
                 $execute_data->extra_named_params,
                 $parent,
@@ -200,7 +209,10 @@ final class EmitCallFrameJob implements CollectorJob
         }
 
         // Symbol table
-        if ($execute_data->hasSymbolTable() and !is_null($execute_data->symbol_table)) {
+        if (
+            $execute_data->hasSymbolTable($ctx->zend_type_reader)
+            and !is_null($execute_data->symbol_table)
+        ) {
             $queue->push(new EmitArrayJob(
                 $execute_data->symbol_table,
                 $parent,

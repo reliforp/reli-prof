@@ -236,29 +236,42 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
         ;
     }
 
-    public function hasSymbolTable(): bool
+    public function hasSymbolTable(ZendTypeReader $zend_type_reader): bool
     {
-        return (bool)($this->This->u1->type_info & (1 << 20));
+        return (bool)(
+            $this->This->u1->type_info
+            & (int)$zend_type_reader->constants::ZEND_CALL_HAS_SYMBOL_TABLE
+        );
     }
 
-    public function hasExtraNamedParams(): bool
+    public function hasExtraNamedParams(ZendTypeReader $zend_type_reader): bool
     {
-        return (bool)($this->This->u1->type_info & (1 << 27));
+        return (bool)(
+            $this->This->u1->type_info
+            & (int)$zend_type_reader->constants::ZEND_CALL_HAS_EXTRA_NAMED_PARAMS
+        );
     }
 
     /**
      * Whether this frame is a closure invocation (ZEND_CALL_CLOSURE, set in
      * This.u1.type_info). When set, the closure object is recoverable from
      * the frame's `func` pointer even though no IS_OBJECT zval references it.
+     *
+     * The bit position is version-dependent (effective bit 29 on 7.0, 21 on
+     * 7.1-7.3, 22 on 7.4+), so the value comes from VersionAwareConstants
+     * rather than a literal.
      */
-    public function isClosureCall(): bool
+    public function isClosureCall(ZendTypeReader $zend_type_reader): bool
     {
-        return (bool)($this->This->u1->type_info & (1 << 22));
+        return (bool)(
+            $this->This->u1->type_info
+            & (int)$zend_type_reader->constants::ZEND_CALL_CLOSURE
+        );
     }
 
     /**
      * Return the closure-object address backing this frame's func, or null if
-     * the frame isn't a closure call. ZEND_CALL_CLOSURE (= 1 << 22) is set in
+     * the frame isn't a closure call. ZEND_CALL_CLOSURE is set in
      * `This.u1.type_info` for closure invocations; the closure object pointer
      * can be recovered via the `ZEND_CLOSURE_OBJECT(func)` macro
      * (= `func - offsetof(zend_closure, func)`), which is how PHP itself keeps
@@ -272,7 +285,7 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
         if ($this->func === null) {
             return null;
         }
-        if (!$this->isClosureCall()) {
+        if (!$this->isClosureCall($zend_type_reader)) {
             return null;
         }
         [$func_offset_in_closure, ] = $zend_type_reader->getOffsetAndSizeOfMember(

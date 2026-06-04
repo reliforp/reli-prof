@@ -32,6 +32,29 @@ abstract class VersionAwareConstants
     /** @var int */
     public const int ZEND_CALL_GENERATOR = (1 << 24);
 
+    /*
+     * Effective (post-ZEND_CALL_INFO_SHIFT) call_info bits as stored in
+     * `execute_data->This.u1.type_info`. These are the PHP 7.4+ values; the
+     * high bits moved across versions (7.0 used ZEND_CALL_INFO_SHIFT 24, not
+     * 16, and the call_info bit numbers were renumbered at 7.4), so the
+     * 7.0-7.3 differences live in the per-version subclasses.
+     */
+
+    /** @var int */
+    public const int ZEND_CALL_HAS_SYMBOL_TABLE = (1 << 20);
+
+    /** @var int */
+    public const int ZEND_CALL_CLOSURE = (1 << 22);
+
+    /**
+     * Named arguments are a PHP 8.0 feature; the flag does not exist before
+     * 8.0, so every pre-8.0 subclass pins this to 0 (so `& flag` never
+     * matches a 7.x call_info bit that happens to share the position).
+     *
+     * @var int
+     */
+    public const int ZEND_CALL_HAS_EXTRA_NAMED_PARAMS = (1 << 27);
+
     /** @param value-of<ZendTypeReader::ALL_SUPPORTED_VERSIONS> $php_version */
     public static function getConstantsOfVersion(string $php_version): self
     {
