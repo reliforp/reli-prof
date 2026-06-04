@@ -210,17 +210,25 @@ final class MemoryPeekCommand extends ReliCommand
             throw new \RuntimeException('not an rdump file');
         }
         $version = $this->readUint32($fp);
-        if ($version !== 1 && $version !== 2) {
+        if ($version !== 1 && $version !== 2 && $version !== 3) {
             throw new \RuntimeException(
                 "unsupported rdump format version: {$version}",
             );
         }
         // Header tail: php_version, pid, eg_address, cg_address,
-        // (rss_bytes if v2), memory_map_count, region_count.
+        // (rss_bytes if v2+), (module_globals map if v3+),
+        // memory_map_count, region_count.
         $this->readString($fp);
         fseek($fp, 8 * 3, SEEK_CUR);
         if ($version >= 2) {
             fseek($fp, 8, SEEK_CUR);
+        }
+        if ($version >= 3) {
+            $module_globals_count = $this->readUint32($fp);
+            for ($i = 0; $i < $module_globals_count; $i++) {
+                $this->readString($fp); // key
+                fseek($fp, 8, SEEK_CUR); // address (uint64)
+            }
         }
         $memory_map_count = $this->readUint32($fp);
         $region_count = $this->readUint32($fp);
