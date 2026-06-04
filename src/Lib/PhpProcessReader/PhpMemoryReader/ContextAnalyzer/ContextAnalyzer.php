@@ -41,6 +41,26 @@ final class ContextAnalyzer
 {
     private int $node_id = 0;
 
+    /** @var (\Closure(int, ReferenceContext): void)|null */
+    private ?\Closure $on_node_assigned = null;
+
+    /**
+     * Register a callback fired the first time a node_id is assigned to a
+     * Context (i.e. when {@see analyzeContext} promotes a "reserved" or
+     * fresh Context to a fully-emitted one). The callback receives the
+     * node_id and the Context itself, and is the natural seam for keeping
+     * an external address→node_id map in sync with the analyzer's own
+     * traversal — Context already carries its primary locations via
+     * `getLocations()`, so callers no longer have to remember to write
+     * an address_map entry by hand at every emission site.
+     *
+     * @param \Closure(int, ReferenceContext): void $on_node_assigned
+     */
+    public function setOnNodeAssigned(\Closure $on_node_assigned): void
+    {
+        $this->on_node_assigned = $on_node_assigned;
+    }
+
     /**
      * The $memo parameter is the legacy WeakMap-based emit state.
      * Production callers (CollectorContext) pass null and the
@@ -178,6 +198,9 @@ final class ContextAnalyzer
             $current_node_id = $this->node_id++;
         }
         $linked_context->setMemoNodeId($current_node_id);
+        if ($this->on_node_assigned !== null) {
+            ($this->on_node_assigned)($current_node_id, $linked_context);
+        }
         if ($memo !== null) {
             $memo[$linked_context] = $current_node_id;
         }
