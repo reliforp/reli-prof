@@ -386,6 +386,11 @@ final class MemoryLocationsCollector
         $queue->push(new Collector\Job\EmitClassTableJob($class_table));
         $queue->push(new Collector\Job\EmitGlobalVariablesJob($eg->symbol_table));
         $queue->push(new Collector\Job\EmitInternedStringsJob($cg->interned_strings));
+        // Attribute open compiled-file source buffers (CG(open_files)).
+        // For a phar-shipped tool the primary script handle holds the
+        // entire phar image — a multi-MB huge allocation that is otherwise
+        // unreachable through the PHP object graph or the phar structs.
+        $queue->push(new Collector\Job\EmitOpenFilesJob($cg_address));
 
         // Walk module globals HashTables for extensions known to hold
         // zend_strings unreachable from EG/CG roots (currently only

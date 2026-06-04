@@ -566,6 +566,24 @@ class zend_module_entry extends CData
     public ?CPointer $globals_ptr;
 }
 
+class zend_llist extends CData
+{
+    public ?CPointer $head;
+}
+
+class zend_llist_element extends CData
+{
+    public ?CPointer $next;
+}
+
+class zend_file_handle extends CData
+{
+    public ?CPointer $buf;
+    public int $len;
+    public int $type;
+    public int $primary_script;
+}
+
 class phar_archive_data_truncated extends CData
 {
     public ?CPointer $fname;
