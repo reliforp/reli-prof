@@ -482,6 +482,10 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
             return;
         }
         $archive_size = $ctx->zend_type_reader->sizeOf('phar_archive_data_truncated');
+        // The full struct size — for the per-archive struct allocation
+        // itself (one emalloc per loaded phar). The truncated size above
+        // is only used as the deref window for field access.
+        $archive_struct_size = $ctx->zend_type_reader->sizeOf('phar_archive_data');
         foreach ($iterator as $zval) {
             try {
                 if ($zval->getType() !== 'IS_PTR') {
@@ -524,6 +528,19 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
                 $on_loc = static function (\Reli\Lib\Process\MemoryLocation $loc) use ($archive_buf_ctx): void {
                     $archive_buf_ctx->addLocation($loc);
                 };
+                // The phar_archive_data struct itself (one emalloc per
+                // loaded phar). Its inline HashTable headers and scalar
+                // fields live here; the bucket arrays / char* buffers it
+                // points at are attributed separately above and below.
+                if (!$ctx->memory_locations->has($archive_addr)) {
+                    $archive_loc = new MallocBufferMemoryLocation(
+                        $archive_addr,
+                        $archive_struct_size,
+                        'phar.archive',
+                    );
+                    $ctx->memory_locations->add($archive_loc);
+                    $archive_buf_ctx->addLocation($archive_loc);
+                }
                 // The .phar file's underlying php_stream (typically
                 // STDIO) plus the decompressed-content cache stream
                 // (MEMORY/TEMP) — for tools shipped as a phar this

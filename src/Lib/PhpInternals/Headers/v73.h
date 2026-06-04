@@ -539,6 +539,37 @@ typedef struct _phar_archive_data_truncated {
 	char     *signature;
 } phar_archive_data_truncated;
 
+// Full phar_archive_data (truncated prefix + struct tail) so the per-archive
+// struct allocation itself can be attributed.
+typedef struct _phar_archive_data {
+	char     *fname;
+	uint32_t  fname_len;
+	char     *ext;
+	uint32_t  ext_len;
+	char     *alias;
+	uint32_t  alias_len;
+	char      version[12];
+	size_t    internal_file_start;
+	size_t    halt_offset;
+	zend_array manifest;
+	zend_array virtual_dirs;
+	zend_array mounted_dirs;
+	uint32_t  flags;
+	uint32_t  min_timestamp;
+	uint32_t  max_timestamp;
+	char     *fp;        // really php_stream*; declared as char* per the
+	                     // FFI-void*-segv workaround (see globals_ptr)
+	char     *ufp;       // ditto
+	int       refcount;
+	uint32_t  sig_flags;
+	uint32_t  sig_len;
+	char     *signature;
+	zval      metadata;
+	int       metadata_len;
+	uint32_t  phar_pos;
+	uint32_t  bitfields;
+} phar_archive_data;
+
 // zend_stack.h
 typedef struct _zend_stack {
 	int size, top, max;
