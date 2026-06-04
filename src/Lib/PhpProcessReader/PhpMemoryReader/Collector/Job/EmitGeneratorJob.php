@@ -86,9 +86,10 @@ final class EmitGeneratorJob implements CollectorJob
         // (caught by the job runner) and dispatches to EmitGeneratorJob
         // recursively when the target's class is Generator.
         try {
-            foreach ($this->zend_generator->getNodeRawGeneratorPointers($ctx->zend_type_reader)
-                as $idx => $node_gen_ptr
-            ) {
+            $node_gen_ptrs = $this->zend_generator->getNodeRawGeneratorPointers(
+                $ctx->zend_type_reader,
+            );
+            foreach ($node_gen_ptrs as $idx => $node_gen_ptr) {
                 $node_pointer = new \Reli\Lib\Process\Pointer\Pointer(
                     ZendObject::class,
                     $node_gen_ptr,

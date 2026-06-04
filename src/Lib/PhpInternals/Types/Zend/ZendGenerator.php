@@ -131,14 +131,20 @@ class ZendGenerator implements PointedTypeResolverAware
         $out = [];
         for ($slot = 0; $slot < 4; $slot++) {
             $ptr_raw = $this->casted_cdata->raw;
-            $ptr = unpack(
+            $unpacked = unpack(
                 'Pv',
                 FFI::string(
                     $ptr_raw,
                     $node_offset + ($slot + 1) * 8,
                 ),
                 $node_offset + $slot * 8,
-            )['v'];
+            );
+            if ($unpacked === false) {
+                continue;
+            }
+            // unpack('P', …) yields an int; cast silences Psalm's Mixed
+            // without a per-element Cast::toInt dispatch in this small loop.
+            $ptr = (int)$unpacked['v'];
             if ($ptr !== 0) {
                 $out[] = $ptr;
             }
