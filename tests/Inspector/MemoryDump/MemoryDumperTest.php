@@ -97,6 +97,8 @@ class MemoryDumperTest extends BaseTestCase
         $eg = $globals_finder->findExecutorGlobals($process, $settings);
         $cg = $globals_finder->findCompilerGlobals($process, $settings);
         $bg = $globals_finder->findBasicGlobals($process, $settings);
+        $module_registry = $globals_finder->findModuleRegistry($process, $settings);
+        $tsrm_ls_cache = $globals_finder->findTsrmLsCache($process, $settings);
 
         $dumper = new MemoryDumper(
             $memory_reader,
@@ -121,6 +123,8 @@ class MemoryDumperTest extends BaseTestCase
             $cg,
             $output_path,
             bg_address: $bg,
+            module_registry_address: $module_registry,
+            tsrm_ls_cache_address: $tsrm_ls_cache,
         );
 
         $this->assertFileExists($result->output_path);
@@ -165,6 +169,29 @@ class MemoryDumperTest extends BaseTestCase
                 $covered,
                 'php_basic_globals interval must land in a captured region',
             );
+        }
+
+        // Regression: module_registry (and, on ZTS, tsrm_ls_cache) must be
+        // written into the dump header so the offline analyze path can resolve
+        // ext/phar's per-thread module globals without a live process. Without
+        // this the phar walker silently does nothing on a dump.
+        $factory = $factory ?? new MemoryDumpReaderFactory(new \DI\ContainerBuilder());
+        $parsed = $parsed ?? self::reflectParse($factory, $output_path);
+        if ($module_registry !== null) {
+            $this->assertArrayHasKey(
+                'module_registry',
+                $parsed['module_globals'],
+                'dump header must carry module_registry when resolved',
+            );
+            $this->assertSame($module_registry, $parsed['module_globals']['module_registry']);
+        }
+        if ($tsrm_ls_cache !== null) {
+            $this->assertArrayHasKey(
+                'tsrm_ls_cache',
+                $parsed['module_globals'],
+                'dump header must carry tsrm_ls_cache on ZTS targets',
+            );
+            $this->assertSame($tsrm_ls_cache, $parsed['module_globals']['tsrm_ls_cache']);
         }
 
         // Clean up

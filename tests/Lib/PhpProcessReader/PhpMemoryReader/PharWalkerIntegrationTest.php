@@ -238,31 +238,48 @@ class PharWalkerIntegrationTest extends BaseTestCase
         );
         $sink->flush();
 
-        // The phar walker emits its subtree under `phar.`-namespaced links
-        // (phar.phar_fname_map / phar.buffers / ...). The dotted prefix avoids
-        // false positives from the Phar/PharData/... class names that the
-        // normal object walk also records as bare link names.
-        $phar_edges = (int)$db->query(
-            "SELECT COUNT(*) FROM context_edges"
-            . " WHERE run_id = {$run_id} AND link_name LIKE 'phar.%'"
-        )->fetchColumn();
+        $edgeCount = static function (string $link_expr) use ($db, $run_id): int {
+            return (int)$db->query(
+                "SELECT COUNT(*) FROM context_edges"
+                . " WHERE run_id = {$run_id} AND link_name {$link_expr}"
+            )->fetchColumn();
+        };
+
+        // PHAR_G(phar_fname_map) — the map of loaded archives — must be walked.
         $this->assertGreaterThan(
             0,
-            $phar_edges,
-            'ext/phar module-globals subtree must be emitted',
+            $edgeCount("= 'phar.phar_fname_map'"),
+            'PHAR_G(phar_fname_map) must be walked',
+        );
+        // ...and through it our archive's inline manifest HashTable
+        // (`phar_manifest@<addr>`), proving an archive was reached and its
+        // manifest of phar_entry_info structs was walked.
+        $this->assertGreaterThan(
+            0,
+            $edgeCount("LIKE 'phar_manifest@%'"),
+            "the loaded archive's manifest HashTable must be walked",
+        );
+        // ...and the per-archive buffer subtree (`archive[0x<addr>]`, holding
+        // the entry structs / fname / signature) attributed.
+        $this->assertGreaterThan(
+            0,
+            $edgeCount("LIKE 'archive[0x%'"),
+            'the per-archive buffer subtree must be emitted',
         );
 
-        // The archive's char* buffers are attributed as MallocBuffer
-        // locations; on this branch ext/phar is their only producer.
+        // The 25 files we put in the phar each get a phar_entry_info struct
+        // attributed as a MallocBuffer (ext/phar is the only producer on this
+        // branch), so the per-entry walk -- the headline of this PR -- shows up
+        // as at least that many MallocBuffer locations.
         $malloc_buffers = (int)$db->query(
             "SELECT COUNT(*) FROM context_node_locations"
             . " WHERE run_id = {$run_id}"
             . " AND location_type = 'MallocBufferMemoryLocation'"
         )->fetchColumn();
-        $this->assertGreaterThan(
-            0,
+        $this->assertGreaterThanOrEqual(
+            25,
             $malloc_buffers,
-            'phar archive char* buffers must be attributed as MallocBuffer locations',
+            'each phar manifest entry struct must be attributed as a MallocBuffer',
         );
 
         $db = null;
