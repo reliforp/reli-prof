@@ -37,7 +37,15 @@ final class MappedPathResolver implements ProcessPathResolver
         }
         $original_path = $path;
         while ($path !== '/') {
-            $path = $this->getDirectory($path);
+            $parent = $this->getDirectory($path);
+            // dirname() reduces an absolute path towards '/', but a relative
+            // or empty path collapses to '.' and then stays '.' forever. Stop
+            // as soon as it stops making progress so a non-absolute path (e.g.
+            // a garbled link-map entry) can never spin this loop indefinitely.
+            if ($parent === $path) {
+                break;
+            }
+            $path = $parent;
             if ($path === '/') {
                 break;
             }
