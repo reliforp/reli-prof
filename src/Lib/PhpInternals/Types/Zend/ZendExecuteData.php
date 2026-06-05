@@ -236,14 +236,73 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
         ;
     }
 
-    public function hasSymbolTable(): bool
+    public function hasSymbolTable(ZendTypeReader $zend_type_reader): bool
     {
-        return (bool)($this->This->u1->type_info & (1 << 20));
+        $flag = (int)$zend_type_reader->constants::ZEND_CALL_HAS_SYMBOL_TABLE;
+        if ($flag === 0) {
+            // Before 7.1 there was no ZEND_CALL_HAS_SYMBOL_TABLE flag; the
+            // engine treated a non-NULL `execute_data->symbol_table` as the
+            // indicator (the slot was not yet reused from EG(symtable_cache),
+            // which is exactly why the flag was added in 7.1). So on those
+            // versions fall back to the pointer itself.
+            return $this->symbol_table !== null;
+        }
+        return (bool)($this->This->u1->type_info & $flag);
     }
 
-    public function hasExtraNamedParams(): bool
+    public function hasExtraNamedParams(ZendTypeReader $zend_type_reader): bool
     {
-        return (bool)($this->This->u1->type_info & (1 << 27));
+        return (bool)(
+            $this->This->u1->type_info
+            & (int)$zend_type_reader->constants::ZEND_CALL_HAS_EXTRA_NAMED_PARAMS
+        );
+    }
+
+    /**
+     * Whether this frame is a closure invocation (ZEND_CALL_CLOSURE, set in
+     * This.u1.type_info). When set, the closure object is recoverable from
+     * the frame's `func` pointer even though no IS_OBJECT zval references it.
+     *
+     * The bit position is version-dependent (effective bit 29 on 7.0, 21 on
+     * 7.1-7.3, 22 on 7.4+), so the value comes from VersionAwareConstants
+     * rather than a literal.
+     */
+    public function isClosureCall(ZendTypeReader $zend_type_reader): bool
+    {
+        return (bool)(
+            $this->This->u1->type_info
+            & (int)$zend_type_reader->constants::ZEND_CALL_CLOSURE
+        );
+    }
+
+    /**
+     * Return the closure-object address backing this frame's func, or null if
+     * the frame isn't a closure call. ZEND_CALL_CLOSURE is set in
+     * `This.u1.type_info` for closure invocations; the closure object pointer
+     * can be recovered via the `ZEND_CLOSURE_OBJECT(func)` macro
+     * (= `func - offsetof(zend_closure, func)`), which is how PHP itself keeps
+     * the closure alive across the call frame (and across Generator suspension
+     * — the captured frame retains its `ZEND_CALL_CLOSURE` flag, so the
+     * closure's refcount stays bumped without any IS_OBJECT zval reference
+     * being held).
+     */
+    public function getClosureObjectAddress(ZendTypeReader $zend_type_reader): ?int
+    {
+        if ($this->func === null) {
+            return null;
+        }
+        if (!$this->isClosureCall($zend_type_reader)) {
+            return null;
+        }
+        [$func_offset_in_closure, ] = $zend_type_reader->getOffsetAndSizeOfMember(
+            'zend_closure',
+            'func',
+        );
+        $closure_addr = $this->func->address - $func_offset_in_closure;
+        if ($closure_addr <= 0) {
+            return null;
+        }
+        return $closure_addr;
     }
 
     public function isInternalCall(Dereferencer $dereferencer): bool

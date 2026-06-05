@@ -46,7 +46,10 @@ final class EmitCallFrameJob implements CollectorJob
         // Push jobs for child elements (reverse order for DFS)
 
         // Extra named params
-        if ($this->execute_data->hasExtraNamedParams() and !is_null($this->execute_data->extra_named_params)) {
+        if (
+            $this->execute_data->hasExtraNamedParams($ctx->zend_type_reader)
+            and !is_null($this->execute_data->extra_named_params)
+        ) {
             $queue->push(new EmitArrayJob(
                 $this->execute_data->extra_named_params,
                 $parent,
@@ -55,7 +58,10 @@ final class EmitCallFrameJob implements CollectorJob
         }
 
         // Symbol table
-        if ($this->execute_data->hasSymbolTable() and !is_null($this->execute_data->symbol_table)) {
+        if (
+            $this->execute_data->hasSymbolTable($ctx->zend_type_reader)
+            and !is_null($this->execute_data->symbol_table)
+        ) {
             $queue->push(new EmitArrayJob(
                 $this->execute_data->symbol_table,
                 $parent,
@@ -95,6 +101,25 @@ final class EmitCallFrameJob implements CollectorJob
                 'this',
             ));
         }
+
+        // Closure-object back-reference (see collectCallFrameInline for the
+        // detailed why; mirrored here so active frames are covered too).
+        $closure_addr = $this->execute_data->getClosureObjectAddress($ctx->zend_type_reader);
+        if ($closure_addr !== null) {
+            try {
+                $closure_pointer = new \Reli\Lib\Process\Pointer\Pointer(
+                    \Reli\Lib\PhpInternals\Types\Zend\ZendObject::class,
+                    $closure_addr,
+                    $ctx->zend_type_reader->sizeOf('zend_object'),
+                );
+                $queue->push(new EmitObjectJob(
+                    $closure_pointer,
+                    $parent,
+                    'closure',
+                ));
+            } catch (\Throwable) {
+            }
+        }
     }
 
     /**
@@ -125,9 +150,7 @@ final class EmitCallFrameJob implements CollectorJob
             }
         }
 
-        $call_frame_context = new CallFrameContext($function_name, $lineno, $filename);
-
-        // Track memory location
+        // Track memory location for the frame header + variable table area.
         try {
             $variable_table_pointer = $execute_data->getVariableTablePointer($ctx->dereferencer);
             $frame_end = $variable_table_pointer->address + $variable_table_pointer->size;
@@ -135,35 +158,127 @@ final class EmitCallFrameJob implements CollectorJob
         } catch (\Throwable) {
             $frame_size = $execute_data->getPointer()->size;
         }
-        $ctx->memory_locations->add(
-            new CallFrameHeaderMemoryLocation(
-                $execute_data->getPointer()->address,
-                $frame_size,
-            ),
+        $header_memory_location = new CallFrameHeaderMemoryLocation(
+            $execute_data->getPointer()->address,
+            $frame_size,
         );
+        $ctx->memory_locations->add($header_memory_location);
 
-        return $call_frame_context;
+        return new CallFrameContext(
+            $function_name,
+            $lineno,
+            $filename,
+            $header_memory_location,
+        );
     }
 
     /**
      * Collect a call frame inline (non-job, for use inside generators/fibers).
-     * This does NOT push child jobs - it collects everything synchronously.
-     * Used when the call frame is inside a generator/fiber context where
-     * the variable values need to be resolved inline (they're part of the
-     * generator/fiber's own allocation).
+     *
+     * Emits the call frame context immediately (so we have its node_id) and
+     * pushes the same child jobs that {@see self::execute()} would push for
+     * an active frame: extra_named_params, symbol_table, local variables, $this.
+     *
+     * This is what catches the locals of suspended Generator/Fiber frames —
+     * critical for Phpactor-style workloads where in-flight Amp Coroutines
+     * hold parser/reflection working-set memory (token arrays, etc.) in their
+     * frame locals, none of which is reachable through any other PHP root.
      */
     public static function collectCallFrameInline(
         ZendExecuteData $execute_data,
         CollectorContext $ctx,
+        JobQueue $queue,
+        ?int $parent_node_id,
+        string $link_name,
     ): CallFrameContext {
         $call_frame_context = self::collectCallFrameHeader($execute_data, $ctx);
 
-        // For inline collection (generators/fibers), we skip collecting
-        // $this, local variables, symbol_table, and extra_named_params
-        // because they would require recursive zval resolution.
-        // The original code did collect these, but the iterative design
-        // handles them through the job queue when the generator/fiber
-        // object's properties are processed.
+        $frame_node_id = $ctx->emitNode($call_frame_context, $parent_node_id, $link_name);
+        $parent = $frame_node_id >= 0 ? $frame_node_id : null;
+
+        // Extra named params
+        if (
+            $execute_data->hasExtraNamedParams($ctx->zend_type_reader)
+            and !is_null($execute_data->extra_named_params)
+        ) {
+            $queue->push(new EmitArrayJob(
+                $execute_data->extra_named_params,
+                $parent,
+                'extra_named_params',
+            ));
+        }
+
+        // Symbol table
+        if (
+            $execute_data->hasSymbolTable($ctx->zend_type_reader)
+            and !is_null($execute_data->symbol_table)
+        ) {
+            $queue->push(new EmitArrayJob(
+                $execute_data->symbol_table,
+                $parent,
+                'symbol_table',
+            ));
+        }
+
+        // Local variables — emit the variable table node, then push iterator job
+        $local_variables_iterator = $execute_data->getVariables(
+            $ctx->dereferencer,
+            $ctx->zend_type_reader,
+        );
+        $has_variables = false;
+        foreach ($local_variables_iterator as $_name => $_value) {
+            $has_variables = true;
+            break;
+        }
+        if ($has_variables) {
+            $variable_table_context = new \Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\CallFrameVariableTableContext();
+            $var_table_node_id = $ctx->emitNode(
+                $variable_table_context,
+                $parent,
+                'local_variables',
+            );
+            $var_parent = $var_table_node_id >= 0 ? $var_table_node_id : $parent;
+            $queue->push(new CallFrameVariableIteratorJob(
+                $execute_data,
+                $var_parent,
+            ));
+        }
+
+        // $this
+        if ($execute_data->hasThis()) {
+            $queue->push(new ResolveZvalJob(
+                $execute_data->This,
+                $parent,
+                'this',
+            ));
+        }
+
+        // Closure-object back-reference: a closure-invocation frame carries
+        // the ZEND_CALL_CLOSURE flag in This.u1.type_info, and PHP recovers
+        // the closure object pointer from the func pointer via the
+        // ZEND_CLOSURE_OBJECT(func) macro. This is how PHP keeps the closure
+        // alive across the call frame *and* across Generator/Fiber suspension
+        // — the captured frame retains the flag and refcount=1 is maintained
+        // without any IS_OBJECT zval ever referencing the closure. Without
+        // this synthetic edge the closure body of every Amp\call() Coroutine
+        // (and similar suspended-closure patterns) appears as "no in-heap
+        // incoming refs" / orphan from objects_store.
+        $closure_addr = $execute_data->getClosureObjectAddress($ctx->zend_type_reader);
+        if ($closure_addr !== null) {
+            try {
+                $closure_pointer = new \Reli\Lib\Process\Pointer\Pointer(
+                    \Reli\Lib\PhpInternals\Types\Zend\ZendObject::class,
+                    $closure_addr,
+                    $ctx->zend_type_reader->sizeOf('zend_object'),
+                );
+                $queue->push(new EmitObjectJob(
+                    $closure_pointer,
+                    $parent,
+                    'closure',
+                ));
+            } catch (\Throwable) {
+            }
+        }
 
         return $call_frame_context;
     }

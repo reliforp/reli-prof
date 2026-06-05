@@ -95,6 +95,63 @@ class ZendGenerator implements PointedTypeResolverAware
         };
     }
 
+    /**
+     * Raw zend_generator* pointers stored inside the `node` field. PHP uses
+     * these to wire `yield from` chains together: `parent` points back up the
+     * chain, `child`/`leaf` point down to the currently-executing sub-generator,
+     * and the union at offsets 16/24 holds either `leaves.first`/`leaves.last`
+     * (both Generator*) or `children.ht` (HashTable*) depending on whether
+     * this node has multiple children. These references are NOT zval-shaped
+     * — the engine bumps refcount on the pointed-to generator directly — so
+     * an IS_OBJECT-zval-only scan misses them and any sub-generator only
+     * reached via this chain ends up looking orphan even when its parent
+     * generator is a walker-reachable Coroutine.
+     *
+     * @return list<int> non-zero pointer values (filtered)
+     */
+    public function getNodeRawGeneratorPointers(ZendTypeReader $zend_type_reader): array
+    {
+        [$node_offset, $node_size] = $zend_type_reader->getOffsetAndSizeOfMember(
+            'zend_generator',
+            'node',
+        );
+        if ($node_size < 32) {
+            return [];
+        }
+        // The node struct (32 bytes) holds four 8-byte slots:
+        //   +0  parent       (zend_generator*)
+        //   +8  leaf/child   (zend_generator*)  -- union
+        //   +16 first/ht     (zend_generator* | HashTable*)
+        //   +24 last         (zend_generator*) (only when leaves variant)
+        // We can't tell from the on-disk struct which union arm is active,
+        // so we treat all four slots as candidate pointers and let the
+        // downstream emit job validate the target — non-generator addresses
+        // dispatch to a regular EmitObjectJob which fails-soft on bad
+        // pointers via the job runner's catch.
+        $out = [];
+        for ($slot = 0; $slot < 4; $slot++) {
+            $ptr_raw = $this->casted_cdata->raw;
+            $unpacked = unpack(
+                'Pv',
+                FFI::string(
+                    $ptr_raw,
+                    $node_offset + ($slot + 1) * 8,
+                ),
+                $node_offset + $slot * 8,
+            );
+            if ($unpacked === false) {
+                continue;
+            }
+            // unpack('P', …) yields an int; cast silences Psalm's Mixed
+            // without a per-element Cast::toInt dispatch in this small loop.
+            $ptr = (int)$unpacked['v'];
+            if ($ptr !== 0) {
+                $out[] = $ptr;
+            }
+        }
+        return $out;
+    }
+
     #[\Override]
     public static function getCTypeName(): string
     {

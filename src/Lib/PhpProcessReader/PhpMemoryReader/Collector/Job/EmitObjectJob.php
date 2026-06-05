@@ -131,6 +131,7 @@ final class EmitObjectJob implements CollectorJob
             || $class_name === \PDOStatement::class
             || $class_name === 'SimpleXMLElement'
             || $class_name === 'SimpleXMLIterator'
+            || $class_name === '__iterator_wrapper'
         ) {
             $object = $ctx->dereferencer->deref($this->pointer);
             $this->processObject($object, $ctx, $queue);
@@ -491,6 +492,30 @@ final class EmitObjectJob implements CollectorJob
         if ($class_name === 'Generator') {
             try {
                 $queue->push(new EmitGeneratorJob(
+                    $object,
+                    $object_node_id,
+                    $ctx,
+                ));
+            } catch (\Throwable) {
+            }
+        }
+
+        // PHP 8.x's `foreach` over a class that exposes
+        // Z_OBJ_HT->get_iterator (Generator, internal Traversables that don't
+        // implement Iterator directly, etc.) creates a `__iterator_wrapper`
+        // PHP-visible instance whose layout is exactly `zend_object_iterator`:
+        // a zend_object std (56B) followed by a zval `data` at offset 56
+        // holding the wrapped iterable, then funcs (8B) and index (8B).
+        // That `data` zval is stored OUTSIDE the standard properties_table —
+        // the wrapper has 0 declared properties — so a generic object walker
+        // never sees the wrapped Generator / Iterator. Without this special
+        // case every parser-internal `foreach (gen() as $x) yield $x;` style
+        // pipeline (extremely common in Amp coroutine code, e.g. Phpactor)
+        // leaves the inner Generator and everything its frame locals hold
+        // visible only via objects_store iter.
+        if ($class_name === '__iterator_wrapper') {
+            try {
+                $queue->push(new EmitInternalIteratorJob(
                     $object,
                     $object_node_id,
                     $ctx,
