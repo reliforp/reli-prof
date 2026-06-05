@@ -201,6 +201,12 @@ class PharWalkerIntegrationTest extends BaseTestCase
             $module_registry_address,
             'module_registry is required to reach ext/phar globals',
         );
+        // On ZTS the module's globals live in the per-thread TSRM block, so the
+        // walker needs tsrm_ls_cache to resolve PHAR_G; null on NTS is fine.
+        $tsrm_ls_cache_address = $php_globals_finder->findTsrmLsCache(
+            $process_specifier,
+            $target_php_settings,
+        );
 
         $memory_locations_collector = new MemoryLocationsCollector(
             $memory_reader,
@@ -228,15 +234,17 @@ class PharWalkerIntegrationTest extends BaseTestCase
             null,
             $sink,
             module_registry_address: $module_registry_address,
+            tsrm_ls_cache_address: $tsrm_ls_cache_address,
         );
         $sink->flush();
 
-        // The phar walker emits its subtree under phar-prefixed links
-        // (phar_fname_map / phar.buffers / phar.archive...). Its presence
-        // proves the module-globals walk reached ext/phar.
+        // The phar walker emits its subtree under `phar.`-namespaced links
+        // (phar.phar_fname_map / phar.buffers / ...). The dotted prefix avoids
+        // false positives from the Phar/PharData/... class names that the
+        // normal object walk also records as bare link names.
         $phar_edges = (int)$db->query(
             "SELECT COUNT(*) FROM context_edges"
-            . " WHERE run_id = {$run_id} AND link_name LIKE 'phar%'"
+            . " WHERE run_id = {$run_id} AND link_name LIKE 'phar.%'"
         )->fetchColumn();
         $this->assertGreaterThan(
             0,

@@ -246,15 +246,15 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
             return 0;
         }
         try {
-            $id = $this->readLE($ctx, $id_ptr_address, 4, 'V');
+            $id = $this->readLE($ctx, $id_ptr_address, 4);
             if ($id === null || $id <= 0) {
                 return 0;
             }
-            $cache_base = $this->readLE($ctx, $this->tsrm_ls_cache_address, 8, 'P');
+            $cache_base = $this->readLE($ctx, $this->tsrm_ls_cache_address, 8);
             if ($cache_base === null || $cache_base === 0) {
                 return 0;
             }
-            $globals = $this->readLE($ctx, $cache_base + ($id - 1) * 8, 8, 'P');
+            $globals = $this->readLE($ctx, $cache_base + ($id - 1) * 8, 8);
             return $globals ?? 0;
         } catch (\Throwable) {
             return 0;
@@ -262,31 +262,40 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
     }
 
     /**
-     * Read $size bytes from process memory at $address and unpack
-     * with $format ('V' for u32 LE, 'P' for u64 LE). Returns null
-     * on any failure — caller treats that as "skip this resolve".
+     * Read a fixed-width little-endian integer from process memory:
+     * $size 4 -> u32 (ts_rsrc_id), 8 -> pointer/u64. Returns null on any
+     * failure — caller treats that as "skip this resolve".
+     *
+     * Uses the Raw{Int32,Int64} CData views, NOT RawString: RawString
+     * truncates at the first NUL byte, which silently corrupts a
+     * ts_rsrc_id like 0x00000005 or any pointer carrying a high zero byte
+     * and made ZTS globals resolution always fail.
      */
     private function readLE(
         CollectorContext $ctx,
         int $address,
         int $size,
-        string $format,
     ): ?int {
-        $bytes = (string)$ctx->dereferencer->deref(
-            new \Reli\Lib\Process\Pointer\Pointer(
-                \Reli\Lib\PhpInternals\Types\C\RawString::class,
-                $address,
-                $size,
-            )
-        );
-        if (strlen($bytes) < $size) {
+        try {
+            if ($size === 4) {
+                return $ctx->dereferencer->deref(
+                    new \Reli\Lib\Process\Pointer\Pointer(
+                        \Reli\Lib\PhpInternals\Types\C\RawInt32::class,
+                        $address,
+                        4,
+                    )
+                )->value;
+            }
+            return $ctx->dereferencer->deref(
+                new \Reli\Lib\Process\Pointer\Pointer(
+                    \Reli\Lib\PhpInternals\Types\C\RawInt64::class,
+                    $address,
+                    8,
+                )
+            )->value;
+        } catch (\Throwable) {
             return null;
         }
-        $unpacked = @unpack($format, $bytes);
-        if ($unpacked === false || !isset($unpacked[1]) || !is_int($unpacked[1])) {
-            return null;
-        }
-        return $unpacked[1];
     }
 
     private function walkPharGlobals(
