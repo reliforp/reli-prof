@@ -32,7 +32,10 @@ use Reli\Lib\Process\Pointer\Pointer;
  * signature, etc., but the file-path zend_strings reli's pointer
  * tracer otherwise misses live exclusively in `manifest`.
  *
- * Matches `_phar_archive_data_truncated` in v84.h.
+ * The backing C type is the `phar_archive_data_truncated` declared in
+ * each per-version header (v70.h … v85.h); the reader is handed the one
+ * for the target. The pre-8.4 headers keep `internal_file_start` before
+ * the halt offset (manifest at +72), 8.4+ dropped it (manifest at +64).
  */
 final class PharArchiveData implements PointedTypeResolverAware
 {

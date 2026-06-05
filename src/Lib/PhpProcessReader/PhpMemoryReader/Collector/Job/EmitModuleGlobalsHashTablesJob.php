@@ -114,9 +114,13 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
             return false;
         }
         // Empty HashTables are fine — arData may legitimately be NULL
-        // (or a sentinel "uninitialised buckets" pointer). Only check
-        // arData when we plan to iterate it.
-        if ($used > 0 && $ht->arData !== null) {
+        // (or a sentinel "uninitialised buckets" pointer). But a table
+        // claiming used > 0 with a NULL arData is incoherent: reject it
+        // here rather than relying on processZendArray to throw downstream.
+        if ($used > 0) {
+            if ($ht->arData === null) {
+                return false;
+            }
             $arData_addr = $ht->arData->address;
             if ($arData_addr < self::MIN_USER_PTR || $arData_addr > self::MAX_USER_PTR) {
                 return false;
@@ -387,6 +391,7 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
             'phar.cache_list',
             $ctx,
             $globals_buf_ctx,
+            self::CACHE_LIST_MAX_LEN,
         );
         // Emit only if we collected at least one buffer — empty
         // contexts add noise to the tree.
@@ -401,8 +406,9 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
         string $tag,
         CollectorContext $ctx,
         StandardModuleContext $host,
+        int $max_len = self::MAX_PHAR_BUFFER_LEN,
     ): void {
-        $loc = $this->buildMallocBuffer($address, $len, $tag, $ctx);
+        $loc = $this->buildMallocBuffer($address, $len, $tag, $ctx, $max_len);
         if ($loc !== null) {
             $host->addLocation($loc);
         }
@@ -411,6 +417,13 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
     /** Cap for phar's cache_list NUL-terminated buffer when we
      *  don't have a length pair to bound the LocationRow size. */
     private const CACHE_LIST_MAX_LEN = 4096;
+
+    /** Sanity cap for length-paired phar buffers (signature, fname,
+     *  cwd, openssl key, ...). These carry a real `_len`, so the only
+     *  job here is to reject a garbage length read off a half-built
+     *  struct — not to truncate legitimately long signatures or paths
+     *  the way CACHE_LIST_MAX_LEN would. 1 GiB matches EmitOpenFilesJob. */
+    private const MAX_PHAR_BUFFER_LEN = 0x4000_0000;
 
     /**
      * Build a MallocBufferMemoryLocation for $address/$len under the
@@ -425,8 +438,9 @@ final class EmitModuleGlobalsHashTablesJob implements CollectorJob
         int $len,
         string $tag,
         CollectorContext $ctx,
+        int $max_len = self::MAX_PHAR_BUFFER_LEN,
     ): ?MallocBufferMemoryLocation {
-        if ($address === 0 || $len <= 0 || $len > self::CACHE_LIST_MAX_LEN) {
+        if ($address === 0 || $len <= 0 || $len > $max_len) {
             return null;
         }
         if ($ctx->memory_locations->has($address)) {

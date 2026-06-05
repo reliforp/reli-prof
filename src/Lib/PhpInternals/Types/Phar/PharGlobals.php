@@ -26,7 +26,9 @@ use Reli\Lib\Process\Pointer\Pointer;
  * Partial view of ext/phar's MODULE_GLOBALS struct — only the inline
  * HashTables we walk are modelled. Every other field is present in
  * the truncated C declaration so the offsets line up; we just don't
- * expose accessors for them. See `phar_globals_truncated` in v84.h.
+ * expose accessors for them. The backing C type is the
+ * `phar_globals_truncated` declared in each per-version header
+ * (v70.h … v85.h); the reader is handed the one for the target.
  */
 final class PharGlobals implements PointedTypeResolverAware
 {

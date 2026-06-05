@@ -404,7 +404,7 @@ struct _zend_module_entry {
 // because PHP's FFI parser SEGVs reading wide void* fields (same
 // reason globals_ptr is char* in zend_module_entry).
 //
-// PHP 8.0-8.3 layout — int-heavy variant. 8.4 reshuffled cache_list
+// Int-heavy phar_globals variant shared by PHP 7.0-8.3. 8.4 reshuffled cache_list
 // and switched many fields to bool; the 8.4+ headers have a slightly
 // different truncated struct here.
 typedef struct _phar_globals_truncated {
@@ -514,7 +514,7 @@ typedef struct _phar_entry_info {
 	uint32_t  bitfields;
 } phar_entry_info;
 
-// PHP 8.0-8.3 layout — has `internal_file_start` before halt_offset
+// PHP 7.0-8.3 layout — has `internal_file_start` before halt_offset
 // (removed in 8.4). Manifest sits at offset 72 here (vs 64 in 8.4).
 typedef struct _phar_archive_data_truncated {
 	char     *fname;
