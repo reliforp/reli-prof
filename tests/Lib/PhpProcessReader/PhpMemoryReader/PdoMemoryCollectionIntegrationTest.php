@@ -105,8 +105,8 @@ class PdoMemoryCollectionIntegrationTest extends BaseTestCase
             $target_script,
             $pipes,
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $memory_reader = new MemoryReader();
         $type_reader_creator = new ZendTypeReaderCreator();

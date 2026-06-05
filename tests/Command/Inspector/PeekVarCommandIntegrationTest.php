@@ -75,8 +75,8 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $command = $this->createCommand();
         $app = new Application();
@@ -144,8 +144,8 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $command = $this->createCommand();
         $app = new Application();
@@ -185,8 +185,8 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $command = $this->createCommand();
         $app = new Application();
@@ -227,8 +227,8 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $command = $this->createCommand();
         $app = new Application();
@@ -291,7 +291,8 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
             $target_script,
             $pipes,
         );
-        $this->assertSame("ready\n", fgets($pipes[1]));
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $command = $this->createCommand();
         (new Application())->addCommand($command);
@@ -337,7 +338,8 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
             $target_script,
             $pipes,
         );
-        $this->assertSame("ready\n", fgets($pipes[1]));
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $command = $this->createCommand();
         (new Application())->addCommand($command);
@@ -374,7 +376,8 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
             $target_script,
             $pipes,
         );
-        $this->assertSame("ready\n", fgets($pipes[1]));
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $command = $this->createCommand();
         (new Application())->addCommand($command);
@@ -411,7 +414,8 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
             $target_script,
             $pipes,
         );
-        $this->assertSame("ready\n", fgets($pipes[1]));
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $command = $this->createCommand();
         (new Application())->addCommand($command);
@@ -454,7 +458,8 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
             $target_script,
             $pipes,
         );
-        $this->assertSame("ready\n", fgets($pipes[1]));
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $command = $this->createCommand();
         (new Application())->addCommand($command);
@@ -493,7 +498,8 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
             $target_script,
             $pipes,
         );
-        $this->assertSame("ready\n", fgets($pipes[1]));
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $command = $this->createCommand();
         (new Application())->addCommand($command);
@@ -555,7 +561,8 @@ class PeekVarCommandIntegrationTest extends BaseTestCase
             $target_script,
             $pipes,
         );
-        $this->assertSame("ready\n", fgets($pipes[1]));
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $command = $this->createCommand();
         (new Application())->addCommand($command);

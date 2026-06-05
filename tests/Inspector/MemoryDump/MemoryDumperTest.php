@@ -84,8 +84,8 @@ class MemoryDumperTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $globals_finder = $this->createGlobalsFinder(
             $memory_reader,

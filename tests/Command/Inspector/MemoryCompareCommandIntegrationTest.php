@@ -104,8 +104,8 @@ class MemoryCompareCommandIntegrationTest extends BaseTestCase
             $pipes,
         );
         $this->children[] = $child;
-        $ready = fgets($pipes[1]);
-        $this->assertSame("ready\n", $ready);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
         $this->snapshotTrace('target_ready pid=' . $pid, $docker_image_name);
 
         // Dump

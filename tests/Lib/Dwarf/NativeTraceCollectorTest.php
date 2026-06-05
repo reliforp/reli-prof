@@ -100,8 +100,8 @@ class NativeTraceCollectorTest extends BaseTestCase
             $pipes
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("a\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
         $child_status = proc_get_status($this->child);
         $this->assertSame(true, $child_status['running']);
 

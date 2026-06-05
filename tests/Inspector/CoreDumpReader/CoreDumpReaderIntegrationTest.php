@@ -102,8 +102,8 @@ class CoreDumpReaderIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         // Take coredump via gcore (non-destructive)
         $this->core_file = $this->takeCoreDump($pid);
@@ -225,8 +225,8 @@ class CoreDumpReaderIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $this->core_file = $this->takeCoreDump($pid);
         $this->assertFileExists($this->core_file);
