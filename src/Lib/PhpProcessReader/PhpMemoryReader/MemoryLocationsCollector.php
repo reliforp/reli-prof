@@ -146,6 +146,8 @@ final class MemoryLocationsCollector
         ?ContextTreeSink $sink = null,
         ?\Reli\Inspector\MemoryDump\FastPath\FastPathReader $fast_path = null,
         bool $disable_bin_walk = false,
+        ?int $module_registry_address = null,
+        ?int $tsrm_ls_cache_address = null,
     ): CollectedMemories {
         $pid = $process_specifier->pid;
         $php_version = $target_php_settings->php_version;
@@ -389,6 +391,32 @@ final class MemoryLocationsCollector
         // entire phar image — a multi-MB huge allocation that is otherwise
         // unreachable through the PHP object graph or the phar structs.
         $queue->push(new Collector\Job\EmitOpenFilesJob($cg_address));
+
+        // Walk module globals HashTables for extensions known to hold
+        // zend_strings unreachable from EG/CG roots (currently only
+        // ext/phar). Without this, the bulk of bin8/bin16 zend_string
+        // slots on phar-distributed CLI tools (phpactor, Symfony
+        // Console, etc.) show up as unaccounted bytes in the
+        // analyzed-percentage gap.
+        if ($module_registry_address !== null) {
+            try {
+                $module_registry_pointer = new Pointer(
+                    \Reli\Lib\PhpInternals\Types\Zend\ZendArray::class,
+                    $module_registry_address,
+                    $zend_type_reader->sizeOf('zend_array'),
+                );
+                $module_registry = $dereferencer->deref($module_registry_pointer);
+                $queue->push(new Collector\Job\EmitModuleGlobalsHashTablesJob(
+                    $module_registry,
+                    $modules_context,
+                    $tsrm_ls_cache_address,
+                ));
+            } catch (\Throwable $e) {
+                Log::debug('failed to push EmitModuleGlobalsHashTablesJob', [
+                    'exception' => $e->getMessage(),
+                ]);
+            }
+        }
 
         // Main iterative loop
         $drain_counter = 0;

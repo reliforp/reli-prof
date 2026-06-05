@@ -105,6 +105,63 @@ $struct_defs = [
             'GC_TYPE_INFO' => [['gc', 'u', 'type_info'], 'u32le'],
         ],
     ],
+    'PharGlobals' => [
+        // Partial view of ext/phar's MODULE_GLOBALS struct — modelled
+        // accurately enough to compute the offset of every inline
+        // HashTable so EmitModuleGlobalsHashTablesJob can deref each
+        // by name rather than scanning for IS_ARRAY-looking bytes.
+        'c_type' => 'phar_globals_truncated',
+        'fields' => [
+            'PHAR_PERSIST_MAP' => [['phar_persist_map'], 'u8'],
+            'PHAR_FNAME_MAP'   => [['phar_fname_map'],   'u8'],
+            'PHAR_ALIAS_MAP'   => [['phar_alias_map'],   'u8'],
+            'MIME_TYPES'       => [['mime_types'],       'u8'],
+            // Per-request transient char* fields.
+            'CACHE_LIST'              => [['cache_list'], 'ptr'],
+            'CWD'                     => [['cwd'], 'ptr'],
+            'CWD_LEN'                 => [['cwd_len'], 'u32le'],
+            'OPENSSL_PRIVATEKEY'      => [['openssl_privatekey'], 'ptr'],
+            'OPENSSL_PRIVATEKEY_LEN'  => [['openssl_privatekey_len'], 'u32le'],
+            'LAST_PHAR_NAME'          => [['last_phar_name'], 'ptr'],
+            'LAST_PHAR_NAME_LEN'      => [['last_phar_name_len'], 'u32le'],
+            'LAST_ALIAS'              => [['last_alias'], 'ptr'],
+            'LAST_ALIAS_LEN'          => [['last_alias_len'], 'u32le'],
+        ],
+    ],
+    'PharEntryInfo' => [
+        // Partial view of phar's per-entry struct — only need the
+        // metadata-tracker's serialized-string pointer for walking.
+        'c_type' => 'phar_entry_info_truncated',
+        'fields' => [
+            'METADATA_STR' => [['metadata_str'], 'ptr'],
+        ],
+    ],
+    'PharArchiveData' => [
+        // Generated against the partial view in the per-version header
+        // (`_phar_archive_data_truncated`). We only need offsets up to
+        // the inline `manifest` HashTable — see
+        // EmitModuleGlobalsHashTablesJob for how those are consumed.
+        'c_type' => 'phar_archive_data_truncated',
+        'fields' => [
+            'FNAME' => [['fname'], 'ptr'],
+            'FNAME_LEN' => [['fname_len'], 'u32le'],
+            'EXT' => [['ext'], 'ptr'],
+            'EXT_LEN' => [['ext_len'], 'u32le'],
+            'ALIAS' => [['alias'], 'ptr'],
+            'ALIAS_LEN' => [['alias_len'], 'u32le'],
+            // Inline HashTables — we only need their offsets so the
+            // Job can hand them to processZendArray.
+            'MANIFEST' => [['manifest'], 'u8'],
+            'VIRTUAL_DIRS' => [['virtual_dirs'], 'u8'],
+            'MOUNTED_DIRS' => [['mounted_dirs'], 'u8'],
+            // php_stream* pointers; phar caches the .phar file
+            // contents (and decompressed forms) here.
+            'FP' => [['fp'], 'ptr'],
+            'UFP' => [['ufp'], 'ptr'],
+            'SIG_LEN' => [['sig_len'], 'u32le'],
+            'SIGNATURE' => [['signature'], 'ptr'],
+        ],
+    ],
 ];
 
 foreach ($versions as $version) {

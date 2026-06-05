@@ -122,6 +122,17 @@ final class MemoryDumpCommand extends ReliCommand
             $process_specifier,
             $target_php_settings_decided,
         );
+        // Persist module_registry + tsrm_ls_cache in the dump header
+        // so offline `inspector:memory:analyze` runs hit the phar
+        // walker without depending on a live process / binary view.
+        $module_registry_address = $this->php_globals_finder->findModuleRegistry(
+            $process_specifier,
+            $target_php_settings,
+        );
+        $tsrm_ls_cache_address = $this->php_globals_finder->findTsrmLsCache(
+            $process_specifier,
+            $target_php_settings_decided,
+        );
 
         // Resolve global interned-string pointer arrays for exclude-heap
         // mode. These are plain BSS symbols (not TSRM globals), so
@@ -170,6 +181,8 @@ final class MemoryDumpCommand extends ReliCommand
             !$dump_settings->exclude_heap,
             $interned_string_arrays,
             bg_address: $bg_address,
+            module_registry_address: $module_registry_address,
+            tsrm_ls_cache_address: $tsrm_ls_cache_address,
         );
 
         $output->writeln(sprintf(

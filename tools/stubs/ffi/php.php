@@ -561,6 +561,55 @@ class zend_module_entry extends CData
 {
     public int $zts;
     public ?CPointer $version;
+    public ?CPointer $name;
+    public int $globals_size;
+    public ?CPointer $globals_ptr;
+}
+
+class phar_archive_data_truncated extends CData
+{
+    public ?CPointer $fname;
+    public int $fname_len;
+    public ?CPointer $ext;
+    public int $ext_len;
+    public ?CPointer $alias;
+    public int $alias_len;
+    public zend_array $manifest;
+    public zend_array $virtual_dirs;
+    public zend_array $mounted_dirs;
+    public ?CPointer $fp;
+    public ?CPointer $ufp;
+    public int $sig_len;
+    public ?CPointer $signature;
+}
+
+class phar_entry_info_truncated extends CData
+{
+    public ?CPointer $metadata_str;
+}
+
+class phar_entry_info extends CData
+{
+    public ?CPointer $filename;
+    public int $filename_len;
+    public ?CPointer $metadata_str;
+}
+
+class phar_globals_truncated extends CData
+{
+    public zend_array $phar_persist_map;
+    public zend_array $phar_fname_map;
+    public zend_array $phar_alias_map;
+    public zend_array $mime_types;
+    public ?CPointer $cache_list;
+    public ?CPointer $cwd;
+    public int $cwd_len;
+    public ?CPointer $openssl_privatekey;
+    public int $openssl_privatekey_len;
+    public ?CPointer $last_phar_name;
+    public int $last_phar_name_len;
+    public ?CPointer $last_alias;
+    public int $last_alias_len;
 }
 
 class zend_llist extends CData

@@ -103,6 +103,24 @@ final class MemoryCommand extends ReliCommand
             $process_specifier,
             $target_php_settings_version_decided
         );
+        // Pass the pre-version-decision settings here on purpose:
+        // findModuleRegistry's binding accepts 'auto', and Psalm's flow
+        // analysis widens the narrowed `$target_php_settings_version_decided`
+        // type whenever it's threaded through such a call, breaking
+        // downstream narrowed-version expectations.
+        $module_registry_address = $this->php_globals_finder->findModuleRegistry(
+            $process_specifier,
+            $target_php_settings
+        );
+        // For ZTS targets we also need TSRM's per-thread cache base
+        // so the module-globals walker can resolve `ts_rsrc_id` slots
+        // (e.g. phar's globals_id) into actual per-thread addresses.
+        // NTS targets return null cheaply and the walker skips the
+        // ZTS path.
+        $tsrm_ls_cache_address = $this->php_globals_finder->findTsrmLsCache(
+            $process_specifier,
+            $target_php_settings_version_decided,
+        );
 
         if ($memory_profiler_settings->stop_process) {
             $this->process_stopper->stop($process_specifier->pid);
@@ -124,6 +142,8 @@ final class MemoryCommand extends ReliCommand
                 $memory_profiler_settings,
                 $binary_output,
                 $sink,
+                $module_registry_address,
+                $tsrm_ls_cache_address,
             );
             Log::info('end memory command');
             return 0;
@@ -152,6 +172,8 @@ final class MemoryCommand extends ReliCommand
                 $memory_profiler_settings,
                 $binary_output,
                 $sink,
+                $module_registry_address,
+                $tsrm_ls_cache_address,
             );
 
             $result = new MemoryAnalysisResult(
@@ -187,6 +209,8 @@ final class MemoryCommand extends ReliCommand
         \Reli\Inspector\Settings\MemoryProfilerSettings\MemoryProfilerSettings $memory_profiler_settings,
         \Reli\Inspector\Output\MemoryOutput\BinaryMemoryOutput $binary_output,
         \Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\BinaryContextTreeSink $sink,
+        ?int $module_registry_address = null,
+        ?int $tsrm_ls_cache_address = null,
     ): array {
         $collected_memories = $this->memory_locations_collector->collectAll(
             $process_specifier,
@@ -196,6 +220,8 @@ final class MemoryCommand extends ReliCommand
             $memory_profiler_settings->memory_exhaustion_error_details,
             $bg_address,
             $sink,
+            module_registry_address: $module_registry_address,
+            tsrm_ls_cache_address: $tsrm_ls_cache_address,
         );
 
         $region_result = $sink->computeRegionSumsAndOverhead();

@@ -39,6 +39,8 @@ final class MemoryDumpReader
         private ?int $rss_bytes = null,
         private ?FastPathReader $fast_path = null,
         private bool $disable_bin_walk = false,
+        private ?int $module_registry_address = null,
+        private ?int $tsrm_ls_cache_address = null,
     ) {
     }
 
@@ -140,6 +142,8 @@ final class MemoryDumpReader
             $sink,
             $this->fast_path,
             $this->disable_bin_walk,
+            module_registry_address: $this->module_registry_address,
+            tsrm_ls_cache_address: $this->tsrm_ls_cache_address,
         );
 
         // RegionBoundaries is already set on the sink by collectAll()

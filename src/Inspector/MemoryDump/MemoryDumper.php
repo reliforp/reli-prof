@@ -78,6 +78,8 @@ final class MemoryDumper
         array $interned_string_arrays = [],
         ?\Closure $on_read_complete = null,
         ?int $bg_address = null,
+        ?int $module_registry_address = null,
+        ?int $tsrm_ls_cache_address = null,
     ): MemoryDumpResult {
         $php_version = $target_php_settings->php_version;
         $zend_type_reader = $this->zend_type_reader_creator->create(
@@ -668,9 +670,16 @@ final class MemoryDumper
         // Pre-seed the v3 module-globals map with basic_globals when
         // resolved. EmitModulesJob is the only consumer today; new
         // walkers add their key here without another format bump.
-        $module_globals = $bg_address !== null
-            ? ['basic_globals' => $bg_address]
-            : [];
+        $module_globals = [];
+        if ($bg_address !== null) {
+            $module_globals['basic_globals'] = $bg_address;
+        }
+        if ($module_registry_address !== null) {
+            $module_globals['module_registry'] = $module_registry_address;
+        }
+        if ($tsrm_ls_cache_address !== null) {
+            $module_globals['tsrm_ls_cache'] = $tsrm_ls_cache_address;
+        }
         $writer = new MemoryDumpWriter();
         $writer->write(
             $output_path,
