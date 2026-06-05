@@ -238,10 +238,16 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
 
     public function hasSymbolTable(ZendTypeReader $zend_type_reader): bool
     {
-        return (bool)(
-            $this->This->u1->type_info
-            & (int)$zend_type_reader->constants::ZEND_CALL_HAS_SYMBOL_TABLE
-        );
+        $flag = (int)$zend_type_reader->constants::ZEND_CALL_HAS_SYMBOL_TABLE;
+        if ($flag === 0) {
+            // Before 7.1 there was no ZEND_CALL_HAS_SYMBOL_TABLE flag; the
+            // engine treated a non-NULL `execute_data->symbol_table` as the
+            // indicator (the slot was not yet reused from EG(symtable_cache),
+            // which is exactly why the flag was added in 7.1). So on those
+            // versions fall back to the pointer itself.
+            return $this->symbol_table !== null;
+        }
+        return (bool)($this->This->u1->type_info & $flag);
     }
 
     public function hasExtraNamedParams(ZendTypeReader $zend_type_reader): bool
