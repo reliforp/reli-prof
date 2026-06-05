@@ -137,8 +137,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("a\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             new ProcessModuleSymbolReaderCreator(
@@ -376,8 +376,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("a\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             new ProcessModuleSymbolReaderCreator(
@@ -550,8 +550,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("a\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             new ProcessModuleSymbolReaderCreator(
@@ -707,8 +707,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("a\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             new ProcessModuleSymbolReaderCreator(
@@ -1563,8 +1563,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("a\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             new ProcessModuleSymbolReaderCreator(
@@ -1856,8 +1856,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("a\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             new ProcessModuleSymbolReaderCreator(
@@ -2034,8 +2034,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("a\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             new ProcessModuleSymbolReaderCreator(
@@ -2171,8 +2171,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("a\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             new ProcessModuleSymbolReaderCreator(
@@ -2325,8 +2325,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("a\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             new ProcessModuleSymbolReaderCreator(
@@ -2480,8 +2480,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("a\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             new ProcessModuleSymbolReaderCreator(
@@ -2672,8 +2672,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("a\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             new ProcessModuleSymbolReaderCreator(
@@ -2923,8 +2923,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("a\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             new ProcessModuleSymbolReaderCreator(
@@ -3156,8 +3156,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             new ProcessModuleSymbolReaderCreator(
@@ -3460,8 +3460,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("a\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
 
         $php_symbol_reader_creator = new PhpSymbolReaderCreator(
             new ProcessModuleSymbolReaderCreator(
@@ -3668,8 +3668,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("a\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
 
         [$db, $run_id, $tmp_path] = $this->collectStreamingDb(
             $pid,
@@ -3753,8 +3753,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("a\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
 
         [$db, $run_id, $tmp_path] = $this->collectStreamingDb(
             $pid,
@@ -3831,8 +3831,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             $target_script,
             $pipes
         );
-        $s = fgets($pipes[1]);
-        $this->assertSame("a\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
 
         [$db, $run_id, $tmp_path] = $this->collectStreamingDb(
             $pid,

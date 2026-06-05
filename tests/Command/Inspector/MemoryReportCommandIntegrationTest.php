@@ -126,8 +126,8 @@ class MemoryReportCommandIntegrationTest extends BaseTestCase
             $target_script,
             $pipes,
         );
-        $ready = fgets($pipes[1]);
-        $this->assertSame("ready\n", $ready);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         return [$this->child, $pid, $pipes];
     }
@@ -166,8 +166,8 @@ class MemoryReportCommandIntegrationTest extends BaseTestCase
             $target_script,
             $pipes,
         );
-        $ready = fgets($pipes[1]);
-        $this->assertSame("ready\n", $ready);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         return [$this->child, $pid, $pipes];
     }

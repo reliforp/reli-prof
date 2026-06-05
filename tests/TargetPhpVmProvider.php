@@ -133,6 +133,47 @@ class TargetPhpVmProvider
         return self::from(ZendTypeReader::V74);
     }
 
+    /**
+     * Read a child's stdout pipe until a line equal to $marker appears,
+     * tolerating any leading noise (blank lines, startup warnings, mysqlnd /
+     * init-restart chatter), and return [matched, everything-read].
+     *
+     * The strict `fgets() === "$marker\n"` handshake used to fail flakily the
+     * moment a single stray line slipped in before the marker. Reads
+     * non-blocking against a deadline so a target that parks on fgets(STDIN)
+     * without ever printing the marker fails fast instead of blocking forever
+     * (the pipe never reaches EOF while the child is alive).
+     *
+     * @param resource $pipe
+     * @return array{bool, string} [whether the marker line was seen, the raw text read]
+     */
+    public static function waitForMarkerLine($pipe, string $marker = 'ready', float $timeout_seconds = 30.0): array
+    {
+        stream_set_blocking($pipe, false);
+        $seen = '';
+        $matched = false;
+        $deadline = microtime(true) + $timeout_seconds;
+        while (microtime(true) < $deadline) {
+            $line = fgets($pipe);
+            if ($line === false) {
+                if (feof($pipe)) {
+                    break;
+                }
+                usleep(10000);
+                continue;
+            }
+            $seen .= $line;
+            if (rtrim($line, "\r\n") === $marker) {
+                $matched = true;
+                break;
+            }
+        }
+        // Restore blocking mode so any later raw fgets() on this pipe behaves
+        // as the callers expect.
+        stream_set_blocking($pipe, true);
+        return [$matched, $seen];
+    }
+
     public static function runScriptViaContainer(
         string $docker_image_name,
         string $script,
@@ -179,8 +220,8 @@ class TargetPhpVmProvider
                 '/tmp/reli-test' => '/tmp/reli-test',
             ],
         );
-        $pid_written_message = fgets($pipes[1]);
-        assert($pid_written_message === "pid written\n");
+        [$pid_written, $seen] = self::waitForMarkerLine($pipes[1], 'pid written');
+        assert($pid_written, "child did not print 'pid written'. Got: " . var_export($seen, true));
         $pid = (int)file_get_contents($pid_file);
         return [$proc_handle, $pid];
     }
@@ -224,8 +265,8 @@ class TargetPhpVmProvider
                 '/tmp/reli-test' => '/tmp/reli-test',
             ],
         );
-        $pid_written_message = fgets($pipes[1]);
-        assert($pid_written_message === "pid written\n");
+        [$pid_written, $seen] = self::waitForMarkerLine($pipes[1], 'pid written');
+        assert($pid_written, "child did not print 'pid written'. Got: " . var_export($seen, true));
         $pid = (int)file_get_contents($pid_file);
         return [$proc_handle, $pid];
     }

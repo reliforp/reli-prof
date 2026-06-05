@@ -83,8 +83,8 @@ class WatchCommandIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         // Build the DI container and get command
         $container_builder = new \DI\ContainerBuilder();
@@ -150,8 +150,8 @@ class WatchCommandIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $container_builder = new \DI\ContainerBuilder();
         $container_builder->addDefinitions(
@@ -210,8 +210,8 @@ class WatchCommandIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         // Run reli as a subprocess (not CommandTester) because
         // daemon mode uses Amphp EventLoop + async futures that

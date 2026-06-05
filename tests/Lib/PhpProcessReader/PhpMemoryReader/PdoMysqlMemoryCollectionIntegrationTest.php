@@ -238,12 +238,18 @@ class PdoMysqlMemoryCollectionIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $pid_written = fgets($pipes[1]);
-        $this->assertSame("pid written\n", $pid_written);
+        [$pid_written, $pid_seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'pid written');
+        $this->assertTrue(
+            $pid_written,
+            "child did not print 'pid written'. Got: " . var_export($pid_seen, true),
+        );
         $pid = (int)file_get_contents($pid_file);
 
-        $s = fgets($pipes[1]);
-        if ($s !== "ready\n") {
+        // Tolerate any leading noise (mysqlnd / MySQL-init chatter, startup
+        // warnings) before the readiness marker instead of demanding it be
+        // the very next line — that strict check was the flaky failure.
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        if (!$ready) {
             $stderr = stream_get_contents($pipes[2]);
             // Kill child and clean up before failing
             $child_status = proc_get_status($this->child);
@@ -252,7 +258,7 @@ class PdoMysqlMemoryCollectionIntegrationTest extends BaseTestCase
             }
             $this->child = null;
             $this->fail(
-                "PHP script did not output 'ready'. Got: " . var_export($s, true)
+                "PHP script did not output 'ready'. Got: " . var_export($seen, true)
                 . "\nStderr: " . $stderr
             );
         }

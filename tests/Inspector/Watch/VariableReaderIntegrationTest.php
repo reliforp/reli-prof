@@ -92,8 +92,8 @@ class VariableReaderIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $process_specifier = new ProcessSpecifier($pid);
         $target_php_settings = new TargetPhpSettings(
@@ -249,8 +249,8 @@ class VariableReaderIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $process_specifier = new ProcessSpecifier($pid);
         $target_php_settings = new TargetPhpSettings(
@@ -335,8 +335,8 @@ class VariableReaderIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $process_specifier = new ProcessSpecifier($pid);
         $target_php_settings = new TargetPhpSettings(
@@ -453,8 +453,8 @@ class VariableReaderIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $process_specifier = new ProcessSpecifier($pid);
         $target_php_settings = new TargetPhpSettings(
@@ -555,8 +555,8 @@ class VariableReaderIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $process_specifier = new ProcessSpecifier($pid);
         $target_php_settings = new TargetPhpSettings(
@@ -651,8 +651,8 @@ class VariableReaderIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $process_specifier = new ProcessSpecifier($pid);
         $target_php_settings = new TargetPhpSettings(
@@ -1222,8 +1222,8 @@ class VariableReaderIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $process_specifier = new ProcessSpecifier($pid);
         $target_php_settings = new TargetPhpSettings(
@@ -1337,8 +1337,8 @@ class VariableReaderIntegrationTest extends BaseTestCase
             $pipes,
         );
 
-        $s = fgets($pipes[1]);
-        $this->assertSame("ready\n", $s);
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'ready');
+        $this->assertTrue($ready, "child did not print 'ready'. Got: " . var_export($seen, true));
 
         $process_specifier = new ProcessSpecifier($pid);
         $target_php_settings = new TargetPhpSettings(
