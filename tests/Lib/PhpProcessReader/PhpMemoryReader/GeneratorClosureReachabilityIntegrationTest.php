@@ -100,11 +100,13 @@ class GeneratorClosureReachabilityIntegrationTest extends BaseTestCase
         //     execution, so its frame carries ZEND_CALL_CLOSURE.
         $target_script = <<<'CODE'
             <?php
+            // Untyped properties on purpose: typed properties are 7.4+ and
+            // this target also runs on 7.0-7.3.
             class ReliGenLeafMarker {
-                public string $tag = 'gen-leaf';
+                public $tag = 'gen-leaf';
             }
             class ReliClosureMarker {
-                public string $tag = 'closure-captured';
+                public $tag = 'closure-captured';
             }
 
             function reli_child_gen(): \Generator {
