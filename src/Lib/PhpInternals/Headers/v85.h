@@ -708,6 +708,24 @@ typedef struct _zend_llist {
 	zend_llist_element *traverse_ptr;
 } zend_llist;
 
+/** zend_stream.h — flattened-union layout (see v82.h for rationale). 8.1+
+ *  shape: uint8 `type` + bool `primary_script` + bool `in_list`.
+ *  buf lands at offset 64 and len at 72 on LP64. */
+typedef struct _zend_file_handle {
+	char *handle_stream_handle;
+	int handle_stream_isatty;
+	char *handle_stream_reader;
+	char *handle_stream_fsizer;
+	char *handle_stream_closer;
+	zend_string *filename;
+	zend_string *opened_path;
+	uint8_t type;
+	uint8_t primary_script;
+	uint8_t in_list;
+	char *buf;
+	size_t len;
+} zend_file_handle;
+
 // zend_arena.h
 typedef struct _zend_arena zend_arena;
 

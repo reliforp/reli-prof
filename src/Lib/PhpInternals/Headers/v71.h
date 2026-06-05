@@ -636,6 +636,23 @@ typedef struct _zend_llist {
 	zend_llist_element *traverse_ptr;
 } zend_llist;
 
+/** zend_stream.h — flattened-union layout (see v82.h for rationale). Pre-8.1
+ *  shape: enum `type` (4 bytes) + zend_bool `free_filename`, no
+ *  `primary_script`. buf still lands at offset 64 and len at 72 on LP64. */
+typedef struct _zend_file_handle {
+	char *handle_stream_handle;
+	int handle_stream_isatty;
+	char *handle_stream_reader;
+	char *handle_stream_fsizer;
+	char *handle_stream_closer;
+	char *filename;
+	zend_string *opened_path;
+	int type;
+	unsigned char free_filename;
+	char *buf;
+	size_t len;
+} zend_file_handle;
+
 // zend_arena.h
 typedef struct _zend_arena zend_arena;
 

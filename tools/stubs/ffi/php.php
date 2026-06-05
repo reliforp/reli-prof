@@ -563,6 +563,24 @@ class zend_module_entry extends CData
     public ?CPointer $version;
 }
 
+class zend_llist extends CData
+{
+    public ?CPointer $head;
+}
+
+class zend_llist_element extends CData
+{
+    public ?CPointer $next;
+}
+
+class zend_file_handle extends CData
+{
+    public ?CPointer $buf;
+    public int $len;
+    public int $type;
+    public int $primary_script;
+}
+
 class zend_hash_func_ffi extends \FFI
 {
     public function zend_hash_func(string $str, int $len): int {}

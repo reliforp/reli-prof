@@ -675,6 +675,26 @@ typedef struct _zend_llist {
 	zend_llist_element *traverse_ptr;
 } zend_llist;
 
+/** zend_stream.h — the `handle` union of zend_file_handle is flattened to its
+ *  larger member (zend_stream) so the struct is a plain FFI-parseable layout;
+ *  the reader/fsizer/closer function pointers are declared char* (never cast,
+ *  only the buf/len/type/primary_script fields are read). buf lands at offset
+ *  64 and len at 72 on LP64, matching the live layout. */
+typedef struct _zend_file_handle {
+	char *handle_stream_handle;
+	int handle_stream_isatty;
+	char *handle_stream_reader;
+	char *handle_stream_fsizer;
+	char *handle_stream_closer;
+	zend_string *filename;
+	zend_string *opened_path;
+	uint8_t type;
+	uint8_t primary_script;
+	uint8_t in_list;
+	char *buf;
+	size_t len;
+} zend_file_handle;
+
 // zend_arena.h
 typedef struct _zend_arena zend_arena;
 
