@@ -32,13 +32,18 @@ final class EmitCallFrameJob implements CollectorJob
         private ZendExecuteData $execute_data,
         private ?int $parent_node_id,
         private string $link_name,
+        private ?int $successor_frame_address = null,
     ) {
     }
 
     #[\Override]
     public function execute(CollectorContext $ctx, JobQueue $queue): void
     {
-        $call_frame_context = self::collectCallFrameHeader($this->execute_data, $ctx);
+        $call_frame_context = self::collectCallFrameHeader(
+            $this->execute_data,
+            $ctx,
+            $this->successor_frame_address,
+        );
 
         // Emit the call frame
         $frame_node_id = $ctx->emitNode($call_frame_context, $this->parent_node_id, $this->link_name);
@@ -150,6 +155,7 @@ final class EmitCallFrameJob implements CollectorJob
     public static function collectCallFrameHeader(
         ZendExecuteData $execute_data,
         CollectorContext $ctx,
+        ?int $successor_frame_address = null,
     ): CallFrameContext {
         $function_name = $execute_data->getFullyQualifiedFunctionName(
             $ctx->dereferencer,
@@ -172,15 +178,34 @@ final class EmitCallFrameJob implements CollectorJob
         }
 
         // Track memory location for the frame header + variable table area.
+        $frame_addr = $execute_data->getPointer()->address;
         try {
             $variable_table_pointer = $execute_data->getVariableTablePointer($ctx->dereferencer);
             $frame_end = $variable_table_pointer->address + $variable_table_pointer->size;
-            $frame_size = $frame_end - $execute_data->getPointer()->address;
+            $frame_size = $frame_end - $frame_addr;
         } catch (\Throwable) {
             $frame_size = $execute_data->getPointer()->size;
         }
+        // If the caller passed the address of the frame this one called
+        // (its successor on the VM stack, immediately above it in
+        // address order), use the gap to cover any allocation PHP
+        // performed past `last_var + T` — most notably the extra
+        // zvals named-arg `SEND_*` opcodes push per named argument,
+        // which are invisible to `zend_vm_calc_used_stack`'s reading
+        // of `op_array.T`. Only honor the successor when it sits
+        // ABOVE this frame's reli-computed end AND within a sane
+        // window (capped at sizeof(zend_vm_stack) bytes so a stale
+        // hint that lands in a different arena can't blow the
+        // accounting up).
+        if (
+            $successor_frame_address !== null
+            && $successor_frame_address > $frame_addr + $frame_size
+            && $successor_frame_address - ($frame_addr + $frame_size) < 4096
+        ) {
+            $frame_size = $successor_frame_address - $frame_addr;
+        }
         $header_memory_location = new CallFrameHeaderMemoryLocation(
-            $execute_data->getPointer()->address,
+            $frame_addr,
             $frame_size,
         );
         $ctx->memory_locations->add($header_memory_location);

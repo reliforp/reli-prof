@@ -912,11 +912,33 @@ final class MemoryLocationsCollector
                         $frames[] = [(string)$frame_no, $execute_data];
                     }
 
-                    // Create a local job queue and push in reverse order for DFS
+                    // Create a local job queue and push in reverse order
+                    // for DFS. The recovered chain is leaf-first
+                    // (frames[0] = innermost, frames[N-1] = root), so each
+                    // frame's "successor" (= what it called, sitting at
+                    // a higher VM stack address) is `frames[i-1]`. The
+                    // leaf has no successor here — we can't recover the
+                    // true post-recovery top so leave it null and fall
+                    // back to the formula-based size. The candidate
+                    // frame in this branch is the one whose op_array
+                    // matched the OOM file/line, which is typically
+                    // deep inside a hot loop, so the leaf undercount
+                    // (if the call to it used named args) stays small
+                    // relative to the chain total.
                     $recovery_queue = new Collector\JobQueue();
                     for ($i = count($frames) - 1; $i >= 0; $i--) {
                         [$frame_key, $frame] = $frames[$i];
-                        $recovery_queue->push(new Collector\Job\EmitCallFrameJob($frame, $parent, $frame_key));
+                        $successor = $i === 0
+                            ? null
+                            : $frames[$i - 1][1]->getPointer()->address;
+                        $recovery_queue->push(
+                            new Collector\Job\EmitCallFrameJob(
+                                $frame,
+                                $parent,
+                                $frame_key,
+                                $successor,
+                            ),
+                        );
                     }
 
                     // Run the recovery queue
