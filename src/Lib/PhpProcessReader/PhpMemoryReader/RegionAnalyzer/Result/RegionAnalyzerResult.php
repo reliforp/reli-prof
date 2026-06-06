@@ -17,7 +17,6 @@ final class RegionAnalyzerResult
 {
     public function __construct(
         public RegionsSummary $summary,
-        public RegionalMemoryLocations $regional_memory_locations,
     ) {
     }
 }

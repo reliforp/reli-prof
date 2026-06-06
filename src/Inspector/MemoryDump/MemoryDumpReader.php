@@ -158,9 +158,7 @@ final class MemoryDumpReader
             $collected_memories->compiler_arena_memory_locations,
         );
 
-        $analyzed_regions = $region_analyzer->analyze(
-            $collected_memories->memory_locations,
-        );
+        $analyzed_regions = $region_analyzer->analyze();
 
         $region_sums = $sink->computeRegionSumsAndOverhead()['sums'];
         $summary_base = $region_sums !== []
