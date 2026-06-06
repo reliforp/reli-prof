@@ -45,6 +45,24 @@ final class CollectorContext
      */
     public array $vm_stack_arena_lookup = [];
 
+    /**
+     * Address -> size of every MemoryLocation written through a
+     * `setOnNodeAssigned` callback. Used by the post-DFS large-run
+     * slack pass to compute, per ZendMM large run, the highest
+     * substrate-covered end byte; the slack location attached to
+     * {@see LargeRunSlackContext} covers everything past that.
+     *
+     * The map intentionally lives alongside `address_map`: not every
+     * direct `address_map[$addr] = $node_id` write has a known
+     * location size at the call site (aliases, deferred placements,
+     * sub-allocations), so this map is "best effort, monotonic" —
+     * a missing entry just means the slack pass treats that address
+     * as zero-sized and the slack region grows downward to cover it.
+     *
+     * @var array<int, int>
+     */
+    public array $location_sizes = [];
+
     public function __construct(
         public Dereferencer $dereferencer,
         public ZendTypeReader $zend_type_reader,
