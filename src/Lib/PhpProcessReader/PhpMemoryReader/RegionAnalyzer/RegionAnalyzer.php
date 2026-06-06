@@ -14,6 +14,9 @@ declare(strict_types=1);
 namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer;
 
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\UnusedLargeRunSlackMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\UnusedVmStackMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\VmStackArenaHeaderMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayTableMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayTableOverheadMemoryLocation;
@@ -67,12 +70,28 @@ final class RegionAnalyzer
      * Pulled out of `analyze()` so the rule is unit-testable without
      * standing up a real chunk and so the production class
      * `ZendMmChunkMemoryLocation` can stay `final`.
+     *
+     * VM-stack-arena and large-run slack types are also skipped:
+     *
+     * - `VmStackArenaHeaderMemoryLocation` is a 32 B marker at the
+     *   start of a 256 KB arena slot. `getOverhead` would compute
+     *   `bin_size − 32 ≈ 256 KB` per arena (≈ 50 MB across a
+     *   typical 192-arena process), wildly mis-attributing the
+     *   arena's payload as slot-rounding overhead.
+     * - `UnusedVmStackMemoryLocation` and
+     *   `UnusedLargeRunSlackMemoryLocation` already represent
+     *   allocator-side reserved-but-not-substrate-covered bytes. A
+     *   second `getOverhead` pass would compute slot rounding
+     *   relative to a mid-arena / mid-run address — garbage.
      */
     public static function shouldComputeGenericChunkOverhead(MemoryLocation $memory_location): bool
     {
         return !$memory_location instanceof ZendArrayTableMemoryLocation
             && !$memory_location instanceof ZendStringMemoryLocation
-            && !$memory_location instanceof ZendStringSlotTailMemoryLocation;
+            && !$memory_location instanceof ZendStringSlotTailMemoryLocation
+            && !$memory_location instanceof VmStackArenaHeaderMemoryLocation
+            && !$memory_location instanceof UnusedVmStackMemoryLocation
+            && !$memory_location instanceof UnusedLargeRunSlackMemoryLocation;
     }
 
     public function analyze(MemoryLocations $memory_locations): RegionAnalyzerResult
@@ -88,6 +107,13 @@ final class RegionAnalyzer
         $possible_allocation_overhead_total = 0;
         $possible_array_overhead_total = 0;
         $possible_string_overhead_total = 0;
+        // Tracks the per-arena unused tail (UnusedVmStackMemoryLocation)
+        // size so we can later move it from vm_stack_memory_total (which
+        // sums full arena sizes including the slack) into the
+        // overhead bucket. Same invariant as the
+        // UnusedLargeRunSlackMemoryLocation routing above: heap_usage
+        // ends up unchanged.
+        $unused_vm_stack_total = 0;
         $per_class_objects = [];
 
         $regional_memory_locations = RegionalMemoryLocations::createDefault();
@@ -130,18 +156,45 @@ final class RegionAnalyzer
             $chunk = $this->chunk_memory_locations->getContainingMemoryLocation($memory_location);
             if (!is_null($chunk)) {
                 if ($this->vm_stack_memory_locations->contains($memory_location)) {
-                    $vm_stack_memory_usage += $memory_location->size;
+                    if ($memory_location instanceof UnusedVmStackMemoryLocation) {
+                        // Don't roll the per-arena unused tail into
+                        // `vm_stack_memory_usage`: that metric
+                        // measures substrate-tracked frame coverage
+                        // within an arena, and the tail is, by
+                        // construction, the bytes that coverage did
+                        // not reach. The tail goes into the overhead
+                        // bucket below; we still record it as a
+                        // vm_stack-region location for the address
+                        // bookkeeping the downstream sink relies on.
+                        $unused_vm_stack_total += $memory_location->size;
+                    } else {
+                        $vm_stack_memory_usage += $memory_location->size;
+                    }
                     $regional_memory_locations->locations_in_vm_stack->add($memory_location);
                 } elseif ($this->compiler_arena_memory_locations->contains($memory_location)) {
                     $compiler_arena_memory_usage += $memory_location->size;
                     $regional_memory_locations->locations_in_compiler_arena->add($memory_location);
                 } else {
-                    $heap_memory_usage += $memory_location->size;
-                    assert($chunk instanceof ZendMmChunkMemoryLocation);
-                    if (self::shouldComputeGenericChunkOverhead($memory_location)) {
-                        $overhead = $chunk->getOverhead($memory_location);
-                        if (!is_null($overhead)) {
-                            $possible_allocation_overhead_total += $overhead->size;
+                    if ($memory_location instanceof UnusedLargeRunSlackMemoryLocation) {
+                        // Treat the slack as allocator overhead rather
+                        // than a regular heap location: its bytes ARE
+                        // the page-rounding / capacity-reserved tail
+                        // the substrate could not reach. Routing them
+                        // through `possible_allocation_overhead_total`
+                        // (which is added back into `heap_memory_usage`
+                        // below) keeps the existing math invariant
+                        // — `chunk_usage` ends up identical — while
+                        // surfacing the bytes under the overhead
+                        // bucket instead of as an opaque type row.
+                        $possible_allocation_overhead_total += $memory_location->size;
+                    } else {
+                        $heap_memory_usage += $memory_location->size;
+                        assert($chunk instanceof ZendMmChunkMemoryLocation);
+                        if (self::shouldComputeGenericChunkOverhead($memory_location)) {
+                            $overhead = $chunk->getOverhead($memory_location);
+                            if (!is_null($overhead)) {
+                                $possible_allocation_overhead_total += $overhead->size;
+                            }
                         }
                     }
                 }
@@ -172,6 +225,17 @@ final class RegionAnalyzer
             $per_class_objects,
             fn (array $a, array $b) => $b['total_size'] <=> $a['total_size']
         );
+
+        // Move the per-arena unused tail out of `vm_stack_memory_total`
+        // and into the allocation-overhead bucket. The two sides
+        // cancel in the `heap_memory_usage` sum below, so the
+        // chunk_usage / heap_usage totals stay identical to the
+        // pre-fix numbers; only the categorisation changes — those
+        // bytes ARE allocator-reserved slack on top of the live
+        // frame coverage, and routing them as overhead lets the
+        // summary report them alongside the LargeRunSlack case.
+        $vm_stack_memory_total -= $unused_vm_stack_total;
+        $possible_allocation_overhead_total += $unused_vm_stack_total;
 
         $heap_memory_usage += $possible_allocation_overhead_total;
         $heap_memory_usage += $vm_stack_memory_total;

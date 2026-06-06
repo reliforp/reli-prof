@@ -16,7 +16,11 @@ namespace Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Reli\BaseTestCase;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\UnusedLargeRunSlackMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\UnusedVmStackMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\VmStackArenaHeaderMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArrayTableMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendMmChunkMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendObjectMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendStringSlotTailMemoryLocation;
@@ -116,6 +120,24 @@ class RegionAnalyzerTest extends BaseTestCase
                 $object,
                 true,
                 'plain heap-resident object goes through generic slot-rounding overhead',
+            ],
+            'VmStackArenaHeader skipped (mid-slot for getOverhead)' => [
+                new VmStackArenaHeaderMemoryLocation(0x4000, 32),
+                false,
+                'header is a 32 B marker at the start of a 256 KB arena slot;'
+                . ' getOverhead would attribute ~256 KB per arena as slot rounding',
+            ],
+            'UnusedVmStack skipped (already represents slack itself)' => [
+                new UnusedVmStackMemoryLocation(0x5000, 1024),
+                false,
+                'the location IS the unused tail; a second getOverhead pass'
+                . ' relative to a mid-arena address is garbage',
+            ],
+            'UnusedLargeRunSlack skipped (same shape as VmStack tail)' => [
+                new UnusedLargeRunSlackMemoryLocation(0x6000, 1024),
+                false,
+                'the location IS the slack; getOverhead would compute slot'
+                . ' rounding relative to a mid-run address',
             ],
         ];
     }
