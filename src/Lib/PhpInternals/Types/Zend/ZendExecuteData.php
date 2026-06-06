@@ -427,7 +427,14 @@ final class ZendExecuteData implements LazyDereferencable, PointedTypeResolverAw
         $tmp_num = $func->op_array->T;
         $arg_num = $func->op_array->num_args;
         $real_arg_num = $this->This->u2->num_args;
-        $extra_arg_num = $real_arg_num - $arg_num;
+        // PHP always allocates a CV slot for each *declared* parameter
+        // even when the caller passed fewer (the missing args are
+        // filled in with their default values), so extra args is the
+        // overflow PAST the declared count — never negative. The old
+        // unclamped `real - arg` undercounted variable_table_size on
+        // any frame whose call site omitted optional args, which
+        // surfaced as an inter-frame gap in VM stack accounting.
+        $extra_arg_num = max(0, $real_arg_num - $arg_num);
         return $compiled_variables_num + $tmp_num + $extra_arg_num;
     }
 

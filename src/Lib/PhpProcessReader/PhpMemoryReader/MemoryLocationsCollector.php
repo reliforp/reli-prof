@@ -30,6 +30,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\BinWalkResult;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\ZendMmBinWalker;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\UnusedVmStackMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\VmStackArenaHeaderMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\VmStackMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArenaMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendMmChunkMemoryLocation;
@@ -365,6 +366,19 @@ final class MemoryLocationsCollector
             $vm_stack_context = new VmStackContext();
             $vm_stack_root_id = $ctx->emitNode($vm_stack_context, null, 'vm_stack');
             $vm_stack_parent = $vm_stack_root_id >= 0 ? $vm_stack_root_id : null;
+            // sizeof(struct _zend_vm_stack) — pulled from the type
+            // reader so future field changes track automatically.
+            // Mirrors the same usage inside
+            // collectRealCallStackOnMemoryLimitViolation() below
+            // and EmitFiberJob.
+            $vm_stack_struct_size = $zend_type_reader->sizeOf(ZendVmStack::getCTypeName());
+            // Frames are pushed at a 16-byte (zval-sized) boundary
+            // beyond the struct header, so a 24-byte struct leaves
+            // an 8-byte alignment gap before the first frame. The
+            // header MemoryLocation covers the struct + that gap
+            // so the arena partitions cleanly into header / frames
+            // / slack with nothing dangling.
+            $arena_header_size = (intdiv($vm_stack_struct_size + 15, 16)) * 16;
             $first_arena = true;
             foreach ($vm_stack_arenas as $arena_idx => $vm_stack) {
                 $begin = $vm_stack->getPointer()->address;
@@ -408,6 +422,19 @@ final class MemoryLocationsCollector
                     $size - $slack,
                     $slack,
                 );
+                // The arena's struct header sits at the very start
+                // of the allocation. Attaching it as its own
+                // MemoryLocation closes the otherwise-unattributed
+                // `Σ struct_size` gap between the per-frame +
+                // per-arena-slack partition and the raw arena size.
+                if ($arena_header_size > 0) {
+                    $arena_context->addLocation(
+                        new VmStackArenaHeaderMemoryLocation(
+                            $begin,
+                            $arena_header_size,
+                        ),
+                    );
+                }
                 if ($slack > 0) {
                     $arena_context->addLocation(
                         new UnusedVmStackMemoryLocation($hwm, $slack),
