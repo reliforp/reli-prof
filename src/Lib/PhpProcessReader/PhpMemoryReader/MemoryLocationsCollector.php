@@ -363,7 +363,7 @@ final class MemoryLocationsCollector
         // covers each arena exactly once — no double counting in
         // heap usage / "% analyzed".
         if (count($vm_stack_arenas) > 0) {
-            $vm_stack_context = new VmStackContext();
+            $vm_stack_context = new VmStackContext(count($vm_stack_arenas));
             $vm_stack_root_id = $ctx->emitNode($vm_stack_context, null, 'vm_stack');
             $vm_stack_parent = $vm_stack_root_id >= 0 ? $vm_stack_root_id : null;
             // sizeof(struct _zend_vm_stack) — pulled from the type

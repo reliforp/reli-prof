@@ -193,14 +193,21 @@ final class EmitCallFrameJob implements CollectorJob
         // zvals named-arg `SEND_*` opcodes push per named argument,
         // which are invisible to `zend_vm_calc_used_stack`'s reading
         // of `op_array.T`. Only honor the successor when it sits
-        // ABOVE this frame's reli-computed end AND within a sane
-        // window (capped at sizeof(zend_vm_stack) bytes so a stale
-        // hint that lands in a different arena can't blow the
-        // accounting up).
+        // ABOVE this frame's reli-computed end AND inside the same
+        // arena as this frame: $ctx->vm_stack_arena_lookup is already
+        // populated by collectAll() before any EmitCallFrameJob runs,
+        // so a same-arena check rules out hints that walk into a
+        // neighbouring arena (or into garbage from a corrupted
+        // dump) without leaving any false-negative window for the
+        // legitimate gap.
         if (
             $successor_frame_address !== null
             && $successor_frame_address > $frame_addr + $frame_size
-            && $successor_frame_address - ($frame_addr + $frame_size) < 4096
+            && self::sameArena(
+                $ctx->vm_stack_arena_lookup,
+                $frame_addr,
+                $successor_frame_address,
+            )
         ) {
             $frame_size = $successor_frame_address - $frame_addr;
         }
@@ -216,6 +223,41 @@ final class EmitCallFrameJob implements CollectorJob
             $filename,
             $header_memory_location,
         );
+    }
+
+    /**
+     * Return true when both addresses fall inside the same VM stack
+     * arena according to the lookup table built up-front by
+     * `MemoryLocationsCollector::collectAll()`. When the table is
+     * empty (e.g. no VM stack reachable from EG) the check is a
+     * no-op and returns false; callers should fall back to the
+     * formula-derived size in that case.
+     *
+     * `@internal` — public only for direct unit-test coverage of the
+     * arena gating; production callers should reach the gate through
+     * {@see collectCallFrameHeader()}.
+     *
+     * @param list<array{int, int, int}> $arena_lookup
+     *     Sorted (by begin) list of [arena_begin, arena_end, node_id]
+     *     triples; the node_id is unused here.
+     */
+    public static function sameArena(
+        array $arena_lookup,
+        int $a,
+        int $b,
+    ): bool {
+        foreach ($arena_lookup as [$arena_begin, $arena_end, $_]) {
+            if ($a >= $arena_begin && $a < $arena_end) {
+                return $b >= $arena_begin && $b < $arena_end;
+            }
+            // The lookup table is sorted by arena_begin, so once we
+            // pass an arena that starts above $a, no later arena can
+            // contain $a either.
+            if ($arena_begin > $a) {
+                return false;
+            }
+        }
+        return false;
     }
 
     /**
