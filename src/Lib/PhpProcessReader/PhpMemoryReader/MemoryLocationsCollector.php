@@ -29,12 +29,15 @@ use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\BinWalkResult;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\ZendMmBinWalker;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\UnusedVmStackMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\VmStackMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArenaMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendMmChunkMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendMmHugeListMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\CallFramesContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\UserFunctionDefinitionContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\VmStackArenaContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\VmStackContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextAnalyzer;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ContextAnalyzer\ContextTreeSink;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\RegionAnalyzer\RegionBoundaries;
@@ -272,12 +275,15 @@ final class MemoryLocationsCollector
         $eg = $dereferencer->deref($eg_pointer);
 
         $vm_stack_memory_locations = new MemoryLocations();
+        /** @var list<ZendVmStack> $vm_stack_arenas */
+        $vm_stack_arenas = [];
         if (!is_null($eg->vm_stack)) {
             $vm_stack_curent = $dereferencer->deref($eg->vm_stack);
             foreach ($vm_stack_curent->iterateStackChain($dereferencer) as $vm_stack) {
                 $vm_stack_memory_locations->add(
                     VmStackMemoryLocation::fromZendVmStack($vm_stack),
                 );
+                $vm_stack_arenas[] = $vm_stack;
             }
         }
 
@@ -345,6 +351,87 @@ final class MemoryLocationsCollector
                 }
             }
         );
+
+        // Emit the vm_stack root branch up-front so subsequent
+        // EmitCallFrameJob runs (both the live call_frames chain and
+        // the post-loop memory_limit_call_frames recovery) can attach
+        // a weak `vm_stack_arena` edge from each frame to the arena
+        // it lives in. Per-arena slack (`end - top`) goes onto
+        // VmStackArenaContext as an UnusedVmStackMemoryLocation, so
+        // Σ CallFrameHeaderMemoryLocation + Σ UnusedVmStackMemoryLocation
+        // covers each arena exactly once — no double counting in
+        // heap usage / "% analyzed".
+        if (count($vm_stack_arenas) > 0) {
+            $vm_stack_context = new VmStackContext();
+            $vm_stack_root_id = $ctx->emitNode($vm_stack_context, null, 'vm_stack');
+            $vm_stack_parent = $vm_stack_root_id >= 0 ? $vm_stack_root_id : null;
+            $first_arena = true;
+            foreach ($vm_stack_arenas as $arena_idx => $vm_stack) {
+                $begin = $vm_stack->getPointer()->address;
+                $end = $vm_stack->end?->address ?? $begin;
+                // `_zend_vm_stack::top` is initialised to the arena
+                // base when the arena is created and is only bumped
+                // when a NEW arena is allocated on top of this one
+                // (zend_vm_stack_extend saves the live
+                // EG(vm_stack_top) into the outgoing arena's
+                // struct->top). For inactive arenas down the prev
+                // chain that gives the true high-water mark; for the
+                // ACTIVE arena (the head, first in iteration)
+                // struct->top is still the arena base and the live
+                // cursor lives in EG(vm_stack_top). Mirroring the
+                // convention from
+                // {@see collectRealCallStackOnMemoryLimitViolation()},
+                // take the max so slack on the active arena reflects
+                // PHP's view (`end - eg->vm_stack_top`) instead of
+                // mis-attributing every live frame as slack.
+                $struct_top = $vm_stack->top?->address ?? $begin;
+                if ($first_arena) {
+                    $first_arena = false;
+                    $hwm = max(
+                        $struct_top,
+                        $eg->vm_stack_top?->address ?? $struct_top,
+                    );
+                } else {
+                    $hwm = $struct_top;
+                }
+                // Defensive clamp: if a corrupted dump hands us a
+                // hwm past the arena's own end, treat the whole
+                // arena as fully used. Sub-base hwm collapses slack
+                // to the full arena, which is the right answer for
+                // a freshly-created arena that's seen no frames.
+                $hwm = max($begin, min($hwm, $end));
+                $size = $end - $begin;
+                $slack = $end - $hwm;
+                $arena_context = new VmStackArenaContext(
+                    $begin,
+                    $size,
+                    $size - $slack,
+                    $slack,
+                );
+                if ($slack > 0) {
+                    $arena_context->addLocation(
+                        new UnusedVmStackMemoryLocation($hwm, $slack),
+                    );
+                }
+                $arena_node_id = $ctx->emitNode(
+                    $arena_context,
+                    $vm_stack_parent,
+                    (string)$arena_idx,
+                );
+                if ($arena_node_id >= 0) {
+                    $ctx->vm_stack_arena_lookup[] = [$begin, $end, $arena_node_id];
+                }
+            }
+            // Sort by begin address — the lookup in EmitCallFrameJob
+            // currently scans linearly (a few hundred arenas at most
+            // for a typical process), but a sorted list lets us
+            // upgrade to binary search later without re-touching the
+            // emit side.
+            usort(
+                $ctx->vm_stack_arena_lookup,
+                static fn (array $a, array $b): int => $a[0] <=> $b[0],
+            );
+        }
 
         // Create the job queue
         $queue = new Collector\JobQueue();

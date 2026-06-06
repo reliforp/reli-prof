@@ -20,6 +20,7 @@ use Reli\Lib\PhpProcessReader\PhpMemoryReader\Collector\JobQueue;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\CallFrameHeaderMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\CallFrameContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\CallFrameVariableTableContext;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\EdgeStrength;
 
 /**
  * Emit a single call frame node and push jobs for local variables and $this.
@@ -42,6 +43,26 @@ final class EmitCallFrameJob implements CollectorJob
         // Emit the call frame
         $frame_node_id = $ctx->emitNode($call_frame_context, $this->parent_node_id, $this->link_name);
         $parent = $frame_node_id >= 0 ? $frame_node_id : null;
+
+        // Weak (non-tree) edge from this frame to the VM stack arena
+        // it lives in. The arena tree is emitted up-front by
+        // MemoryLocationsCollector::collectAll() so the lookup table
+        // is already populated by the time any EmitCallFrameJob runs
+        // (including the post-loop memory_limit_call_frames recovery).
+        if ($frame_node_id >= 0 && $ctx->vm_stack_arena_lookup !== []) {
+            $frame_addr = $this->execute_data->getPointer()->address;
+            foreach ($ctx->vm_stack_arena_lookup as [$arena_begin, $arena_end, $arena_node_id]) {
+                if ($frame_addr >= $arena_begin && $frame_addr < $arena_end) {
+                    $ctx->sink->emitReference(
+                        $arena_node_id,
+                        $frame_node_id,
+                        'vm_stack_arena',
+                        EdgeStrength::Weak,
+                    );
+                    break;
+                }
+            }
+        }
 
         // Push jobs for child elements (reverse order for DFS)
 
