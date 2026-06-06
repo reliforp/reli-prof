@@ -4056,4 +4056,256 @@ class MemoryLocationsCollectorTest extends BaseTestCase
 
         return null;
     }
+
+    /**
+     * Pins the `vm_stack` root branch shape added in PR #821:
+     *
+     *   - root → `vm_stack` (VmStackContext) with `#count` set to the
+     *     number of live arenas;
+     *   - each arena child carries a VmStackArenaHeaderMemoryLocation
+     *     for the struct + alignment-padded prefix;
+     *   - any arena with bytes between EG(vm_stack_top) and arena.end
+     *     carries an UnusedVmStackMemoryLocation for that tail;
+     *   - every emitted CallFrameContext in `call_frames` carries a
+     *     weak `vm_stack_arena` edge into one of the arena nodes.
+     *
+     * The target script intentionally exercises a NAMED-ARG call so
+     * the per-frame size from successor-address sizing actually kicks
+     * in (positional calls would happen to produce a clean partition
+     * even without it).
+     */
+    #[DataProvider('provideFromV80')]
+    public function testVmStackRootBranchAndArenaWeakEdges(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        $target_script =
+            <<<'CODE'
+            <?php
+            function consume(int $a, ?int $b = null, ?int $c = null): void {
+                fputs(STDOUT, "a\n");
+                fgets(STDIN);
+            }
+            // Named-arg call so successor-address sizing is exercised:
+            // PHP pushes one extra zval per named arg past last_var + T.
+            consume(a: 1, b: 2);
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes
+        );
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
+
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
+                new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
+            ),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
+        );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
+            $binary_fingerprint_creator,
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version)
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version)
+        );
+
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
+        );
+        $sink = new ArrayContextTreeSink();
+        $memory_locations_collector->collectAll(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+            $executor_globals_address,
+            $compiler_globals_address,
+            null,
+            null,
+            $sink,
+        );
+
+        $contexts = $sink->getResult();
+
+        // 1. vm_stack root branch must exist and be a VmStackContext.
+        $this->assertArrayHasKey(
+            'vm_stack',
+            $contexts,
+            'vm_stack must appear as a root branch'
+        );
+        $vm_stack = $contexts['vm_stack'];
+        $this->assertSame('VmStackContext', $vm_stack['#type'] ?? null);
+        $this->assertIsInt($vm_stack['#count'] ?? null);
+        $this->assertGreaterThan(
+            0,
+            $vm_stack['#count'],
+            'VmStackContext must report at least one live arena'
+        );
+
+        // 2. Each arena child must be a VmStackArenaContext carrying a
+        //    VmStackArenaHeaderMemoryLocation. At least one arena
+        //    should also carry an UnusedVmStackMemoryLocation (the
+        //    active arena's tail is empty space until the next push).
+        $arena_count = 0;
+        $arenas_with_header = 0;
+        $arenas_with_slack = 0;
+        $arena_node_ids = [];
+        foreach ($vm_stack as $key => $arena) {
+            if (!is_array($arena) || str_starts_with((string)$key, '#')) {
+                continue;
+            }
+            $arena_count++;
+            $this->assertSame('VmStackArenaContext', $arena['#type'] ?? null);
+            $arena_node_ids[(int)$arena['#node_id']] = true;
+            foreach ($arena['#locations'] ?? [] as $location) {
+                $short = (new \ReflectionClass($location))->getShortName();
+                if ($short === 'VmStackArenaHeaderMemoryLocation') {
+                    $arenas_with_header++;
+                }
+                if ($short === 'UnusedVmStackMemoryLocation') {
+                    $arenas_with_slack++;
+                }
+            }
+        }
+        $this->assertGreaterThan(0, $arena_count, 'at least one arena child');
+        $this->assertSame(
+            $arena_count,
+            $arenas_with_header,
+            'every arena must carry a VmStackArenaHeaderMemoryLocation'
+        );
+        $this->assertGreaterThan(
+            0,
+            $arenas_with_slack,
+            'at least one arena (typically the active one) must carry'
+            . ' an UnusedVmStackMemoryLocation for the tail bytes'
+        );
+
+        // 3. Every CallFrameContext in `call_frames` must carry a weak
+        //    `vm_stack_arena` edge into one of the emitted arenas.
+        $this->assertArrayHasKey(
+            'call_frames',
+            $contexts,
+            'call_frames root branch must exist'
+        );
+        $frames_seen = 0;
+        $weak_arena_edges = 0;
+        $weak_arena_edges_to_known_arena = 0;
+        $walk = static function (array $node) use (
+            &$walk,
+            &$frames_seen,
+            &$weak_arena_edges,
+            &$weak_arena_edges_to_known_arena,
+            $arena_node_ids,
+        ): void {
+            foreach ($node as $key => $value) {
+                if (!is_array($value) || str_starts_with((string)$key, '#')) {
+                    continue;
+                }
+                if (($value['#type'] ?? null) === 'CallFrameContext') {
+                    $frames_seen++;
+                    $edge = $value['vm_stack_arena'] ?? null;
+                    if (is_array($edge)) {
+                        if (
+                            ($edge['#edge_strength'] ?? null) === 'weak'
+                            && isset($edge['#reference_node_id'])
+                        ) {
+                            $weak_arena_edges++;
+                            if (isset($arena_node_ids[(int)$edge['#reference_node_id']])) {
+                                $weak_arena_edges_to_known_arena++;
+                            }
+                        }
+                    }
+                }
+                $walk($value);
+            }
+        };
+        $walk($contexts['call_frames']);
+        $this->assertGreaterThan(
+            0,
+            $frames_seen,
+            'call_frames must contain at least one CallFrameContext'
+        );
+        $this->assertSame(
+            $frames_seen,
+            $weak_arena_edges,
+            'every CallFrameContext must carry a weak vm_stack_arena edge'
+        );
+        $this->assertSame(
+            $frames_seen,
+            $weak_arena_edges_to_known_arena,
+            'every weak vm_stack_arena edge must target a known arena node'
+        );
+    }
 }

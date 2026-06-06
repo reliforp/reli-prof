@@ -33,6 +33,18 @@ final class CollectorContext
     /** Tracks the function context matching a memory limit error location */
     public ?UserFunctionDefinitionContext $memory_limit_error_function_context = null;
 
+    /**
+     * Address-range lookup for VM stack arenas, used by EmitCallFrameJob
+     * to attach a weak `vm_stack_arena` edge from each frame to the
+     * arena it physically resides in. Populated by collectAll() before
+     * any EmitCallFrameJob runs; sorted by `begin` so a linear scan
+     * is fine for the (tens to a few hundred) arenas a typical
+     * process keeps live.
+     *
+     * @var list<array{int, int, int}> list of [arena_begin, arena_end, arena_node_id]
+     */
+    public array $vm_stack_arena_lookup = [];
+
     public function __construct(
         public Dereferencer $dereferencer,
         public ZendTypeReader $zend_type_reader,
