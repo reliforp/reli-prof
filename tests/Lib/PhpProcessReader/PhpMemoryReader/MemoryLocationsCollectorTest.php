@@ -4277,7 +4277,8 @@ class MemoryLocationsCollectorTest extends BaseTestCase
                     $frames_seen++;
                     $edge = $value['vm_stack_arena'] ?? null;
                     if (is_array($edge)) {
-                        if (($edge['#edge_strength'] ?? null) === 'weak'
+                        if (
+                            ($edge['#edge_strength'] ?? null) === 'weak'
                             && isset($edge['#reference_node_id'])
                         ) {
                             $weak_arena_edges++;
