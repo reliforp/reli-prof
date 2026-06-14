@@ -4308,4 +4308,193 @@ class MemoryLocationsCollectorTest extends BaseTestCase
             'every weak vm_stack_arena edge must target a known arena node'
         );
     }
+
+    /**
+     * Pins the `large_run_slack` root branch added in the post-DFS
+     * slack pass:
+     *
+     *   - root → `large_run_slack` (LargeRunSlackContext) with
+     *     `#count` reporting the number of emitted slack locations;
+     *   - every child location is an
+     *     UnusedLargeRunSlackMemoryLocation;
+     *   - at least one slack covers a non-trivial number of bytes
+     *     (the target script allocates structures large enough to
+     *     land in ZendMM large runs so something has to be there);
+     *   - chunk-metadata pages and VM stack arenas are skipped
+     *     (the slack pass leaves their accounting alone — the
+     *     arena tail goes through the `vm_stack` branch).
+     */
+    #[DataProvider('provideFromV80')]
+    public function testLargeRunSlackRootBranchEmitsTrailingSlack(
+        string $php_version,
+        string $docker_image_name,
+    ): void {
+        if ($php_version === 'skip') {
+            $this->markTestSkipped('No matching PHP versions for this target set');
+        }
+        $memory_reader = new MemoryReader();
+        $type_reader_creator = new ZendTypeReaderCreator();
+
+        // A few oversized structures so ZendMM forces at least
+        // some large-run allocations:
+        //   - a HashTable with ~16 K entries (arData ≥ 4 KB);
+        //   - a long string (well over the 3 KB small-bin ceiling).
+        $target_script =
+            <<<'CODE'
+            <?php
+            $big_hash = [];
+            for ($i = 0; $i < 16384; $i++) {
+                $big_hash[$i] = $i;
+            }
+            $big_string = str_repeat('x', 65536);
+            fputs(STDOUT, "a\n");
+            fgets(STDIN);
+            CODE
+        ;
+        $pipes = [];
+        [$this->child, $pid] = TargetPhpVmProvider::runScriptViaContainer(
+            $docker_image_name,
+            $target_script,
+            $pipes
+        );
+        [$ready, $seen] = TargetPhpVmProvider::waitForMarkerLine($pipes[1], 'a');
+        $this->assertTrue($ready, "child did not print 'a'. Got: " . var_export($seen, true));
+
+        $php_symbol_reader_creator = new PhpSymbolReaderCreator(
+            new ProcessModuleSymbolReaderCreator(
+                new Elf64SymbolResolverCreator(
+                    new CatFileReader(),
+                    new Elf64Parser(
+                        new LittleEndianReader()
+                    )
+                ),
+                $memory_reader,
+                new PerBinarySymbolCacheRetriever(),
+                new LittleEndianReader(),
+                new LinkMapLoader(
+                    $memory_reader,
+                    new LittleEndianReader()
+                ),
+                new ContainerAwarePathResolver(),
+                $binary_analysis_cache = new BinaryAnalysisCache(
+                    sys_get_temp_dir() . '/reli-test-' . uniqid()
+                ),
+            ),
+            $process_memory_map_creator = ProcessMemoryMapCreator::create(),
+            $binary_analysis_cache,
+            new ProcExeReadlinkResolver(),
+        );
+        $memory_reader_for_finder = new MemoryReader();
+        $integer_reader = new LittleEndianReader();
+        $binary_fingerprint_creator = new BinaryFingerprintCreator($memory_reader_for_finder);
+        $tsrm_globals_resolver = new TsrmGlobalsResolver(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+        $tsrm_ls_cache_finder = new PhpTsrmLsCacheFinder(
+            $php_symbol_reader_creator,
+            $tsrm_globals_resolver,
+            $memory_reader_for_finder,
+            $integer_reader,
+            new Elf64Parser($integer_reader),
+            new CatFileReader(),
+            ProcessMemoryMapCreator::create(),
+            new ContainerAwarePathResolver(),
+            new ZendTypeReaderCreator(),
+            $binary_analysis_cache,
+            $binary_fingerprint_creator,
+        );
+        $php_globals_finder = new PhpGlobalsFinder(
+            $php_symbol_reader_creator,
+            $integer_reader,
+            $memory_reader_for_finder,
+            $tsrm_ls_cache_finder,
+            $tsrm_globals_resolver,
+            $binary_analysis_cache,
+            $process_memory_map_creator,
+            $binary_fingerprint_creator,
+        );
+
+        $executor_globals_address = $php_globals_finder->findExecutorGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version)
+        );
+        $compiler_globals_address = $php_globals_finder->findCompilerGlobals(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version)
+        );
+
+        $memory_locations_collector = new MemoryLocationsCollector(
+            $memory_reader,
+            $type_reader_creator,
+            new PhpZendMemoryManagerChunkFinder(
+                ProcessMemoryMapCreator::create(),
+                $type_reader_creator,
+                $php_globals_finder
+            ),
+            ProcessMemoryMapCreator::create(),
+            new BinaryAnalysisCache(sys_get_temp_dir()),
+            new ContainerAwarePathResolver(),
+        );
+        $sink = new ArrayContextTreeSink();
+        $memory_locations_collector->collectAll(
+            new ProcessSpecifier($pid),
+            new TargetPhpSettings(php_version: $php_version),
+            $executor_globals_address,
+            $compiler_globals_address,
+            null,
+            null,
+            $sink,
+        );
+
+        $contexts = $sink->getResult();
+
+        $this->assertArrayHasKey(
+            'large_run_slack',
+            $contexts,
+            'large_run_slack must appear as a root branch'
+        );
+        $slack_branch = $contexts['large_run_slack'];
+        $this->assertSame('LargeRunSlackContext', $slack_branch['#type'] ?? null);
+        $this->assertIsInt($slack_branch['#count'] ?? null);
+        $this->assertGreaterThan(
+            0,
+            $slack_branch['#count'],
+            'a script that allocates a 16 K-entry hash + 64 KB string'
+            . ' must produce at least one non-VM-stack large run'
+            . ' with bytes the substrate cannot reach'
+        );
+
+        $locations = $slack_branch['#locations'] ?? [];
+        $this->assertNotEmpty(
+            $locations,
+            'LargeRunSlackContext must carry its slack as #locations,'
+            . ' not as referencing_contexts children'
+        );
+        $this->assertCount(
+            (int)$slack_branch['#count'],
+            $locations,
+            'the #count attribute must match the number of slack'
+            . ' MemoryLocations attached to the branch'
+        );
+
+        $total_slack = 0;
+        foreach ($locations as $location) {
+            $this->assertSame(
+                'UnusedLargeRunSlackMemoryLocation',
+                (new \ReflectionClass($location))->getShortName(),
+            );
+            $this->assertGreaterThan(0, $location->size);
+            $total_slack += $location->size;
+        }
+        $this->assertGreaterThan(
+            0,
+            $total_slack,
+            'the slack pass must attribute a non-zero number of bytes'
+        );
+    }
 }

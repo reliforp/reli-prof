@@ -28,13 +28,17 @@ use Reli\Lib\PhpInternals\ZendTypeReader;
 use Reli\Lib\PhpInternals\ZendTypeReaderCreator;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\BinWalkResult;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\BinWalk\ZendMmBinWalker;
+use Reli\Lib\PhpInternals\Types\Zend\ZendMmPageInfoFree;
+use Reli\Lib\PhpInternals\Types\Zend\ZendMmPageInfoLarge;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\MemoryLocations;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\UnusedLargeRunSlackMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\UnusedVmStackMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\VmStackArenaHeaderMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\VmStackMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendArenaMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendMmChunkMemoryLocation;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\MemoryLocation\ZendMmHugeListMemoryLocation;
+use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\LargeRunSlackContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\CallFramesContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\UserFunctionDefinitionContext;
 use Reli\Lib\PhpProcessReader\PhpMemoryReader\ReferenceContext\VmStackArenaContext;
@@ -349,6 +353,17 @@ final class MemoryLocationsCollector
             static function (int $node_id, ReferenceContext $context) use ($ctx): void {
                 foreach ($context->getLocations() as $location) {
                     $ctx->address_map[$location->address] = $node_id;
+                    // location_sizes feeds the post-DFS large-run
+                    // slack pass — see LargeRunSlackContext for the
+                    // partitioning invariant the map upholds. We
+                    // intentionally overwrite duplicates with the
+                    // larger size: an alias and its primary can
+                    // share an address, and the slack pass needs the
+                    // upper bound on how far covered bytes extend.
+                    $existing = $ctx->location_sizes[$location->address] ?? 0;
+                    if ($location->size > $existing) {
+                        $ctx->location_sizes[$location->address] = $location->size;
+                    }
                 }
             }
         );
@@ -570,6 +585,24 @@ final class MemoryLocationsCollector
                 $ctx,
             );
         }
+
+        // Post-DFS pass: cover the trailing page-rounding bytes on
+        // every non-VM-stack ZendMM large run with a single
+        // UnusedLargeRunSlackMemoryLocation attached to a new
+        // `large_run_slack` root branch. Mirrors what the vm_stack
+        // tree already does for arena tails, just for the
+        // big-HashTable / big-string / opcode-array shape: PHP rounds
+        // a >3 KB request up to the next 4 KB page; the leftover
+        // bytes never become user data and the substrate's
+        // pointer-tracer therefore never reaches them. Runs AFTER
+        // the recovery so the recovered chain's locations have
+        // landed in `location_sizes` and contribute to the
+        // max-covered-end calc.
+        $this->emitLargeRunTrailingSlack(
+            $ctx,
+            $zend_mm_main_chunk,
+            $dereferencer,
+        );
 
         // Walk the small-bin freelists + chunk page maps to recover the
         // per-bin live-allocation histogram and any periodic same-shape
@@ -808,6 +841,119 @@ final class MemoryLocationsCollector
         }
     }
 
+
+    /**
+     * Emit a single `UnusedLargeRunSlackMemoryLocation` per
+     * non-VM-stack ZendMM large run, covering the page-rounding
+     * tail. Skips runs that ARE VM stack arenas (their slack lives
+     * under `vm_stack` already) and chunk-header large runs at
+     * `map[0]` (allocator bookkeeping rather than a user
+     * allocation).
+     *
+     * The "highest substrate-covered end byte" within a run is
+     * derived from `ctx->address_map` × `ctx->location_sizes`. The
+     * map is populated for every emit that flows through the
+     * analyzer's `setOnNodeAssigned` callback, which is most of
+     * them; direct `address_map[$addr] = $node_id` writes (aliases,
+     * sub-allocations) contribute zero-sized entries to the slack
+     * pass, which biases toward larger slack — i.e. we may over-
+     * report the slack for a run with poorly-tracked location
+     * sizes, but never UNDER-report (which would leave bytes
+     * unattributed).
+     */
+    private function emitLargeRunTrailingSlack(
+        Collector\CollectorContext $ctx,
+        ZendMmChunk $main_chunk,
+        Dereferencer $dereferencer,
+    ): void {
+        $page_size = ZendMmChunk::PAGE_SIZE;
+        $pages_per_chunk = intdiv(ZendMmChunk::SIZE, $page_size);
+        // Index VM stack arenas (already partitioned under
+        // `vm_stack`) so we skip them here.
+        $vm_arena_starts = [];
+        foreach ($ctx->vm_stack_arena_lookup as [$begin, , ]) {
+            $vm_arena_starts[$begin] = true;
+        }
+
+        // Walk the address_map ONCE in sorted order; for each large
+        // run we'll binary-search for the first address >= run.begin
+        // and walk forward until address >= run.end. Pre-sort + keep
+        // a parallel array of sizes for fast lookup.
+        $sorted_addrs = array_keys($ctx->address_map);
+        sort($sorted_addrs);
+        $count = count($sorted_addrs);
+
+        $slacks = [];
+        $run_count = 0;
+        try {
+            foreach ($main_chunk->iterateChunks($dereferencer) as $chunk) {
+                $chunk_addr = $chunk->getPointer()->address;
+                $page = 0;
+                while ($page < $pages_per_chunk) {
+                    try {
+                        $info = $chunk->map->getPageInfo($page);
+                    } catch (\Throwable) {
+                        break;
+                    }
+                    if ($info instanceof ZendMmPageInfoFree) {
+                        $page++;
+                        continue;
+                    }
+                    if ($info instanceof ZendMmPageInfoLarge) {
+                        $n = $info->getLargePagesCount();
+                        if ($n <= 0 || $page + $n > $pages_per_chunk) {
+                            break;
+                        }
+                        $run_addr = $chunk_addr + $page * $page_size;
+                        $run_size = $n * $page_size;
+                        $page += $n;
+
+                        // Chunk header page sits at `map[0]` with
+                        // `LRUN(1)`. It's allocator bookkeeping, so
+                        // skip — it never had a user allocation we
+                        // could compare against.
+                        if ($run_addr === $chunk_addr) {
+                            continue;
+                        }
+                        if (isset($vm_arena_starts[$run_addr])) {
+                            continue;
+                        }
+                        $slack = UnusedLargeRunSlackMemoryLocation::computeForRun(
+                            $run_addr,
+                            $run_size,
+                            $sorted_addrs,
+                            $ctx->location_sizes,
+                        );
+                        if ($slack !== null) {
+                            $slacks[] = $slack;
+                            $run_count++;
+                        }
+                        continue;
+                    }
+                    // Small-bin run; skip past its pages.
+                    $bin_pages = $info->getBinPages();
+                    if ($bin_pages <= 0) {
+                        break;
+                    }
+                    $page += $bin_pages;
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::debug('large-run slack pass aborted', ['exception' => $e]);
+            return;
+        }
+
+        if ($run_count === 0) {
+            return;
+        }
+
+        $slack_context = new LargeRunSlackContext($run_count);
+        foreach ($slacks as $location) {
+            $slack_context->addLocation($location);
+            $ctx->memory_locations->add($location);
+        }
+        $ctx->emitNode($slack_context, null, 'large_run_slack');
+    }
 
     private function collectRealCallStackOnMemoryLimitViolation(
         UserFunctionDefinitionContext $memory_limit_error_function_context,
