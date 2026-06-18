@@ -26,7 +26,7 @@ jobs:
       matrix:
         php-version: ['8.4', '8.5']
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup PHP Action
         uses: shivammathur/setup-php@v2
@@ -83,7 +83,7 @@ jobs:
     env:
       IMAGE: ghcr.io/${{ github.repository }}/dev
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Compute Dockerfile hash
         id: hash
@@ -136,7 +136,7 @@ jobs:
     env:
       IMAGE: ghcr.io/${{ github.repository }}/test-php-mysql
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Compute Dockerfile hash
         id: hash
@@ -250,7 +250,7 @@ jobs:
             targets: "v84_alpine_zts"
             php_minor: "8.4"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -354,7 +354,7 @@ jobs:
     permissions:
       packages: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -387,7 +387,7 @@ jobs:
     env:
       IMAGE: ghcr.io/${{ github.repository }}/dev
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Compute Dockerfile hash
         id: hash
@@ -436,7 +436,7 @@ jobs:
       matrix:
         php-version: ['8.4', '8.5']
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup PHP Action
         uses: shivammathur/setup-php@v2
@@ -488,7 +488,7 @@ jobs:
     env:
       IMAGE: ghcr.io/${{ github.repository }}/test-php-mysql
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Compute Dockerfile hash
         id: hash
@@ -551,7 +551,7 @@ jobs:
             targets: "v84_zts"
             php_minor: "8.4"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
