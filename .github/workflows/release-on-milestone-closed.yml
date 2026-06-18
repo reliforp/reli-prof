@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: "Checkout"
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # 0.x note: laminas/automatic-releases is built around the post-1.0
       # SemVer workflow where minor bumps are backwards-compatible and patch

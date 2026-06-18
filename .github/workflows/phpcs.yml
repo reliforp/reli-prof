@@ -22,7 +22,7 @@ jobs:
     name: phpcs check codestyles
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup PHP Action
         uses: shivammathur/setup-php@v2
