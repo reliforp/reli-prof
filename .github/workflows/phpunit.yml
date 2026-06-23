@@ -40,7 +40,7 @@ jobs:
         run: echo "::set-output name=dir::$(composer config cache-files-dir)"
 
       - name: Cache dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
           key: ${{ runner.os }}-composer-${{ matrix.php-version }}-${{ hashFiles('**/composer.json') }}
@@ -273,7 +273,7 @@ jobs:
 
       - name: Restore target Docker image cache
         id: target-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /tmp/target-image.tar.gz
           key: docker-target-${{ matrix.targets }}
@@ -450,7 +450,7 @@ jobs:
         run: echo "::set-output name=dir::$(composer config cache-files-dir)"
 
       - name: Cache dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
           key: ${{ runner.os }}-${{ runner.arch }}-composer-${{ matrix.php-version }}-${{ hashFiles('**/composer.json') }}
@@ -574,7 +574,7 @@ jobs:
 
       - name: Restore target Docker image cache
         id: target-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /tmp/target-image.tar.gz
           key: docker-target-arm64-${{ matrix.targets }}
