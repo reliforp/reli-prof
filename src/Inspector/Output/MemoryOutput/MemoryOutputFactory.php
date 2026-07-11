@@ -64,6 +64,11 @@ final class MemoryOutputFactory
                 ),
                 $region_boundaries,
             ),
+            'meminfo' => new PhpMeminfoMemoryOutput(
+                $settings->pretty_print,
+                $settings->output_path,
+                $region_boundaries,
+            ),
             'report' => ReportMemoryOutput::text($region_boundaries, $settings->output_path),
             'report-json' => ReportMemoryOutput::json(
                 $settings->pretty_print,
@@ -78,7 +83,7 @@ final class MemoryOutputFactory
             ),
             default => throw new \RuntimeException(
                 "unsupported output format: {$settings->output_format}"
-                . " (supported: json, sqlite3, rmem, mysql, postgresql, report, report-json)"
+                . " (supported: json, sqlite3, rmem, mysql, postgresql, report, report-json, meminfo)"
             ),
         };
     }

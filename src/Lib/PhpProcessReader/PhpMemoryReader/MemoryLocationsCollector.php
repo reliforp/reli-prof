@@ -211,6 +211,7 @@ final class MemoryLocationsCollector
         $memory_get_usage_size = $zend_mm_main_chunk->heap_slot->size;
         $memory_get_usage_real_size = $zend_mm_main_chunk->heap_slot->real_size;
         $memory_get_peak_usage = $zend_mm_main_chunk->heap_slot->peak;
+        $memory_get_peak_usage_real = $zend_mm_main_chunk->heap_slot->real_peak;
         $memory_limit = $zend_mm_main_chunk->heap_slot->limit;
         $chunks_count = $zend_mm_main_chunk->heap_slot->chunks_count;
         $peak_chunks_count = $zend_mm_main_chunk->heap_slot->peak_chunks_count;
@@ -679,6 +680,7 @@ final class MemoryLocationsCollector
             $chunks_total_free_bytes,
             $chunks_mostly_empty_count,
             $bin_walk_result,
+            $memory_get_peak_usage_real,
         );
     }
 

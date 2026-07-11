@@ -64,6 +64,7 @@ Tip: **`-f rmem` (`.rmem`) is the fastest format** and what the analysers below 
 | Run a persistent query server (JSON-over-socket) | `rmem:serve snap.rmem` | [memory/rmem-explore-and-serve.md](memory/rmem-explore-and-serve.md) |
 | Let an AI assistant explore a graph | `rmem:mcp` | [memory/rmem-explore-and-serve.md](memory/rmem-explore-and-serve.md) |
 | Query via raw SQL (snapshot must be SQLite, `-f sqlite3`) | open the `.db` with `sqlite3` / `duckdb` / any SQL tool | [memory/memory-profiler-database.md](memory/memory-profiler-database.md) |
+| Reuse existing php-meminfo tooling (`bin/analyzer` summary / ref-path, …) | `inspector:memory:export-meminfo snap.rmem out.json` (or capture with `-f meminfo`) | [memory/php-meminfo-export.md](memory/php-meminfo-export.md) |
 
 ## Monitor VMs
 

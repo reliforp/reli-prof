@@ -44,7 +44,7 @@ final class MemoryProfilerSettingsFromConsoleInput
             'output-format',
             'f',
             InputOption::VALUE_REQUIRED,
-            'output format (json, sqlite3, rmem, mysql, postgresql, report, report-json).'
+            'output format (json, sqlite3, rmem, mysql, postgresql, report, report-json, meminfo).'
             . ' Default: when -o ends with .rmem, rmem is selected;'
             . ' when -o ends with .sqlite3/.sqlite/.db, sqlite3 is selected; otherwise json.',
         );

@@ -20,7 +20,7 @@ The canonical invocation:
 reli inspector:memory -p <pid_of_target_process>
 ```
 
-By default this writes the analysed snapshot as JSON on stdout — that's what the rest of this document covers. The same command also accepts other output formats, and for any analysis-tool-driven workflow **`-f rmem` (the `.rmem` format) is the fastest and is what every analyser (`rmem:explore`, `rmem:serve`, `rmem:mcp`, `inspector:memory:report`, `inspector:memory:compare`) reads natively**. Other accepted formats: `-f sqlite3` (for SQL tooling — see [memory-profiler-database.md](memory-profiler-database.md)), `-f report` (direct findings report — see [memory-report.md](memory-report.md)), `-f mysql` / `-f postgresql` (stream into a remote database).
+By default this writes the analysed snapshot as JSON on stdout — that's what the rest of this document covers. The same command also accepts other output formats, and for any analysis-tool-driven workflow **`-f rmem` (the `.rmem` format) is the fastest and is what every analyser (`rmem:explore`, `rmem:serve`, `rmem:mcp`, `inspector:memory:report`, `inspector:memory:compare`) reads natively**. Other accepted formats: `-f sqlite3` (for SQL tooling — see [memory-profiler-database.md](memory-profiler-database.md)), `-f report` (direct findings report — see [memory-report.md](memory-report.md)), `-f mysql` / `-f postgresql` (stream into a remote database), `-f meminfo` (php-meminfo compatible JSON for reuse of existing php-meminfo analysis tooling — see [php-meminfo-export.md](php-meminfo-export.md)).
 
 When `-f` is omitted, the format is inferred from the `-o` extension: `.rmem` selects `rmem`, `.sqlite3` / `.sqlite` / `.db` select `sqlite3`, anything else (or no `-o`) falls back to `json`. So `inspector:memory -p <pid> -o snap.rmem` is equivalent to passing `-f rmem` explicitly.
 
@@ -46,8 +46,9 @@ flag list and defaults. The flags you most often reach for:
 
 - `-p, --pid <PID>` — target process id (or pass a `cmd` after `--` to spawn one)
 - `-f, --output-format <fmt>` — `json` (default), `sqlite3`, `rmem` (`.rmem`),
-  `report`, `report-json`, `mysql`, `postgresql`. `rmem` / `sqlite3` /
-  `mysql` / `postgresql` require `-o` (or `--db-*`).
+  `report`, `report-json`, `mysql`, `postgresql`, `meminfo`
+  ([php-meminfo compatible JSON](php-meminfo-export.md)). `rmem` /
+  `sqlite3` / `mysql` / `postgresql` require `-o` (or `--db-*`).
 - `-o, --output <path>` — write to a file instead of stdout
 - `--pretty-print` — pretty-print the JSON output (default: off)
 - `--stop-process` / `--no-stop-process` — `SIGSTOP` the target during the read (default: on)

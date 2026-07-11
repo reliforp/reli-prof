@@ -195,6 +195,7 @@ final class MemoryDumpReader
                 'memory_get_usage' => $collected_memories->memory_get_usage_size,
                 'memory_get_real_usage' => $collected_memories->memory_get_usage_real_size,
                 'memory_get_peak_usage' => $collected_memories->memory_get_peak_usage,
+                'memory_get_peak_usage_real' => $collected_memories->memory_get_peak_usage_real,
                 'memory_limit' => $collected_memories->memory_limit,
                 'cached_chunks_size' => $collected_memories->cached_chunks_size,
                 'chunks_count' => $collected_memories->chunks_count,

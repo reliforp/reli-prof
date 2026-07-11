@@ -40,6 +40,7 @@ final class CollectedMemories
         public int $chunks_total_free_bytes = 0,
         public int $chunks_mostly_empty_count = 0,
         public ?BinWalkResult $bin_walk_result = null,
+        public int $memory_get_peak_usage_real = 0,
     ) {
     }
 

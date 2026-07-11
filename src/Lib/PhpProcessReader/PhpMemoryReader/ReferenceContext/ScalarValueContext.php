@@ -32,8 +32,18 @@ final class ScalarValueContext implements ReferenceContext
     #[\Override]
     public function getContexts(): iterable
     {
+        // The binary sink stores attribute values with a plain string
+        // cast, which folds true/1 to "1" and false to "". Record the
+        // type separately so exporters can reconstruct it exactly.
         return [
             'value' => $this->value,
+            'value_type' => match (true) {
+                is_bool($this->value) => 'bool',
+                is_int($this->value) => 'int',
+                // inf/nan floats are normalized to ['infinity'] / ['nan']
+                is_float($this->value), is_array($this->value) => 'float',
+                default => 'null',
+            },
         ];
     }
 }
