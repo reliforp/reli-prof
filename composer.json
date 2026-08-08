@@ -37,7 +37,7 @@
   "require-dev": {
     "ext-posix": "*",
     "phpunit/phpunit": "13.2.0",
-    "squizlabs/php_codesniffer": "4.0.1",
+    "squizlabs/php_codesniffer": "4.0.2",
     "mockery/mockery": "1.6.12",
     "jetbrains/phpstorm-stubs": "2026.1",
     "php-coveralls/php-coveralls": "2.9.1",
