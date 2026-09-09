@@ -25,7 +25,7 @@
     "symfony/console": "^8.0",
     "php-di/php-di": "7.1.1",
     "amphp/parallel": "2.4.0",
-    "amphp/amp": "3.1.1",
+    "amphp/amp": "3.1.3",
     "hassankhan/config": "3.2.0",
     "sj-i/php-cast": "1.0.0",
     "monolog/monolog": "3.10.0",
